@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# Tooling / caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# LCA runtime / secrets (Rule 23 — ห้าม commit secret เด็ดขาด)
+config.json          # API keys ของ search provider ฯลฯ
+org.json             # user/role/api-key store (มี hash — ถือเป็น secret)
+todos.json
+CHANGELOG_local.md
+.local_coder_backup/

@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Local Code Assistant</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: -apple-system, "Segoe UI", sans-serif;
+    background: #101014; color: #e8e8ec; display: flex; height: 100vh;
+  }
+  #sidebar {
+    width: 260px; background: #16161c; border-right: 1px solid #26262e;
+    padding: 16px; display: flex; flex-direction: column; gap: 12px;
+  }
+  #sidebar h2 { font-size: 14px; color: #8b8b96; margin: 0 0 4px; }
+  #model-select, #lang-select {
+    width: 100%; padding: 8px; background: #1e1e26; color: #e8e8ec;
+    border: 1px solid #2e2e38; border-radius: 6px;
+  }
+  #todo-list { list-style: none; padding: 0; margin: 0; overflow-y: auto; flex: 1; }
+  #todo-list li {
+    padding: 6px 8px; border-radius: 4px; cursor: pointer; font-size: 13px;
+    display: flex; gap: 6px; align-items: flex-start;
+  }
+  #todo-list li:hover { background: #1e1e26; }
+  #todo-list li.done { opacity: 0.5; text-decoration: line-through; }
+  #todo-input {
+    width: 100%; padding: 8px; background: #1e1e26; color: #e8e8ec;
+    border: 1px solid #2e2e38; border-radius: 6px;
+  }
+  #main { flex: 1; display: flex; flex-direction: column; }
+  #chat { flex: 1; overflow-y: auto; padding: 24px; }
+  .msg { max-width: 720px; margin: 0 auto 16px; padding: 12px 16px; border-radius: 10px; white-space: pre-wrap; line-height: 1.5; }
+  .msg.user { background: #22314a; margin-left: auto; margin-right: 0; }
+  .msg.assistant { background: #1e1e26; }
+  .msg.system-note { background: transparent; color: #8b8b96; font-size: 12px; text-align: center; max-width: none; }
+  #input-bar { display: flex; gap: 8px; padding: 16px 24px; border-top: 1px solid #26262e; }
+  #user-input {
+    flex: 1; padding: 12px; background: #1e1e26; color: #e8e8ec;
+    border: 1px solid #2e2e38; border-radius: 8px; resize: none; font-family: inherit; font-size: 14px;
+  }
+  #send-btn {
+    padding: 0 20px; background: #4f7cff; color: white; border: none;
+    border-radius: 8px; cursor: pointer; font-weight: 600;
+  }
+  #send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  #status-bar { padding: 4px 24px; font-size: 12px; color: #8b8b96; }
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+  <h2>โมเดล</h2>
+  <select id="model-select">
+    <option value="qwen2.5-coder:0.5b">qwen2.5-coder:0.5b</option>
+    <option value="qwen2.5-coder:1.5b">qwen2.5-coder:1.5b</option>
+    <option value="qwen2.5-coder:7b">qwen2.5-coder:7b</option>
+    <option value="qwen2.5-coder:14b">qwen2.5-coder:14b</option>
+  </select>
+
+  <h2>ภาษา</h2>
+  <select id="lang-select">
+    <option value="th">ไทย</option>
+    <option value="en">English</option>
+  </select>
+
+  <h2>Todo</h2>
+  <input id="todo-input" placeholder="เพิ่ม todo แล้วกด Enter">
+  <ul id="todo-list"></ul>
+</div>
+
+<div id="main">
+  <div id="chat"></div>
+  <div id="status-bar">โมเดลไม่ได้ต่อเน็ตเอง — ระบบรันผ่าน Ollama ในเครื่องเท่านั้น</div>
+  <div id="input-bar">
+    <textarea id="user-input" rows="2" placeholder="พิมพ์ข้อความ... (Shift+Enter ขึ้นบรรทัดใหม่)"></textarea>
+    <button id="send-btn">ส่ง</button>
+  </div>
+</div>
+
+<script>
+const chatEl = document.getElementById('chat');
+const inputEl = document.getElementById('user-input');
+const sendBtn = document.getElementById('send-btn');
+const modelSelect = document.getElementById('model-select');
+const langSelect = document.getElementById('lang-select');
+const todoInput = document.getElementById('todo-input');
+const todoList = document.getElementById('todo-list');
+
+let history = [];
+
+function addMessage(role, text) {
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+  div.textContent = text;
+  chatEl.appendChild(div);
+  chatEl.scrollTop = chatEl.scrollHeight;
+  return div;
+}
+
+async function sendMessage() {
+  const text = inputEl.value.trim();
+  if (!text) return;
+  inputEl.value = '';
+  sendBtn.disabled = true;
+
+  addMessage('user', text);
+  history.push({ role: 'user', content: text });
+  const thinking = addMessage('system-note', '(กำลังคิด...)');
+
+  try {
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: modelSelect.value,
+        messages: history,
+        lang: langSelect.value,
+        num_ctx: 8192,
+      }),
+    });
+    const data = await res.json();
+    thinking.remove();
+    if (data.error) {
+      addMessage('system-note', '[error] ' + data.error);
+    } else {
+      addMessage('assistant', data.reply);
+      history.push({ role: 'assistant', content: data.reply });
+    }
+  } catch (err) {
+    thinking.remove();
+    addMessage('system-note', '[error] ต่อ server ไม่ได้: ' + err.message);
+  } finally {
+    sendBtn.disabled = false;
+    inputEl.focus();
+  }
+}
+
+sendBtn.addEventListener('click', sendMessage);
+inputEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+});
+
+// ---------- Todo ----------
+async function loadTodos() {
+  try {
+    const res = await fetch('/api/todos');
+    const todos = await res.json();
+    todoList.innerHTML = '';
+    todos.forEach((t) => {
+      const li = document.createElement('li');
+      li.className = t.done ? 'done' : '';
+      li.textContent = '#' + t.id + ' ' + t.text;
+      li.addEventListener('click', () => toggleTodo(t.id));
+      todoList.appendChild(li);
+    });
+  } catch (err) {
+    console.error('โหลด todo ไม่สำเร็จ:', err);
+  }
+}
+
+async function toggleTodo(id) {
+  try {
+    await fetch('/api/todos/toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
+    loadTodos();
+  } catch (err) {
+    console.error('toggle todo ไม่สำเร็จ:', err);
+  }
+}
+
+todoInput.addEventListener('keydown', async (e) => {
+  if (e.key === 'Enter') {
+    const text = todoInput.value.trim();
+    if (!text) return;
+    todoInput.value = '';
+    try {
+      await fetch('/api/todos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      loadTodos();
+    } catch (err) {
+      console.error('เพิ่ม todo ไม่สำเร็จ:', err);
+    }
+  }
+});
+
+loadTodos();
+</script>
+
+</body>
+</html>

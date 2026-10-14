@@ -12,7 +12,6 @@ context_manager.py — auto-scan ไฟล์ในโปรเจกต์ใ�
 
 import fnmatch
 from pathlib import Path
-from typing import Dict, Tuple
 
 LCAIGNORE_FILE_NAME = ".lcaignore"
 MAX_FILE_SIZE_BYTES = 50 * 1024       # ไฟล์ใหญ่กว่านี้ข้าม auto-scan เสมอ
@@ -37,7 +36,7 @@ DEFAULT_IGNORE_PATTERNS = [
 
 # cache ระดับโมดูล: {project_root_str: {rel_path: (mtime, content)}}
 # อยู่ใน memory ระหว่างรันโปรแกรมเดียวเท่านั้น — ปิดโปรแกรมแล้ว cache หายไปเอง (ตั้งใจ)
-_content_cache: Dict[str, Dict[str, Tuple]] = {}
+_content_cache: dict[str, dict[str, tuple]] = {}
 
 
 def load_ignore_patterns(project_root: Path) -> list:

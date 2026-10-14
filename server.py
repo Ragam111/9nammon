@@ -25,6 +25,7 @@ from urllib.parse import urlparse, parse_qs
 sys.path.insert(0, str(Path(__file__).parent))
 from local_coder import call_ollama, get_system_prompt  # noqa: E402
 from app.todo_store import load_todos, add_todo, toggle_todo, delete_todo  # noqa: E402
+from app import org_store  # noqa: E402  (ระบบองค์กร: user/role/api key/quota)
 
 APP_DIR = Path(__file__).parent / "app"
 INDEX_HTML = APP_DIR / "index.html"
@@ -36,10 +37,26 @@ def make_handler(project_root: Path, auth_token: Optional[str]):
         def log_message(self, fmt, *args):
             print(f"[server] {self.address_string()} - {fmt % args}")
 
-        def _check_auth(self) -> bool:
-            if not auth_token:
-                return True  # ไม่ได้ตั้ง token ไว้ (เฉพาะ local เท่านั้นถึงปลอดภัย)
-            return self.headers.get("X-Auth-Token") == auth_token
+        def _identity(self) -> Optional[dict]:
+            """ระบุว่า request นี้คือใคร มีสิทธิ์อะไร คืน dict หรือ None (ไม่ผ่าน auth)
+
+            ลำดับการตรวจ:
+              1. master token ผ่าน header X-Auth-Token (= สิทธิ์ CEO สำหรับ bootstrap/ดูแลระบบ)
+              2. API key ผ่าน header X-API-Key (resolve เป็น user/role/tier จาก org_store)
+              3. ถ้าไม่ได้ตั้ง master token เลย = โหมด local ล้วน (ตาม Rule 12) → ถือเป็น CEO
+                 (ปลอดภัยเพราะ bind 127.0.0.1 เท่านั้นถึงจะไม่ตั้ง token ได้)
+            """
+            if auth_token and self.headers.get("X-Auth-Token") == auth_token:
+                return {"username": "__master__", "role": "CEO", "tier": "paid", "key_id": None}
+            raw_key = self.headers.get("X-API-Key")
+            if raw_key:
+                rec = org_store.verify_api_key(project_root, raw_key)
+                if rec:
+                    return rec
+            if not auth_token and not raw_key:
+                # โหมด local ล้วน (ไม่ได้ตั้ง token, ไม่ได้ส่ง API key) — เหมือนพฤติกรรมเดิม
+                return {"username": "__local__", "role": "CEO", "tier": "paid", "key_id": None}
+            return None
 
         def _send_json(self, status: int, payload: dict):
             body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -63,8 +80,48 @@ def make_handler(project_root: Path, auth_token: Optional[str]):
                 self._serve_index()
             elif parsed.path == "/api/todos":
                 self._handle_todos_get()
+            elif parsed.path == "/api/me":
+                self._handle_me()
+            elif parsed.path == "/api/admin/users":
+                self._handle_users_list()
+            elif parsed.path == "/api/admin/apikeys":
+                self._handle_apikeys_list()
             else:
                 self._send_json(404, {"error": "not found"})
+
+        # ---------- RBAC helper ----------
+        def _require(self, min_role: str) -> Optional[dict]:
+            """คืน identity ถ้าผ่าน auth + สิทธิ์ถึง min_role, ไม่งั้นตอบ error แล้วคืน None
+            ผู้เรียกต้องเช็ค `if ident is None: return` ทันที"""
+            ident = self._identity()
+            if ident is None:
+                self._send_json(401, {"error": "unauthorized — ต้องมี X-Auth-Token หรือ X-API-Key ที่ถูกต้อง"})
+                return None
+            if not org_store.role_at_least(ident["role"], min_role):
+                self._send_json(403, {"error": f"forbidden — ต้องมีสิทธิ์ {min_role} ขึ้นไป (คุณคือ {ident['role']})"})
+                return None
+            return ident
+
+        def _handle_me(self):
+            ident = self._identity()
+            if ident is None:
+                self._send_json(401, {"error": "unauthorized"})
+                return
+            self._send_json(200, {
+                "username": ident.get("username"),
+                "role": ident.get("role"),
+                "tier": ident.get("tier"),
+            })
+
+        def _handle_users_list(self):
+            if self._require("ADMIN") is None:
+                return
+            self._send_json(200, {"users": org_store.list_users(project_root)})
+
+        def _handle_apikeys_list(self):
+            if self._require("ADMIN") is None:
+                return
+            self._send_json(200, {"api_keys": org_store.list_api_keys(project_root)})
 
         def _serve_index(self):
             try:
@@ -81,9 +138,6 @@ def make_handler(project_root: Path, auth_token: Optional[str]):
 
         # ---------- Controller: API routes ----------
         def do_POST(self):
-            if not self._check_auth():
-                self._send_json(401, {"error": "unauthorized"})
-                return
             parsed = urlparse(self.path)
             try:
                 if parsed.path == "/api/chat":
@@ -92,12 +146,91 @@ def make_handler(project_root: Path, auth_token: Optional[str]):
                     self._handle_todos_post()
                 elif parsed.path == "/api/todos/toggle":
                     self._handle_todos_toggle()
+                elif parsed.path == "/api/admin/users":
+                    self._handle_users_create()
+                elif parsed.path == "/api/admin/users/active":
+                    self._handle_users_set_active()
+                elif parsed.path == "/api/admin/apikeys":
+                    self._handle_apikeys_create()
+                elif parsed.path == "/api/admin/apikeys/revoke":
+                    self._handle_apikeys_revoke()
                 else:
                     self._send_json(404, {"error": "not found"})
             except (json.JSONDecodeError, KeyError) as e:
                 self._send_json(400, {"error": f"request ผิดรูปแบบ: {e}"})
+            except ValueError as e:
+                # org_store โยน ValueError เมื่อ input ผิด/สิทธิ์ไม่พอ/ชื่อซ้ำ
+                self._send_json(400, {"error": str(e)})
+
+        # ---------- Controller: Org / Admin routes ----------
+        def _handle_users_create(self):
+            data = self._read_json_body()
+            username = data.get("username", "")
+            password = data.get("password", "")
+            role = data.get("role", "USER")
+            # bootstrap: ยังไม่มี user เลย → อนุญาตสร้าง CEO คนแรกโดยไม่ต้อง auth
+            if org_store.bootstrap_needed(project_root):
+                rec = org_store.create_user(project_root, username, password, role)
+                self._send_json(200, {"created": rec, "bootstrap": True})
+                return
+            ident = self._require("ADMIN")
+            if ident is None:
+                return
+            rec = org_store.create_user(project_root, username, password, role,
+                                        created_by_role=ident["role"])
+            self._send_json(200, {"created": rec})
+
+        def _handle_users_set_active(self):
+            ident = self._require("ADMIN")
+            if ident is None:
+                return
+            data = self._read_json_body()
+            username = data.get("username")
+            active = bool(data.get("active", True))
+            if not username:
+                self._send_json(400, {"error": "ต้องระบุ username"})
+                return
+            ok = org_store.set_user_active(project_root, username, active, actor_role=ident["role"])
+            self._send_json(200 if ok else 404, {"success": ok})
+
+        def _handle_apikeys_create(self):
+            ident = self._require("ADMIN")
+            if ident is None:
+                return
+            data = self._read_json_body()
+            owner = data.get("owner")
+            tier = data.get("tier", "free")
+            if not owner:
+                self._send_json(400, {"error": "ต้องระบุ owner (username เจ้าของ key)"})
+                return
+            issued = org_store.create_api_key(project_root, owner, tier, actor_role=ident["role"])
+            # issued มี 'key' เต็ม — โชว์ครั้งเดียว ผู้ใช้ต้องเก็บเอง
+            self._send_json(200, {"api_key": issued,
+                                  "note": "เก็บค่า key นี้ไว้เดี๋ยวนี้ — ระบบจะไม่โชว์อีก"})
+
+        def _handle_apikeys_revoke(self):
+            ident = self._require("ADMIN")
+            if ident is None:
+                return
+            data = self._read_json_body()
+            key_id = data.get("key_id")
+            if not key_id:
+                self._send_json(400, {"error": "ต้องระบุ key_id"})
+                return
+            ok = org_store.revoke_api_key(project_root, key_id, actor_role=ident["role"])
+            self._send_json(200 if ok else 404, {"success": ok})
 
         def _handle_chat(self):
+            ident = self._require("USER")
+            if ident is None:
+                return
+            # กินโควตาเฉพาะเมื่อเข้ามาด้วย API key (master/local ไม่มีโควตา)
+            if ident.get("key_id"):
+                ok, remaining = org_store.consume_quota(project_root, ident["key_id"])
+                if not ok:
+                    self._send_json(429, {"error": "เกินโควตาการใช้งานรายวันของ API key นี้แล้ว "
+                                                   "(อัปเกรดเป็น tier paid เพื่อใช้ได้ไม่จำกัด)"})
+                    return
             data = self._read_json_body()
             model = data.get("model", "qwen2.5-coder:0.5b")
             messages = data.get("messages", [])
@@ -125,6 +258,8 @@ def make_handler(project_root: Path, auth_token: Optional[str]):
             self._send_json(200, todos)
 
         def _handle_todos_post(self):
+            if self._require("USER") is None:
+                return
             data = self._read_json_body()
             text = data.get("text", "").strip()
             if not text:
@@ -134,6 +269,8 @@ def make_handler(project_root: Path, auth_token: Optional[str]):
             self._send_json(200, item)
 
         def _handle_todos_toggle(self):
+            if self._require("USER") is None:
+                return
             data = self._read_json_body()
             todo_id = data.get("id")
             if todo_id is None:
