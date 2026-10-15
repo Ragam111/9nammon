@@ -180,6 +180,29 @@ class ServerOrgTest(unittest.TestCase):
         st, _ = self._req("POST", "/api/todos/delete", {"id": 1})
         self.assertEqual(st, 401)
 
+    def test_sysinfo_requires_admin(self):
+        master_hdr, key = self._bootstrap_dev_key()  # dev = USER
+        # ไม่ส่ง auth -> 401
+        st, _ = self._req("GET", "/api/sysinfo")
+        self.assertEqual(st, 401)
+        # USER -> 403
+        st, _ = self._req("GET", "/api/sysinfo", headers={"X-API-Key": key})
+        self.assertEqual(st, 403)
+        # ADMIN (master = CEO) -> 200 + มีข้อมูลเครื่อง
+        st, info = self._req("GET", "/api/sysinfo", headers=master_hdr)
+        self.assertEqual(st, 200, info)
+        for k in ("cpu", "memory", "storage", "gpus", "gpu_note"):
+            self.assertIn(k, info)
+
+    def test_dev_page_served(self):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("GET", "/dev")
+        resp = conn.getresponse()
+        body = resp.read().decode("utf-8")
+        conn.close()
+        self.assertEqual(resp.status, 200)
+        self.assertIn("Dev View", body)
+
     def test_quota_exhaustion_returns_429(self):
         master_hdr = {"X-Auth-Token": MASTER}
         self._req("POST", "/api/admin/users",

@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LCA — Dev View</title>
+  <style>
+    :root {
+      --bg: #0f1116; --card: #1a1e27; --fg: #e6e8ee; --muted: #9aa3b2;
+      --accent: #5b9dff; --ok: #3fb950; --warn: #d29922; --bad: #f85149; --line: #2a2f3a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--fg);
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif; line-height: 1.5;
+    }
+    header {
+      padding: 16px; border-bottom: 1px solid var(--line);
+      display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+    }
+    h1 { font-size: 18px; margin: 0; }
+    .muted { color: var(--muted); }
+    main { padding: 16px; max-width: 980px; margin: 0 auto; }
+    input {
+      background: #11141b; color: var(--fg); border: 1px solid var(--line);
+      border-radius: 8px; padding: 8px 10px; font-size: 14px; min-width: 0;
+    }
+    button {
+      background: var(--accent); color: #06101f; border: 0; border-radius: 8px;
+      padding: 8px 14px; font-weight: 600; cursor: pointer;
+    }
+    button:disabled { opacity: .5; cursor: default; }
+    .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+    .card h2 { font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); margin: 0 0 10px; }
+    .kv { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; font-size: 14px; }
+    .kv span:last-child { color: var(--fg); text-align: right; word-break: break-word; }
+    .tag { font-size: 11px; padding: 2px 6px; border-radius: 6px; border: 1px solid var(--line); }
+    .tag.ok { color: var(--ok); border-color: var(--ok); }
+    .tag.bad { color: var(--warn); border-color: var(--warn); }
+    .note { font-size: 13px; color: var(--muted); margin-top: 6px; }
+    .err { color: var(--bad); font-size: 14px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    td, th { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--line); }
+    th { color: var(--muted); font-weight: 600; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>LCA — Dev View</h1>
+    <span class="muted" id="who">ต้องเป็น ADMIN ขึ้นไป</span>
+    <span style="flex:1"></span>
+    <input id="token" type="password" placeholder="X-Auth-Token หรือ API key" autocomplete="off" />
+    <button id="load">โหลดข้อมูล</button>
+  </header>
+  <main>
+    <p class="muted">หน้าสำหรับนักพัฒนา — ดู spec เครื่อง (และ metrics เมื่อ Phase 2 พร้อม) ผ่าน
+      <code>/api/sysinfo</code> ซึ่ง gate สิทธิ์ ADMIN</p>
+    <div id="error" class="err"></div>
+    <div id="content" class="grid"></div>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    // จำ token ไว้ใน sessionStorage (ต่อ tab) เพื่อสะดวก — ไม่เก็บถาวร
+    try { $('token').value = sessionStorage.getItem('lca_dev_token') || ''; } catch (e) {}
+
+    function authHeaders() {
+      const t = $('token').value.trim();
+      // รองรับทั้ง master token และ API key — ส่งทั้งคู่ server จะเลือกเอง
+      return t ? { 'X-Auth-Token': t, 'X-API-Key': t } : {};
+    }
+
+    function card(title, rowsHtml) {
+      return `<div class="card"><h2>${title}</h2>${rowsHtml}</div>`;
+    }
+    function kv(k, v) { return `<div class="kv"><span class="muted">${k}</span><span>${v ?? '-'}</span></div>`; }
+    const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+    function render(info) {
+      const c = info.cpu || {};
+      const cores = c.physical_cores ? `${c.physical_cores}P / ${c.logical_cores}L` : `${c.logical_cores}L`;
+      const freq = c.max_freq_mhz ? ` @ ${c.max_freq_mhz} MHz` : '';
+      let html = '';
+      html += card('Host', kv('Hostname', esc(info.hostname)) + kv('OS', esc(info.os)) +
+        kv('Platform', esc(info.platform)) + kv('Python', esc(info.python)));
+      html += card('CPU', kv('Model', esc(c.model)) + kv('Cores', cores + freq) + kv('Arch', esc(c.arch)));
+      html += card('Memory', kv('Total RAM', esc((info.memory || {}).total_human)));
+
+      let st = '<table><tr><th>Mount</th><th>Size</th><th>FS</th></tr>';
+      (info.storage || []).forEach((s) => {
+        st += `<tr><td>${esc(s.mountpoint)}</td><td>${esc(s.total_human)}</td><td>${esc(s.fstype)}</td></tr>`;
+      });
+      st += '</table>';
+      html += card('Storage', st);
+
+      let g = '';
+      if ((info.gpus || []).length) {
+        info.gpus.forEach((x) => {
+          const tag = x.compute_capable
+            ? '<span class="tag ok">compute</span>'
+            : '<span class="tag bad">integrated</span>';
+          g += `<div class="kv"><span>${esc(x.name)}</span>${tag}</div>`;
+        });
+      } else {
+        g = '<div class="muted">ไม่พบ GPU (best-effort)</div>';
+      }
+      g += `<div class="note">${esc(info.gpu_note || '')}</div>`;
+      html += card('GPU', g);
+
+      $('content').innerHTML = html;
+    }
+
+    async function load() {
+      $('error').textContent = '';
+      $('load').disabled = true;
+      try { sessionStorage.setItem('lca_dev_token', $('token').value.trim()); } catch (e) {}
+      try {
+        const res = await fetch('/api/sysinfo', { headers: authHeaders() });
+        if (res.status === 401) { $('error').textContent = 'unauthorized — ใส่ token/API key ให้ถูก'; return; }
+        if (res.status === 403) { $('error').textContent = 'forbidden — ต้องมีสิทธิ์ ADMIN ขึ้นไป'; return; }
+        if (!res.ok) { $('error').textContent = 'error ' + res.status; return; }
+        const info = await res.json();
+        $('who').textContent = 'เชื่อมต่อแล้ว';
+        render(info);
+      } catch (err) {
+        $('error').textContent = 'ต่อ server ไม่ได้: ' + err.message;
+      } finally {
+        $('load').disabled = false;
+      }
+    }
+
+    $('load').addEventListener('click', load);
+    $('token').addEventListener('keydown', (e) => { if (e.key === 'Enter') load(); });
+    if ($('token').value) load();
+  </script>
+</body>
+</html>

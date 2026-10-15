@@ -26,9 +26,11 @@ sys.path.insert(0, str(Path(__file__).parent))
 from local_coder import call_ollama, get_system_prompt  # noqa: E402
 from app.todo_store import load_todos, add_todo, toggle_todo, delete_todo  # noqa: E402
 from app import org_store  # noqa: E402  (ระบบองค์กร: user/role/api key/quota)
+from sysmanager.sysinfo import get_system_info  # noqa: E402  (spec เครื่องสำหรับ dev view)
 
 APP_DIR = Path(__file__).parent / "app"
 INDEX_HTML = APP_DIR / "index.html"
+DEV_HTML = APP_DIR / "dev.html"
 
 
 def make_handler(project_root: Path, auth_token: Optional[str]):
@@ -78,8 +80,12 @@ def make_handler(project_root: Path, auth_token: Optional[str]):
             parsed = urlparse(self.path)
             if parsed.path == "/":
                 self._serve_index()
+            elif parsed.path == "/dev":
+                self._serve_dev()
             elif parsed.path == "/api/todos":
                 self._handle_todos_get()
+            elif parsed.path == "/api/sysinfo":
+                self._handle_sysinfo()
             elif parsed.path == "/api/me":
                 self._handle_me()
             elif parsed.path == "/api/admin/users":
@@ -135,6 +141,27 @@ def make_handler(project_root: Path, auth_token: Optional[str]):
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+
+        def _serve_dev(self):
+            # หน้า shell ของ dev view เสิร์ฟได้โดยไม่ต้อง auth (เหมือน index.html) —
+            # ข้อมูลจริง (/api/sysinfo) ถูก gate ADMIN อีกชั้น หน้าเว็บจะถาม token เอง
+            try:
+                html = DEV_HTML.read_text(encoding="utf-8")
+            except OSError as e:
+                self._send_json(500, {"error": f"อ่าน dev.html ไม่ได้: {e}"})
+                return
+            body = html.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _handle_sysinfo(self):
+            # spec เครื่อง (static) สำหรับ dev view / ระบบจัดการทรัพยากร — ADMIN ขึ้นไป
+            if self._require("ADMIN") is None:
+                return
+            self._send_json(200, get_system_info().to_dict())
 
         # ---------- Controller: API routes ----------
         def do_POST(self):
