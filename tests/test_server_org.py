@@ -164,8 +164,8 @@ class ServerOrgTest(unittest.TestCase):
         st, d = self._req("POST", "/api/todos/delete", {"id": tid}, headers=master_hdr)
         self.assertEqual(st, 200)
         self.assertTrue(d["success"])
-        # หายจริง
-        _, todos = self._req("GET", "/api/todos")
+        # หายจริง (GET /api/todos ตอนนี้ต้อง auth แล้ว)
+        _, todos = self._req("GET", "/api/todos", headers=master_hdr)
         self.assertEqual([t for t in todos if t["id"] == tid], [])
         # ลบ id ที่ไม่มี -> 404
         st, _ = self._req("POST", "/api/todos/delete", {"id": 99999}, headers=master_hdr)
@@ -330,6 +330,47 @@ class ServerOrgTest(unittest.TestCase):
         self.assertEqual(st, 200, d)
         self.assertEqual(d["summary"]["total_units"], 2)
         self.assertEqual(d["summary"]["by_tier"]["paid"]["units"], 2)
+
+    def test_todos_get_requires_auth(self):
+        master_hdr, key = self._bootstrap_dev_key()  # server นี้ตั้ง MASTER token ไว้
+        # ไม่ส่ง auth -> 401 (เดิมเปิดสาธารณะ ตอนนี้ปิดแล้ว)
+        st, _ = self._req("GET", "/api/todos")
+        self.assertEqual(st, 401)
+        # USER (dev key) อ่านได้ -> 200
+        st, todos = self._req("GET", "/api/todos", headers={"X-API-Key": key})
+        self.assertEqual(st, 200)
+        self.assertIsInstance(todos, list)
+
+    def test_rate_limit_returns_429(self):
+        # server แยกที่ตั้ง rate limit ต่ำ ๆ เพื่อพิสูจน์ 429
+        root = Path(self._tmp.name)
+        handler = server.make_handler(root, None, rate_limit_max=3, rate_limit_window=60)
+        httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        port = httpd.server_address[1]
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            def hit():
+                conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+                conn.request("GET", "/api/todos")
+                resp = conn.getresponse()
+                resp.read()
+                conn.close()
+                return resp.status
+            # 3 ครั้งแรกผ่าน (local mode = CEO, ไม่ตั้ง token), ครั้งที่ 4 โดน 429
+            statuses = [hit() for _ in range(4)]
+            self.assertEqual(statuses[:3], [200, 200, 200])
+            self.assertEqual(statuses[3], 429)
+            # path ที่ไม่ใช่ /api/ ไม่โดนจำกัด
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+            conn.request("GET", "/")
+            resp = conn.getresponse()
+            resp.read()
+            conn.close()
+            self.assertEqual(resp.status, 200)
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
 
     def test_quota_exhaustion_returns_429(self):
         master_hdr = {"X-Auth-Token": MASTER}
