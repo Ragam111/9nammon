@@ -27,6 +27,7 @@ from local_coder import call_ollama, get_system_prompt  # noqa: E402
 from app.todo_store import load_todos, add_todo, toggle_todo, delete_todo  # noqa: E402
 from app import org_store  # noqa: E402  (ระบบองค์กร: user/role/api key/quota)
 from sysmanager.sysinfo import get_system_info  # noqa: E402  (spec เครื่องสำหรับ dev view)
+from app import job_queue  # noqa: E402  (คิวงาน server เก็บด้วย SQLite)
 
 APP_DIR = Path(__file__).parent / "app"
 INDEX_HTML = APP_DIR / "index.html"
@@ -92,6 +93,8 @@ def make_handler(project_root: Path, auth_token: Optional[str]):
                 self._handle_users_list()
             elif parsed.path == "/api/admin/apikeys":
                 self._handle_apikeys_list()
+            elif parsed.path == "/api/admin/jobs":
+                self._handle_jobs_list(parsed)
             else:
                 self._send_json(404, {"error": "not found"})
 
@@ -128,6 +131,18 @@ def make_handler(project_root: Path, auth_token: Optional[str]):
             if self._require("ADMIN") is None:
                 return
             self._send_json(200, {"api_keys": org_store.list_api_keys(project_root)})
+
+        def _handle_jobs_list(self, parsed):
+            if self._require("ADMIN") is None:
+                return
+            qs = parse_qs(parsed.query)
+            status = qs.get("status", [None])[0]
+            try:
+                jobs = job_queue.list_jobs(project_root, status=status)
+            except ValueError as e:
+                self._send_json(400, {"error": str(e)})
+                return
+            self._send_json(200, {"jobs": jobs})
 
         def _serve_index(self):
             try:
@@ -183,6 +198,12 @@ def make_handler(project_root: Path, auth_token: Optional[str]):
                     self._handle_apikeys_create()
                 elif parsed.path == "/api/admin/apikeys/revoke":
                     self._handle_apikeys_revoke()
+                elif parsed.path == "/api/admin/jobs":
+                    self._handle_jobs_create()
+                elif parsed.path == "/api/admin/jobs/status":
+                    self._handle_jobs_set_status()
+                elif parsed.path == "/api/admin/jobs/delete":
+                    self._handle_jobs_delete()
                 else:
                     self._send_json(404, {"error": "not found"})
             except (json.JSONDecodeError, KeyError) as e:
@@ -253,6 +274,39 @@ def make_handler(project_root: Path, auth_token: Optional[str]):
                 self._send_json(400, {"error": "ต้องระบุ key_id"})
                 return
             ok = org_store.revoke_api_key(project_root, key_id, actor_role=ident["role"])
+            self._send_json(200 if ok else 404, {"success": ok})
+
+        # ---------- Controller: Job queue routes (ADMIN) ----------
+        def _handle_jobs_create(self):
+            if self._require("ADMIN") is None:
+                return
+            data = self._read_json_body()
+            name = data.get("name", "")
+            payload = data.get("payload")
+            job = job_queue.enqueue(project_root, name, payload)  # ValueError -> 400 ใน do_POST
+            self._send_json(200, {"job": job})
+
+        def _handle_jobs_set_status(self):
+            if self._require("ADMIN") is None:
+                return
+            data = self._read_json_body()
+            job_id = data.get("id")
+            status = data.get("status", "")
+            if job_id is None:
+                self._send_json(400, {"error": "ต้องระบุ id"})
+                return
+            ok = job_queue.set_status(project_root, int(job_id), status)  # ValueError -> 400
+            self._send_json(200 if ok else 404, {"success": ok})
+
+        def _handle_jobs_delete(self):
+            if self._require("ADMIN") is None:
+                return
+            data = self._read_json_body()
+            job_id = data.get("id")
+            if job_id is None:
+                self._send_json(400, {"error": "ต้องระบุ id"})
+                return
+            ok = job_queue.delete_job(project_root, int(job_id))
             self._send_json(200 if ok else 404, {"success": ok})
 
         def _handle_chat(self):
