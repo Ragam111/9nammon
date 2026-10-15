@@ -203,6 +203,40 @@ class ServerOrgTest(unittest.TestCase):
         self.assertEqual(resp.status, 200)
         self.assertIn("Dev View", body)
 
+    def test_jobs_crud_and_rbac(self):
+        master_hdr, key = self._bootstrap_dev_key()  # dev = USER
+        # USER เข้า jobs ไม่ได้ -> 403
+        st, _ = self._req("GET", "/api/admin/jobs", headers={"X-API-Key": key})
+        self.assertEqual(st, 403)
+        # ไม่ auth -> 401
+        st, _ = self._req("POST", "/api/admin/jobs", {"name": "x"})
+        self.assertEqual(st, 401)
+        # ADMIN enqueue -> 200
+        st, d = self._req("POST", "/api/admin/jobs",
+                          {"name": "build", "payload": {"t": 1}}, headers=master_hdr)
+        self.assertEqual(st, 200, d)
+        jid = d["job"]["id"]
+        self.assertEqual(d["job"]["status"], "pending")
+        # list
+        st, d = self._req("GET", "/api/admin/jobs", headers=master_hdr)
+        self.assertEqual(st, 200)
+        self.assertEqual(len(d["jobs"]), 1)
+        # set status
+        st, d = self._req("POST", "/api/admin/jobs/status",
+                          {"id": jid, "status": "done"}, headers=master_hdr)
+        self.assertEqual(st, 200)
+        self.assertTrue(d["success"])
+        # bad status -> 400
+        st, _ = self._req("POST", "/api/admin/jobs/status",
+                          {"id": jid, "status": "bogus"}, headers=master_hdr)
+        self.assertEqual(st, 400)
+        # delete
+        st, d = self._req("POST", "/api/admin/jobs/delete", {"id": jid}, headers=master_hdr)
+        self.assertEqual(st, 200)
+        self.assertTrue(d["success"])
+        st, _ = self._req("POST", "/api/admin/jobs/delete", {"id": jid}, headers=master_hdr)
+        self.assertEqual(st, 404)
+
     def test_quota_exhaustion_returns_429(self):
         master_hdr = {"X-Auth-Token": MASTER}
         self._req("POST", "/api/admin/users",

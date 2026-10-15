@@ -28,3 +28,5 @@ org.json             # user/role/api-key store (มี hash — ถือเป�
 todos.json
 CHANGELOG_local.md
 .local_coder_backup/
+*.db          # SQLite stores (jobs.db ฯลฯ) — runtime data, ไม่ commit
+*.sqlite3
