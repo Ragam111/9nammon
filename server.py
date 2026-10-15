@@ -34,6 +34,7 @@ from app import finance_ledger  # noqa: E402  (บันทึกการเง
 from app import usage_store  # noqa: E402  (บันทึกการใช้งาน API ต่อ key, SQLite)
 from app.rate_limit import RateLimiter  # noqa: E402  (จำกัด request ต่อ IP)
 from app import notifier  # noqa: E402  (แจ้งเตือน Discord/email, config-driven)
+from app import support_store  # noqa: E402  (รับเรื่อง support/บั๊กจากลูกค้า, SQLite)
 from sysmanager.monitor import collect as _collect, Analyzer as _Analyzer  # noqa: E402
 
 APP_DIR = Path(__file__).parent / "app"
@@ -131,6 +132,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._handle_usage_list(parsed)
             elif parsed.path == "/api/admin/usage/summary":
                 self._handle_usage_summary()
+            elif parsed.path == "/api/admin/support/tickets":
+                self._handle_support_list(parsed)
             else:
                 self._send_json(404, {"error": "not found"})
 
@@ -227,6 +230,19 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 return
             self._send_json(200, {"summary": usage_store.summary(project_root)})
 
+        def _handle_support_list(self, parsed):
+            if self._require("ADMIN") is None:
+                return
+            qs = parse_qs(parsed.query)
+            status = qs.get("status", [None])[0]
+            kind = qs.get("kind", [None])[0]
+            try:
+                tickets = support_store.list_tickets(project_root, status=status, kind=kind)
+            except ValueError as e:
+                self._send_json(400, {"error": str(e)})
+                return
+            self._send_json(200, {"tickets": tickets, "counts": support_store.counts_by_status(project_root)})
+
         def _serve_index(self):
             try:
                 html = INDEX_HTML.read_text(encoding="utf-8")
@@ -301,6 +317,10 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                     self._handle_finance_delete()
                 elif parsed.path == "/api/admin/notify":
                     self._handle_notify()
+                elif parsed.path == "/api/support/ticket":
+                    self._handle_support_create()
+                elif parsed.path == "/api/admin/support/tickets/status":
+                    self._handle_support_set_status()
                 else:
                     self._send_json(404, {"error": "not found"})
             except (json.JSONDecodeError, KeyError) as e:
@@ -473,6 +493,49 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 return
             ok = finance_ledger.delete_entry(project_root, int(entry_id))
             self._send_json(200 if ok else 404, {"success": ok})
+
+        # ---------- Controller: Support tickets ----------
+        def _handle_support_create(self):
+            # ลูกค้าที่ล็อกอิน (USER ขึ้นไป) แจ้งปัญหา/ขอฟีเจอร์ได้ — reporter = ตัวตนจริง
+            ident = self._require("USER")
+            if ident is None:
+                return
+            data = self._read_json_body()
+            ticket = support_store.create_ticket(  # ValueError -> 400 ใน do_POST
+                project_root,
+                reporter=ident.get("username"),
+                subject=data.get("subject", ""),
+                body=data.get("body", ""),
+                kind=data.get("kind", "bug"),
+                channel=data.get("channel", "web"),
+            )
+            # ยิงแจ้งเตือนให้ทีมรู้ทันที (Discord/email) — ไม่มี config = skip เงียบ ไม่ทำ response พัง
+            notified = {}
+            try:
+                notified = notifier.notify(
+                    project_root,
+                    event=f"support:{ticket['kind']}",
+                    text=f"#{ticket['id']} [{ticket['channel']}] {ticket['subject']} "
+                         f"(โดย {ticket.get('reporter') or 'ไม่ระบุ'})",
+                )
+            except (ValueError, OSError) as e:
+                print(f"[support][warn] แจ้งเตือน ticket ไม่สำเร็จ: {e}")
+            self._send_json(200, {"ticket": ticket, "notified": notified})
+
+        def _handle_support_set_status(self):
+            if self._require("ADMIN") is None:
+                return
+            data = self._read_json_body()
+            ticket_id = data.get("id")
+            status = data.get("status", "")
+            if ticket_id is None:
+                self._send_json(400, {"error": "ต้องระบุ id"})
+                return
+            ticket = support_store.set_status(project_root, int(ticket_id), status)  # ValueError -> 400
+            if ticket is None:
+                self._send_json(404, {"success": False})
+                return
+            self._send_json(200, {"ticket": ticket})
 
         # ---------- Controller: Notify route (ADMIN) ----------
         def _handle_notify(self):

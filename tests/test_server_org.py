@@ -404,6 +404,42 @@ class ServerOrgTest(unittest.TestCase):
         self.assertEqual(d["result"]["discord"], "skipped (no config)")
         self.assertEqual(d["result"]["email"], "skipped (no config)")
 
+    def test_support_rbac_and_flow(self):
+        master_hdr, key = self._bootstrap_dev_key()  # dev = USER
+        # ไม่ auth -> 401
+        st, _ = self._req("POST", "/api/support/ticket", {"subject": "x", "body": "y"})
+        self.assertEqual(st, 401)
+        # USER (ลูกค้า) แจ้ง ticket ได้ -> 200, reporter = dev, notify skipped (ไม่มี config)
+        st, d = self._req("POST", "/api/support/ticket",
+                          {"subject": "แชทพัง", "body": "error 500 ตอนกดส่ง", "kind": "bug"},
+                          headers={"X-API-Key": key})
+        self.assertEqual(st, 200, d)
+        tid = d["ticket"]["id"]
+        self.assertEqual(d["ticket"]["reporter"], "dev")
+        self.assertEqual(d["ticket"]["status"], "open")
+        self.assertEqual(d["notified"]["discord"], "skipped (no config)")
+        # subject ว่าง -> 400
+        st, _ = self._req("POST", "/api/support/ticket", {"subject": "", "body": "y"},
+                          headers={"X-API-Key": key})
+        self.assertEqual(st, 400)
+        # USER ดู admin list ไม่ได้ -> 403
+        st, _ = self._req("GET", "/api/admin/support/tickets", headers={"X-API-Key": key})
+        self.assertEqual(st, 403)
+        # ADMIN list เห็น ticket + counts
+        st, d = self._req("GET", "/api/admin/support/tickets", headers=master_hdr)
+        self.assertEqual(st, 200, d)
+        self.assertEqual(len(d["tickets"]), 1)
+        self.assertEqual(d["counts"]["open"], 1)
+        # ADMIN เปลี่ยนสถานะ -> resolved
+        st, d = self._req("POST", "/api/admin/support/tickets/status",
+                          {"id": tid, "status": "resolved"}, headers=master_hdr)
+        self.assertEqual(st, 200, d)
+        self.assertEqual(d["ticket"]["status"], "resolved")
+        # id ไม่มี -> 404
+        st, _ = self._req("POST", "/api/admin/support/tickets/status",
+                          {"id": 99999, "status": "open"}, headers=master_hdr)
+        self.assertEqual(st, 404)
+
     def test_quota_exhaustion_returns_429(self):
         master_hdr = {"X-Auth-Token": MASTER}
         self._req("POST", "/api/admin/users",
