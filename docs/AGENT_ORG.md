@@ -43,9 +43,11 @@ build ไปแล้ว), บอก tradeoff ตรง ๆ, แยก "ทำ�
 - อ่าน config จาก `config_manager` (Rule 23: webhook URL / SMTP creds อยู่ใน config.json gitignored)
 - ถ้าไม่มี config → log แล้วข้ามเงียบ ๆ (ไม่ crash) — ทดสอบได้ด้วย mock
 
-> ⚠️ **ต้องตั้งค่าฝั่ง user ก่อนใช้จริง** (ผมสร้างโค้ด + stub ได้ แต่เชื่อมจริงไม่ได้):
-> - Discord: สร้าง Incoming Webhook ในเซิร์ฟเวอร์ Discord → เอา URL ใส่ `config.json` (`DISCORD_WEBHOOK_URL`)
-> - Email: ใส่ SMTP host/user/pass (เช่น Gmail App Password) ใน `config.json`
+> ⚠️ **ต้องตั้งค่าฝั่ง user ก่อนใช้จริง** (โค้ดพร้อมแล้ว แต่ผมสร้าง webhook/ใส่รหัสแทนไม่ได้):
+> - Discord: Server Settings → Integrations → Webhooks → New Webhook → Copy URL → ใส่ `config.json` คีย์ `DISCORD_WEBHOOK_URL`
+> - Email: ใส่ `SMTP_HOST`, `SMTP_PORT` (ดีฟอลต์ 587), `SMTP_USER`, `SMTP_PASS` (เช่น Gmail App Password), `SMTP_FROM`, `SMTP_TO` ใน `config.json`
+> - `config.json` อยู่ใน `.gitignore` แล้ว (Rule 23) — secret ไม่หลุดขึ้น git
+> - ทดสอบ: `POST /api/admin/notify {"event":"test","text":"hello"}` (header ADMIN) — ไม่มี config ช่องไหน = `skipped (no config)`, ตั้งครบ = `sent`
 
 ## การเงิน (ตามเคสจริงของ user)
 - **บันทึกเท่านั้น ไม่โอนจริง** (Item I finance_ledger)
@@ -64,8 +66,8 @@ ledger อัปเดต + สรุปยอดใน dev dashboard
 ```
 
 ## Build phases (ให้ autopilot ไล่)
-1. ✅ substrate: org RBAC, job_queue (done); finance_ledger, DB layer (กำลังทำ)
-2. `app/notifier.py` — Discord webhook + email (stdlib, config-driven, mock-tested)
+1. ✅ substrate: org RBAC, job_queue, finance_ledger, DB layer, usage metering (done)
+2. ✅ `app/notifier.py` — Discord webhook + email (stdlib, config-driven, mock-tested) + endpoint `POST /api/admin/notify` (ADMIN) ไว้ทดสอบ/ยิงแจ้งเตือน. **ต้องตั้ง config ก่อนใช้จริง** (ดูด้านล่าง)
 3. job_queue: เพิ่ม field `role`/`type` + endpoint filter ตามบทบาท
 4. seed 10 บทบาทเป็น role/permission preset + dev dashboard แสดงบอร์ดงานตามบทบาท
 5. (ภายหลัง, ต้องออกแบบเพิ่ม) ต่อ LLM worker จริงให้แต่ละบทบาทหยิบงานทำอัตโนมัติ — เฟสนี้คือ "หลาย agent จริง" ต้องคุย cost/limit ก่อน

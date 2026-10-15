@@ -384,6 +384,26 @@ class ServerOrgTest(unittest.TestCase):
             httpd.shutdown()
             httpd.server_close()
 
+    def test_notify_rbac_and_flow(self):
+        master_hdr, key = self._bootstrap_dev_key()  # dev = USER
+        # USER -> 403
+        st, _ = self._req("POST", "/api/admin/notify",
+                          {"event": "x", "text": "y"}, headers={"X-API-Key": key})
+        self.assertEqual(st, 403)
+        # ไม่ auth -> 401
+        st, _ = self._req("POST", "/api/admin/notify", {"event": "x", "text": "y"})
+        self.assertEqual(st, 401)
+        # text ว่าง -> 400 (notifier โยน ValueError)
+        st, _ = self._req("POST", "/api/admin/notify", {"event": "x", "text": "  "},
+                          headers=master_hdr)
+        self.assertEqual(st, 400)
+        # ADMIN + ไม่มี config -> 200 แต่ทุกช่อง skipped (ไม่ยิงเน็ตจริง)
+        st, d = self._req("POST", "/api/admin/notify",
+                          {"event": "deploy", "text": "merged PR"}, headers=master_hdr)
+        self.assertEqual(st, 200, d)
+        self.assertEqual(d["result"]["discord"], "skipped (no config)")
+        self.assertEqual(d["result"]["email"], "skipped (no config)")
+
     def test_quota_exhaustion_returns_429(self):
         master_hdr = {"X-Auth-Token": MASTER}
         self._req("POST", "/api/admin/users",

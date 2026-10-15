@@ -33,6 +33,7 @@ from app import history_store  # noqa: E402  (ประวัติ snapshot + e
 from app import finance_ledger  # noqa: E402  (บันทึกการเงิน record-only, SQLite)
 from app import usage_store  # noqa: E402  (บันทึกการใช้งาน API ต่อ key, SQLite)
 from app.rate_limit import RateLimiter  # noqa: E402  (จำกัด request ต่อ IP)
+from app import notifier  # noqa: E402  (แจ้งเตือน Discord/email, config-driven)
 from sysmanager.monitor import collect as _collect, Analyzer as _Analyzer  # noqa: E402
 
 APP_DIR = Path(__file__).parent / "app"
@@ -298,6 +299,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                     self._handle_finance_set_status()
                 elif parsed.path == "/api/admin/finance/delete":
                     self._handle_finance_delete()
+                elif parsed.path == "/api/admin/notify":
+                    self._handle_notify()
                 else:
                     self._send_json(404, {"error": "not found"})
             except (json.JSONDecodeError, KeyError) as e:
@@ -470,6 +473,18 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 return
             ok = finance_ledger.delete_entry(project_root, int(entry_id))
             self._send_json(200 if ok else 404, {"success": ok})
+
+        # ---------- Controller: Notify route (ADMIN) ----------
+        def _handle_notify(self):
+            if self._require("ADMIN") is None:
+                return
+            data = self._read_json_body()
+            event = data.get("event", "")
+            text = data.get("text", "")
+            channels = data.get("channels") or list(notifier.VALID_CHANNELS)
+            # notifier.notify โยน ValueError ถ้า text ว่าง -> 400 ใน do_POST
+            result = notifier.notify(project_root, event, text, channels=channels)
+            self._send_json(200, {"result": result})
 
         def _handle_chat(self):
             ident = self._require("USER")
