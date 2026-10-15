@@ -32,6 +32,7 @@ from app import job_queue  # noqa: E402  (คิวงาน server เก็บ
 from app import history_store  # noqa: E402  (ประวัติ snapshot + error log, SQLite)
 from app import finance_ledger  # noqa: E402  (บันทึกการเงิน record-only, SQLite)
 from app import usage_store  # noqa: E402  (บันทึกการใช้งาน API ต่อ key, SQLite)
+from app.rate_limit import RateLimiter  # noqa: E402  (จำกัด request ต่อ IP)
 from sysmanager.monitor import collect as _collect, Analyzer as _Analyzer  # noqa: E402
 
 APP_DIR = Path(__file__).parent / "app"
@@ -39,7 +40,12 @@ INDEX_HTML = APP_DIR / "index.html"
 DEV_HTML = APP_DIR / "dev.html"
 
 
-def make_handler(project_root: Path, auth_token: Optional[str]):
+def make_handler(project_root: Path, auth_token: Optional[str],
+                 rate_limit_max: int = 300, rate_limit_window: float = 60.0):
+    # limiter เดียวใช้ร่วมทุก thread ของ server นี้ (in-memory ต่อ process)
+    # ค่าเริ่มต้น 300 req/60s ต่อ IP — กันยิงถล่มโดยไม่รบกวนการใช้งานปกติ
+    api_rate_limiter = RateLimiter(rate_limit_max, rate_limit_window)
+
     class LocalAssistantHandler(BaseHTTPRequestHandler):
         # ปิด log เริ่มต้นของ http.server ที่รก stdout — ใช้ log สั้นแทน
         def log_message(self, fmt, *args):
@@ -81,9 +87,21 @@ def make_handler(project_root: Path, auth_token: Optional[str]):
             raw = self.rfile.read(length)
             return json.loads(raw.decode("utf-8"))
 
+        def _rate_limited(self, parsed) -> bool:
+            """จำกัดเฉพาะ /api/ ต่อ IP — ถ้าเกินโควตาตอบ 429 แล้วคืน True (ผู้เรียกต้อง return)"""
+            if not parsed.path.startswith("/api/"):
+                return False
+            client = self.client_address[0] if self.client_address else "unknown"
+            if not api_rate_limiter.allow(client):
+                self._send_json(429, {"error": "เรียก API ถี่เกินไป — รอสักครู่แล้วลองใหม่ (rate limit)"})
+                return True
+            return False
+
         # ---------- View: serve index.html ----------
         def do_GET(self):
             parsed = urlparse(self.path)
+            if self._rate_limited(parsed):
+                return
             if parsed.path == "/":
                 self._serve_index()
             elif parsed.path == "/dev":
@@ -245,6 +263,8 @@ def make_handler(project_root: Path, auth_token: Optional[str]):
         # ---------- Controller: API routes ----------
         def do_POST(self):
             parsed = urlparse(self.path)
+            if self._rate_limited(parsed):
+                return
             try:
                 if parsed.path == "/api/chat":
                     self._handle_chat()
@@ -496,6 +516,10 @@ def make_handler(project_root: Path, auth_token: Optional[str]):
             self._send_json(200, {"reply": reply})
 
         def _handle_todos_get(self):
+            # เดิม GET /api/todos เปิดสาธารณะ — ปิดให้ต้อง USER ขึ้นไป (สอดคล้องกับ
+            # POST/toggle/delete). โหมด local (ไม่ตั้ง token) ยังถือเป็น CEO จึงใช้ได้ตามเดิม
+            if self._require("USER") is None:
+                return
             todos = load_todos(project_root)
             self._send_json(200, todos)
 
