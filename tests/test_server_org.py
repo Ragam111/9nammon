@@ -264,6 +264,50 @@ class ServerOrgTest(unittest.TestCase):
         self.assertEqual(st, 200)
         self.assertEqual(len(d["snapshots"]), 1)
 
+    def test_finance_rbac_and_flow(self):
+        master_hdr, key = self._bootstrap_dev_key()  # dev = USER
+        # USER เข้าไม่ได้ -> 403
+        st, _ = self._req("GET", "/api/admin/finance", headers={"X-API-Key": key})
+        self.assertEqual(st, 403)
+        # ไม่ auth -> 401
+        st, _ = self._req("POST", "/api/admin/finance", {"amount": 10, "direction": "in"})
+        self.assertEqual(st, 401)
+        # ADMIN บันทึก "เบิก 1500 รอโอน" -> 200 pending
+        st, d = self._req("POST", "/api/admin/finance",
+                          {"amount": 1500, "direction": "in", "note": "เบิก - รอหัวหน้าโอน"},
+                          headers=master_hdr)
+        self.assertEqual(st, 200, d)
+        eid = d["entry"]["id"]
+        self.assertEqual(d["entry"]["status"], "pending")
+        # amount พัง -> 400
+        st, _ = self._req("POST", "/api/admin/finance",
+                          {"amount": -5, "direction": "in"}, headers=master_hdr)
+        self.assertEqual(st, 400)
+        # status ขัดทิศทาง (in -> paid) -> 400
+        st, _ = self._req("POST", "/api/admin/finance/status",
+                          {"id": eid, "status": "paid"}, headers=master_hdr)
+        self.assertEqual(st, 400)
+        # mark received -> 200
+        st, d = self._req("POST", "/api/admin/finance/status",
+                          {"id": eid, "status": "received"}, headers=master_hdr)
+        self.assertEqual(st, 200, d)
+        self.assertEqual(d["entry"]["status"], "received")
+        # summary สะท้อน balance
+        st, d = self._req("GET", "/api/admin/finance/summary", headers=master_hdr)
+        self.assertEqual(st, 200, d)
+        self.assertEqual(d["summary"]["received_in"], 1500.0)
+        self.assertEqual(d["summary"]["balance"], 1500.0)
+        # list filter
+        st, d = self._req("GET", "/api/admin/finance?status=received", headers=master_hdr)
+        self.assertEqual(st, 200)
+        self.assertEqual(len(d["entries"]), 1)
+        # delete + 404
+        st, d = self._req("POST", "/api/admin/finance/delete", {"id": eid}, headers=master_hdr)
+        self.assertEqual(st, 200)
+        self.assertTrue(d["success"])
+        st, _ = self._req("POST", "/api/admin/finance/delete", {"id": eid}, headers=master_hdr)
+        self.assertEqual(st, 404)
+
     def test_quota_exhaustion_returns_429(self):
         master_hdr = {"X-Auth-Token": MASTER}
         self._req("POST", "/api/admin/users",

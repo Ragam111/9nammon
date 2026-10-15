@@ -29,6 +29,7 @@ from app import org_store  # noqa: E402  (ระบบองค์กร: user/r
 from sysmanager.sysinfo import get_system_info  # noqa: E402  (spec เครื่องสำหรับ dev view)
 from app import job_queue  # noqa: E402  (คิวงาน server เก็บด้วย SQLite)
 from app import history_store  # noqa: E402  (ประวัติ snapshot + error log, SQLite)
+from app import finance_ledger  # noqa: E402  (บันทึกการเงิน record-only, SQLite)
 from sysmanager.monitor import collect as _collect, Analyzer as _Analyzer  # noqa: E402
 
 APP_DIR = Path(__file__).parent / "app"
@@ -101,6 +102,10 @@ def make_handler(project_root: Path, auth_token: Optional[str]):
                 self._handle_history_snapshots(parsed)
             elif parsed.path == "/api/admin/history/errors":
                 self._handle_history_errors(parsed)
+            elif parsed.path == "/api/admin/finance":
+                self._handle_finance_list(parsed)
+            elif parsed.path == "/api/admin/finance/summary":
+                self._handle_finance_summary()
             else:
                 self._send_json(404, {"error": "not found"})
 
@@ -167,6 +172,24 @@ def make_handler(project_root: Path, auth_token: Optional[str]):
                 return
             self._send_json(200, {"errors": errors})
 
+        def _handle_finance_list(self, parsed):
+            if self._require("ADMIN") is None:
+                return
+            qs = parse_qs(parsed.query)
+            status = qs.get("status", [None])[0]
+            direction = qs.get("direction", [None])[0]
+            try:
+                entries = finance_ledger.list_entries(project_root, status=status, direction=direction)
+            except ValueError as e:
+                self._send_json(400, {"error": str(e)})
+                return
+            self._send_json(200, {"entries": entries})
+
+        def _handle_finance_summary(self):
+            if self._require("ADMIN") is None:
+                return
+            self._send_json(200, {"summary": finance_ledger.summary(project_root)})
+
         def _serve_index(self):
             try:
                 html = INDEX_HTML.read_text(encoding="utf-8")
@@ -231,6 +254,12 @@ def make_handler(project_root: Path, auth_token: Optional[str]):
                     self._handle_history_record_snapshot()
                 elif parsed.path == "/api/admin/history/errors":
                     self._handle_history_log_error()
+                elif parsed.path == "/api/admin/finance":
+                    self._handle_finance_record()
+                elif parsed.path == "/api/admin/finance/status":
+                    self._handle_finance_set_status()
+                elif parsed.path == "/api/admin/finance/delete":
+                    self._handle_finance_delete()
                 else:
                     self._send_json(404, {"error": "not found"})
             except (json.JSONDecodeError, KeyError) as e:
@@ -362,6 +391,47 @@ def make_handler(project_root: Path, auth_token: Optional[str]):
                 data.get("message", ""),
             )  # ValueError -> 400 ใน do_POST
             self._send_json(200, {"error_entry": entry})
+
+        # ---------- Controller: Finance ledger routes (ADMIN, record-only) ----------
+        def _handle_finance_record(self):
+            if self._require("ADMIN") is None:
+                return
+            data = self._read_json_body()
+            entry = finance_ledger.record_entry(
+                project_root,
+                data.get("amount"),
+                data.get("direction", ""),
+                note=data.get("note", ""),
+                category=data.get("category", ""),
+                status=data.get("status", "pending"),
+            )  # ValueError -> 400 ใน do_POST
+            self._send_json(200, {"entry": entry})
+
+        def _handle_finance_set_status(self):
+            if self._require("ADMIN") is None:
+                return
+            data = self._read_json_body()
+            entry_id = data.get("id")
+            status = data.get("status", "")
+            if entry_id is None:
+                self._send_json(400, {"error": "ต้องระบุ id"})
+                return
+            entry = finance_ledger.set_status(project_root, int(entry_id), status)  # ValueError -> 400
+            if entry is None:
+                self._send_json(404, {"success": False})
+                return
+            self._send_json(200, {"entry": entry})
+
+        def _handle_finance_delete(self):
+            if self._require("ADMIN") is None:
+                return
+            data = self._read_json_body()
+            entry_id = data.get("id")
+            if entry_id is None:
+                self._send_json(400, {"error": "ต้องระบุ id"})
+                return
+            ok = finance_ledger.delete_entry(project_root, int(entry_id))
+            self._send_json(200 if ok else 404, {"success": ok})
 
         def _handle_chat(self):
             ident = self._require("USER")
