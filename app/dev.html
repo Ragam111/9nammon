@@ -4,48 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>LCA — Dev View</title>
-  <style>
-    :root {
-      --bg: #0f1116; --card: #1a1e27; --fg: #e6e8ee; --muted: #9aa3b2;
-      --accent: #5b9dff; --ok: #3fb950; --warn: #d29922; --bad: #f85149; --line: #2a2f3a;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0; background: var(--bg); color: var(--fg);
-      font-family: system-ui, -apple-system, "Segoe UI", sans-serif; line-height: 1.5;
-    }
-    header {
-      padding: 16px; border-bottom: 1px solid var(--line);
-      display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
-    }
-    h1 { font-size: 18px; margin: 0; }
-    .muted { color: var(--muted); }
-    main { padding: 16px; max-width: 980px; margin: 0 auto; }
-    input {
-      background: #11141b; color: var(--fg); border: 1px solid var(--line);
-      border-radius: 8px; padding: 8px 10px; font-size: 14px; min-width: 0;
-    }
-    button {
-      background: var(--accent); color: #06101f; border: 0; border-radius: 8px;
-      padding: 8px 14px; font-weight: 600; cursor: pointer;
-    }
-    button:disabled { opacity: .5; cursor: default; }
-    .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
-    .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
-    .card h2 { font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); margin: 0 0 10px; }
-    .kv { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; font-size: 14px; }
-    .kv span:last-child { color: var(--fg); text-align: right; word-break: break-word; }
-    .tag { font-size: 11px; padding: 2px 6px; border-radius: 6px; border: 1px solid var(--line); }
-    .tag.ok { color: var(--ok); border-color: var(--ok); }
-    .tag.bad { color: var(--warn); border-color: var(--warn); }
-    .note { font-size: 13px; color: var(--muted); margin-top: 6px; }
-    .err { color: var(--bad); font-size: 14px; }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    td, th { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--line); }
-    th { color: var(--muted); font-weight: 600; }
-  </style>
+  <link rel="stylesheet" href="/app.css">
 </head>
-<body>
+<body class="page-dev">
   <header>
     <h1>LCA — Dev View</h1>
     <span class="muted" id="who">ต้องเป็น ADMIN ขึ้นไป</span>

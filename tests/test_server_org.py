@@ -201,8 +201,9 @@ class ServerOrgTest(unittest.TestCase):
         body = resp.read().decode("utf-8")
         conn.close()
         self.assertEqual(resp.status, 200)
-        # UX polish markers: responsive + ปุ่มสลับเมนู + ที่แสดง error ของ todo
-        self.assertIn("@media (max-width: 720px)", body)
+        # ใช้ design system กลาง (app.css) + ยังมี marker UX เดิมในมาร์กอัป
+        self.assertIn('href="/app.css"', body)
+        self.assertIn('class="page-chat"', body)
         self.assertIn('id="sidebar-toggle"', body)
         self.assertIn('id="todo-msg"', body)
 
@@ -214,6 +215,22 @@ class ServerOrgTest(unittest.TestCase):
         conn.close()
         self.assertEqual(resp.status, 200)
         self.assertIn("Dev View", body)
+        self.assertIn('href="/app.css"', body)
+        self.assertIn('class="page-dev"', body)
+
+    def test_app_css_served(self):
+        # design system กลางต้องเสิร์ฟได้ เป็น text/css และมี token + responsive
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("GET", "/app.css")
+        resp = conn.getresponse()
+        body = resp.read().decode("utf-8")
+        ctype = resp.getheader("Content-Type") or ""
+        conn.close()
+        self.assertEqual(resp.status, 200)
+        self.assertIn("text/css", ctype)
+        self.assertIn("--lca-bg", body)                     # มี design token
+        self.assertIn("@media (max-width: 720px)", body)    # responsive ย้ายมาอยู่ที่นี่
+        self.assertIn("prefers-reduced-motion", body)       # กฎ perf สำหรับเครื่องอ่อน
 
     def test_jobs_crud_and_rbac(self):
         master_hdr, key = self._bootstrap_dev_key()  # dev = USER
