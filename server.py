@@ -40,6 +40,7 @@ from sysmanager.monitor import collect as _collect, Analyzer as _Analyzer  # noq
 APP_DIR = Path(__file__).parent / "app"
 INDEX_HTML = APP_DIR / "index.html"
 DEV_HTML = APP_DIR / "dev.html"
+APP_CSS = APP_DIR / "app.css"
 
 
 def make_handler(project_root: Path, auth_token: Optional[str],
@@ -108,6 +109,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._serve_index()
             elif parsed.path == "/dev":
                 self._serve_dev()
+            elif parsed.path == "/app.css":
+                self._serve_css()
             elif parsed.path == "/api/todos":
                 self._handle_todos_get()
             elif parsed.path == "/api/sysinfo":
@@ -268,6 +271,22 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _serve_css(self):
+            # design system กลาง — เสิร์ฟครั้งเดียว เบราว์เซอร์ cache ไว้ (ดีกับเครื่องอ่อน)
+            # เปิดสาธารณะเหมือน index/dev (เป็นแค่สไตล์ ไม่มีข้อมูลลับ)
+            try:
+                css = APP_CSS.read_text(encoding="utf-8")
+            except OSError as e:
+                self._send_json(500, {"error": f"อ่าน app.css ไม่ได้: {e}"})
+                return
+            body = css.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/css; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "public, max-age=3600")
             self.end_headers()
             self.wfile.write(body)
 

@@ -1,0 +1,232 @@
+/*
+ * app.css — LCA Design System (ไฟล์กลางไฟล์เดียว ใช้ร่วมทุกหน้า)
+ *
+ * เป้าหมาย: ประสิทธิภาพต้องไม่พังบนโน้ตบุ๊กเครื่องอ่อน (Intel U-series เก่า, iGPU, RAM 8GB)
+ * กฎประสิทธิภาพที่ยึด (ดู docs/DESIGN_SYSTEM.md):
+ *   1. ฟอนต์ระบบล้วน — ไม่ดึง webfont จากเน็ต (ไม่มี FOIT/โหลดหน่วง ไม่กินเน็ต/แรม)
+ *   2. ไม่มี backdrop-filter / filter: blur / shadow หนา ๆ — iGPU เก่าวาดช้า เปลืองแบต
+ *   3. เส้นขอบแทนเงาในลิสต์ที่สกรอล (รีเพนต์ถูกกว่า)
+ *   4. transition เฉพาะปุ่ม/ลิงก์ สั้น ๆ และปิดทั้งหมดเมื่อ prefers-reduced-motion
+ *   5. โทเคนสีชุดเดียว รองรับ light/dark ตาม OS โดยไม่ต้องมี JS (ลดงาน main thread)
+ *
+ * โครงสร้าง: :root tokens -> base -> components ที่ใช้ร่วม -> หน้าแชท (index) -> หน้า dev
+ */
+
+/* ============ tokens (ธีมสว่างเป็นค่าตั้งต้นบน :root) ============ */
+:root {
+  --lca-bg: #f5f6f4;
+  --lca-surface: #ffffff;
+  --lca-surface-2: #eceee9;
+  --lca-line: #d9ddd4;
+  --lca-fg: #1b201a;
+  --lca-muted: #5e665b;
+  --lca-accent: #1f8a4c;
+  --lca-accent-weak: #e3f0e7;
+  --lca-accent-fg: #ffffff;        /* ตัวอักษรบนพื้น accent */
+  --lca-user: #dbe8f6;             /* ฟองแชทฝั่งผู้ใช้ */
+  --lca-user-line: #b9cfe6;
+  --lca-ok: #1f8a4c;
+  --lca-warn: #b7791f;
+  --lca-bad: #c23b34;
+
+  --lca-sans: system-ui, -apple-system, "Segoe UI", "Leelawadee UI", "Thonburi",
+              "Noto Sans Thai", "Sarabun", sans-serif;
+  --lca-mono: ui-monospace, "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace;
+
+  --lca-r: 10px;
+  --lca-r-lg: 14px;
+  --lca-gutter: 16px;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --lca-bg: #0e120f;
+    --lca-surface: #161b16;
+    --lca-surface-2: #1d241d;
+    --lca-line: #2a332a;
+    --lca-fg: #e7ece4;
+    --lca-muted: #94a08e;
+    --lca-accent: #45c074;
+    --lca-accent-weak: #16271c;
+    --lca-accent-fg: #06130b;
+    --lca-user: #22314a;
+    --lca-user-line: #33496b;
+    --lca-ok: #45c074;
+    --lca-warn: #e0ad4e;
+    --lca-bad: #ef6b63;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --lca-bg: #0e120f;
+  --lca-surface: #161b16;
+  --lca-surface-2: #1d241d;
+  --lca-line: #2a332a;
+  --lca-fg: #e7ece4;
+  --lca-muted: #94a08e;
+  --lca-accent: #45c074;
+  --lca-accent-weak: #16271c;
+  --lca-accent-fg: #06130b;
+  --lca-user: #22314a;
+  --lca-user-line: #33496b;
+  --lca-ok: #45c074;
+  --lca-warn: #e0ad4e;
+  --lca-bad: #ef6b63;
+  color-scheme: dark;
+}
+
+/* ============ base ============ */
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  font-family: var(--lca-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  background: var(--lca-bg);
+  color: var(--lca-fg);
+  -webkit-text-size-adjust: 100%;
+}
+.lca-mono { font-family: var(--lca-mono); }
+.lca-num { font-variant-numeric: tabular-nums; }
+.lca-muted { color: var(--lca-muted); }
+
+/* ============ components (ใช้ร่วม) ============ */
+.chip {
+  font-family: var(--lca-mono); font-size: 11px;
+  padding: 2px 8px; border-radius: 999px;
+  border: 1px solid var(--lca-line); color: var(--lca-muted);
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.chip.ok   { color: var(--lca-ok);   border-color: var(--lca-ok); }
+.chip.warn { color: var(--lca-warn); border-color: var(--lca-warn); }
+.chip.bad  { color: var(--lca-bad);  border-color: var(--lca-bad); }
+.chip .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+
+/* ปุ่มมาตรฐาน (ใช้คลาส ไม่แตะ element button ตรง ๆ เพื่อไม่ชนปุ่มอื่น) */
+.lca-btn {
+  font: inherit; font-weight: 600;
+  border: 1px solid var(--lca-line); background: var(--lca-surface-2); color: var(--lca-fg);
+  border-radius: var(--lca-r); padding: 9px 15px; cursor: pointer;
+  transition: background-color .12s ease, border-color .12s ease;
+}
+.lca-btn:hover { border-color: var(--lca-accent); }
+.lca-btn.primary { background: var(--lca-accent); border-color: var(--lca-accent); color: var(--lca-accent-fg); }
+.lca-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+:where(.lca-btn, a):focus-visible,
+:where(input, textarea, select, button):focus-visible {
+  outline: 2px solid var(--lca-accent); outline-offset: 1px;
+}
+
+/* ============ หน้าแชท (index.html) ============ */
+body.page-chat { display: flex; }
+
+#sidebar {
+  width: 260px; flex: none;
+  background: var(--lca-surface); border-right: 1px solid var(--lca-line);
+  padding: var(--lca-gutter); display: flex; flex-direction: column; gap: 12px;
+}
+#sidebar h2 {
+  font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--lca-muted); margin: 4px 0 0; font-family: var(--lca-mono); font-weight: 600;
+}
+#model-select, #lang-select, #todo-input {
+  width: 100%; padding: 9px 10px; font: inherit;
+  background: var(--lca-surface-2); color: var(--lca-fg);
+  border: 1px solid var(--lca-line); border-radius: var(--lca-r);
+}
+#todo-msg { font-size: 12px; margin: 0; min-height: 16px; color: var(--lca-muted); }
+#todo-msg.err { color: var(--lca-bad); }
+#todo-list { list-style: none; padding: 0; margin: 0; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+#todo-list li {
+  padding: 7px 9px; border-radius: 8px; cursor: pointer; font-size: 13px;
+  display: flex; gap: 8px; align-items: flex-start;
+}
+#todo-list li:hover { background: var(--lca-surface-2); }
+#todo-list li.done { opacity: .5; text-decoration: line-through; }
+.todo-del { margin-left: auto; background: transparent; border: none; cursor: pointer; font-size: 13px; color: var(--lca-muted); }
+
+#main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+#main-head {
+  display: none; align-items: center; gap: 10px;
+  padding: 10px var(--lca-gutter); border-bottom: 1px solid var(--lca-line); background: var(--lca-surface);
+}
+#main-head .main-title { font-size: 14px; font-weight: 600; color: var(--lca-fg); }
+#sidebar-toggle {
+  font: inherit; background: var(--lca-surface-2); color: var(--lca-fg);
+  border: 1px solid var(--lca-line); border-radius: var(--lca-r); padding: 7px 12px; cursor: pointer;
+}
+#chat { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; }
+.msg {
+  max-width: 720px; width: fit-content; margin: 0 auto 14px; padding: 11px 15px;
+  border-radius: 13px; white-space: pre-wrap; line-height: 1.55;
+  border: 1px solid var(--lca-line); background: var(--lca-surface);
+}
+.msg.user { background: var(--lca-user); border-color: var(--lca-user-line); margin-left: auto; margin-right: 0; border-bottom-right-radius: 4px; }
+.msg.assistant { background: var(--lca-surface); margin-right: auto; margin-left: 0; border-bottom-left-radius: 4px; }
+.msg.system-note { background: transparent; border: none; color: var(--lca-muted); font-size: 12px; text-align: center; max-width: none; width: auto; }
+.msg.system-note.thinking { animation: lca-pulse 1.1s ease-in-out infinite; }
+@keyframes lca-pulse { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
+
+#status-bar { padding: 5px var(--lca-gutter); font-size: 12px; color: var(--lca-muted); }
+#input-bar { display: flex; gap: 8px; padding: var(--lca-gutter); border-top: 1px solid var(--lca-line); }
+#user-input {
+  flex: 1; min-width: 0; padding: 12px; font: inherit; font-size: 14px; resize: none;
+  background: var(--lca-surface-2); color: var(--lca-fg);
+  border: 1px solid var(--lca-line); border-radius: var(--lca-r);
+}
+#send-btn {
+  flex: none; padding: 0 20px; font: inherit; font-weight: 600;
+  background: var(--lca-accent); color: var(--lca-accent-fg); border: 1px solid var(--lca-accent);
+  border-radius: var(--lca-r); cursor: pointer;
+}
+#send-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+@media (max-width: 720px) {
+  body.page-chat { flex-direction: column; height: auto; min-height: 100%; }
+  #main-head { display: flex; }
+  #sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--lca-line); max-height: 45vh; order: 2; }
+  #main { order: 1; min-height: 55vh; }
+  body.nav-collapsed #sidebar { display: none; }
+  .msg { max-width: 100%; }
+  #chat { padding: var(--lca-gutter); }
+  #user-input { font-size: 16px; } /* กัน iOS zoom ตอนโฟกัส */
+}
+
+/* ============ หน้า dev (dev.html) — scope ใต้ .page-dev กันชนหน้าอื่น ============ */
+.page-dev header {
+  padding: 14px var(--lca-gutter); border-bottom: 1px solid var(--lca-line);
+  display: flex; gap: 12px; align-items: center; flex-wrap: wrap; background: var(--lca-surface);
+}
+.page-dev h1 { font-size: 17px; margin: 0; }
+.page-dev main { padding: var(--lca-gutter); max-width: 980px; margin: 0 auto; }
+.page-dev input {
+  font: inherit; background: var(--lca-surface-2); color: var(--lca-fg);
+  border: 1px solid var(--lca-line); border-radius: var(--lca-r); padding: 9px 11px; min-width: 0;
+}
+.page-dev button {
+  font: inherit; font-weight: 600; background: var(--lca-accent); color: var(--lca-accent-fg);
+  border: 1px solid var(--lca-accent); border-radius: var(--lca-r); padding: 9px 14px; cursor: pointer;
+}
+.page-dev button:disabled { opacity: .5; cursor: default; }
+.page-dev .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.page-dev .card { background: var(--lca-surface); border: 1px solid var(--lca-line); border-radius: var(--lca-r-lg); padding: 14px; }
+.page-dev .card h2 { font-size: 12px; letter-spacing: .05em; text-transform: uppercase; color: var(--lca-muted); margin: 0 0 10px; font-family: var(--lca-mono); }
+.page-dev .kv { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; font-size: 14px; }
+.page-dev .kv span:last-child { color: var(--lca-fg); text-align: right; word-break: break-word; font-variant-numeric: tabular-nums; }
+.page-dev .tag { font-size: 11px; padding: 2px 7px; border-radius: 6px; border: 1px solid var(--lca-line); font-family: var(--lca-mono); }
+.page-dev .tag.ok { color: var(--lca-ok); border-color: var(--lca-ok); }
+.page-dev .tag.bad { color: var(--lca-warn); border-color: var(--lca-warn); }
+.page-dev .muted { color: var(--lca-muted); }
+.page-dev .note { font-size: 13px; color: var(--lca-muted); margin-top: 6px; }
+.page-dev .err { color: var(--lca-bad); font-size: 14px; }
+.page-dev table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.page-dev td, .page-dev th { text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--lca-line); }
+.page-dev th { color: var(--lca-muted); font-weight: 600; }
+
+/* ============ ปิด motion เมื่อผู้ใช้ขอ (ช่วยเครื่องอ่อน + accessibility) ============ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+}
