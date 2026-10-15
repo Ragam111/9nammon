@@ -152,6 +152,34 @@ class ServerOrgTest(unittest.TestCase):
         keys = org_store.list_api_keys(Path(self._tmp.name))
         self.assertEqual(keys[0]["used_today"], 1)  # หักพอดี 1
 
+    def test_delete_todo_route(self):
+        master_hdr = {"X-Auth-Token": MASTER}
+        self._req("POST", "/api/admin/users",
+                  {"username": "boss", "password": "password123", "role": "CEO"},
+                  headers=master_hdr)
+        st, item = self._req("POST", "/api/todos", {"text": "temp"}, headers=master_hdr)
+        self.assertEqual(st, 200, item)
+        tid = item["id"]
+        # ลบได้
+        st, d = self._req("POST", "/api/todos/delete", {"id": tid}, headers=master_hdr)
+        self.assertEqual(st, 200)
+        self.assertTrue(d["success"])
+        # หายจริง
+        _, todos = self._req("GET", "/api/todos")
+        self.assertEqual([t for t in todos if t["id"] == tid], [])
+        # ลบ id ที่ไม่มี -> 404
+        st, _ = self._req("POST", "/api/todos/delete", {"id": 99999}, headers=master_hdr)
+        self.assertEqual(st, 404)
+
+    def test_delete_todo_requires_auth(self):
+        master_hdr = {"X-Auth-Token": MASTER}
+        self._req("POST", "/api/admin/users",
+                  {"username": "boss", "password": "password123", "role": "CEO"},
+                  headers=master_hdr)
+        # ตั้ง token ไว้ แต่ไม่ส่ง auth -> 401
+        st, _ = self._req("POST", "/api/todos/delete", {"id": 1})
+        self.assertEqual(st, 401)
+
     def test_quota_exhaustion_returns_429(self):
         master_hdr = {"X-Auth-Token": MASTER}
         self._req("POST", "/api/admin/users",

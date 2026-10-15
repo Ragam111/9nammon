@@ -156,8 +156,17 @@ async function loadTodos() {
     todos.forEach((t) => {
       const li = document.createElement('li');
       li.className = t.done ? 'done' : '';
-      li.textContent = '#' + t.id + ' ' + t.text;
-      li.addEventListener('click', () => toggleTodo(t.id));
+      const label = document.createElement('span');
+      label.textContent = '#' + t.id + ' ' + t.text;
+      label.style.cursor = 'pointer';
+      label.addEventListener('click', () => toggleTodo(t.id));
+      const del = document.createElement('button');
+      del.textContent = '🗑';
+      del.title = 'ลบ';
+      del.className = 'todo-del';
+      del.addEventListener('click', (e) => { e.stopPropagation(); deleteTodo(t.id); });
+      li.appendChild(label);
+      li.appendChild(del);
       todoList.appendChild(li);
     });
   } catch (err) {
@@ -175,6 +184,19 @@ async function toggleTodo(id) {
     loadTodos();
   } catch (err) {
     console.error('toggle todo ไม่สำเร็จ:', err);
+  }
+}
+
+async function deleteTodo(id) {
+  try {
+    await fetch('/api/todos/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
+    loadTodos();
+  } catch (err) {
+    console.error('ลบ todo ไม่สำเร็จ:', err);
   }
 }
 

@@ -146,6 +146,8 @@ def make_handler(project_root: Path, auth_token: Optional[str]):
                     self._handle_todos_post()
                 elif parsed.path == "/api/todos/toggle":
                     self._handle_todos_toggle()
+                elif parsed.path == "/api/todos/delete":
+                    self._handle_todos_delete()
                 elif parsed.path == "/api/admin/users":
                     self._handle_users_create()
                 elif parsed.path == "/api/admin/users/active":
@@ -285,6 +287,17 @@ def make_handler(project_root: Path, auth_token: Optional[str]):
                 self._send_json(400, {"error": "ต้องระบุ id"})
                 return
             ok = toggle_todo(project_root, int(todo_id))
+            self._send_json(200 if ok else 404, {"success": ok})
+
+        def _handle_todos_delete(self):
+            if self._require("USER") is None:
+                return
+            data = self._read_json_body()
+            todo_id = data.get("id")
+            if todo_id is None:
+                self._send_json(400, {"error": "ต้องระบุ id"})
+                return
+            ok = delete_todo(project_root, int(todo_id))
             self._send_json(200 if ok else 404, {"success": ok})
 
     return LocalAssistantHandler
