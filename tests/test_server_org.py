@@ -237,6 +237,33 @@ class ServerOrgTest(unittest.TestCase):
         st, _ = self._req("POST", "/api/admin/jobs/delete", {"id": jid}, headers=master_hdr)
         self.assertEqual(st, 404)
 
+    def test_history_rbac_and_flow(self):
+        master_hdr, key = self._bootstrap_dev_key()  # dev = USER
+        # USER เข้าไม่ได้ -> 403
+        st, _ = self._req("GET", "/api/admin/history/errors", headers={"X-API-Key": key})
+        self.assertEqual(st, 403)
+        # log error (ADMIN)
+        st, d = self._req("POST", "/api/admin/history/errors",
+                          {"level": "error", "source": "test", "message": "boom"},
+                          headers=master_hdr)
+        self.assertEqual(st, 200, d)
+        # bad level -> 400
+        st, _ = self._req("POST", "/api/admin/history/errors",
+                          {"level": "bogus", "message": "x"}, headers=master_hdr)
+        self.assertEqual(st, 400)
+        # list errors
+        st, d = self._req("GET", "/api/admin/history/errors", headers=master_hdr)
+        self.assertEqual(st, 200)
+        self.assertEqual(len(d["errors"]), 1)
+        # record a live snapshot (short interval) + list
+        st, d = self._req("POST", "/api/admin/history/snapshot",
+                          {"interval": 0.1}, headers=master_hdr)
+        self.assertEqual(st, 200, d)
+        self.assertIn("cpu_percent", d["snapshot"])
+        st, d = self._req("GET", "/api/admin/history/snapshots", headers=master_hdr)
+        self.assertEqual(st, 200)
+        self.assertEqual(len(d["snapshots"]), 1)
+
     def test_quota_exhaustion_returns_429(self):
         master_hdr = {"X-Auth-Token": MASTER}
         self._req("POST", "/api/admin/users",
