@@ -48,6 +48,35 @@
   }
   #send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
   #status-bar { padding: 4px 24px; font-size: 12px; color: #8b8b96; }
+  .todo-del { margin-left: auto; background: transparent; border: none; cursor: pointer; font-size: 13px; }
+  #todo-msg { font-size: 12px; margin: 0; min-height: 16px; }
+  #todo-msg.err { color: #ff6b6b; }
+  /* แถบหัวของ main — มีปุ่มสลับเมนูสำหรับจอเล็ก (ซ่อนบน desktop) */
+  #main-head { display: none; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid #26262e; }
+  #main-head .main-title { font-size: 14px; color: #c8c8d0; }
+  #sidebar-toggle {
+    background: #1e1e26; color: #e8e8ec; border: 1px solid #2e2e38;
+    border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 13px;
+  }
+  /* สถานะกำลังคิด: จุดกระพริบเบา ๆ ให้รู้ว่าระบบทำงานอยู่ */
+  .msg.system-note.thinking { animation: pulse 1.1s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: .45; } 50% { opacity: 1; } }
+
+  /* ----- responsive: จอเล็ก/มือถือ ----- */
+  @media (max-width: 720px) {
+    body { flex-direction: column; height: auto; min-height: 100vh; }
+    #main-head { display: flex; }
+    #sidebar {
+      width: 100%; border-right: none; border-bottom: 1px solid #26262e;
+      max-height: 45vh; order: 2;
+    }
+    #main { order: 1; min-height: 55vh; }
+    body.nav-collapsed #sidebar { display: none; }
+    .msg { max-width: 100%; }
+    #chat { padding: 16px; }
+    #input-bar, #status-bar { padding-left: 16px; padding-right: 16px; }
+    #user-input { font-size: 16px; } /* กัน iOS zoom ตอนโฟกัส */
+  }
 </style>
 </head>
 <body>
@@ -69,10 +98,15 @@
 
   <h2>Todo</h2>
   <input id="todo-input" placeholder="เพิ่ม todo แล้วกด Enter">
+  <p id="todo-msg"></p>
   <ul id="todo-list"></ul>
 </div>
 
 <div id="main">
+  <div id="main-head">
+    <button id="sidebar-toggle" aria-label="สลับเมนู">☰ เมนู</button>
+    <span class="main-title">Local Code Assistant</span>
+  </div>
   <div id="chat"></div>
   <div id="status-bar">โมเดลไม่ได้ต่อเน็ตเอง — ระบบรันผ่าน Ollama ในเครื่องเท่านั้น</div>
   <div id="input-bar">
@@ -89,8 +123,16 @@ const modelSelect = document.getElementById('model-select');
 const langSelect = document.getElementById('lang-select');
 const todoInput = document.getElementById('todo-input');
 const todoList = document.getElementById('todo-list');
+const todoMsg = document.getElementById('todo-msg');
+const sidebarToggle = document.getElementById('sidebar-toggle');
 
 let history = [];
+
+// จอเล็ก: เริ่มด้วยเมนูพับไว้ ให้เห็นแชทเต็มจอก่อน
+if (window.matchMedia && window.matchMedia('(max-width: 720px)').matches) {
+  document.body.classList.add('nav-collapsed');
+}
+sidebarToggle.addEventListener('click', () => document.body.classList.toggle('nav-collapsed'));
 
 function addMessage(role, text) {
   const div = document.createElement('div');
@@ -110,6 +152,7 @@ async function sendMessage() {
   addMessage('user', text);
   history.push({ role: 'user', content: text });
   const thinking = addMessage('system-note', '(กำลังคิด...)');
+  thinking.classList.add('thinking');
 
   try {
     const res = await fetch('/api/chat', {
@@ -148,10 +191,25 @@ inputEl.addEventListener('keydown', (e) => {
 });
 
 // ---------- Todo ----------
+function setTodoMsg(text, isErr) {
+  todoMsg.textContent = text || '';
+  todoMsg.className = isErr ? 'err' : '';
+}
+
 async function loadTodos() {
   try {
     const res = await fetch('/api/todos');
+    if (res.status === 401) {
+      todoList.innerHTML = '';
+      setTodoMsg('ต้องล็อกอิน/ตั้ง token เพื่อดู todo', true);
+      return;
+    }
+    if (!res.ok) {
+      setTodoMsg('โหลด todo ไม่ได้ (error ' + res.status + ')', true);
+      return;
+    }
     const todos = await res.json();
+    setTodoMsg('');
     todoList.innerHTML = '';
     todos.forEach((t) => {
       const li = document.createElement('li');
@@ -170,6 +228,7 @@ async function loadTodos() {
       todoList.appendChild(li);
     });
   } catch (err) {
+    setTodoMsg('ต่อ server ไม่ได้', true);
     console.error('โหลด todo ไม่สำเร็จ:', err);
   }
 }
