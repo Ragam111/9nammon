@@ -1,0 +1,3 @@
+# windows-package / system manager — runtime dependencies
+# Cross-platform metrics backend (Windows + Linux).
+psutil>=5.9

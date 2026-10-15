@@ -11,8 +11,8 @@ context_manager.py — auto-scan ไฟล์ในโปรเจกต์ใ�
 """
 
 import fnmatch
+import os
 from pathlib import Path
-from typing import Dict, Tuple
 
 LCAIGNORE_FILE_NAME = ".lcaignore"
 MAX_FILE_SIZE_BYTES = 50 * 1024       # ไฟล์ใหญ่กว่านี้ข้าม auto-scan เสมอ
@@ -37,7 +37,7 @@ DEFAULT_IGNORE_PATTERNS = [
 
 # cache ระดับโมดูล: {project_root_str: {rel_path: (mtime, content)}}
 # อยู่ใน memory ระหว่างรันโปรแกรมเดียวเท่านั้น — ปิดโปรแกรมแล้ว cache หายไปเอง (ตั้งใจ)
-_content_cache: Dict[str, Dict[str, Tuple]] = {}
+_content_cache: dict[str, dict[str, tuple]] = {}
 
 
 def load_ignore_patterns(project_root: Path) -> list:
@@ -70,14 +70,20 @@ def scan_workspace(project_root: Path) -> list:
     operation นี้เบา (แค่ walk + match pattern ไม่อ่านเนื้อหา) เรียกทุกข้อความได้"""
     patterns = load_ignore_patterns(project_root)
     results = []
+    root_str = str(project_root)
     try:
-        for path in project_root.rglob("*"):
-            if not path.is_file():
-                continue
-            rel = str(path.relative_to(project_root))
-            if _is_ignored(rel, patterns):
-                continue
-            results.append(path)
+        # ใช้ os.walk แล้ว 'ตัด' โฟลเดอร์ที่ ignore ทิ้งตั้งแต่ตอนเดิน (ไม่ลงไปข้างใน)
+        # กันไม่ให้ไล่ node_modules/.git/venv ที่มีไฟล์เป็นหมื่นทุกข้อความ (สำคัญบนเครื่อง RAM 8GB)
+        for dirpath, dirnames, filenames in os.walk(root_str):
+            rel_dir = os.path.relpath(dirpath, root_str)
+            prefix = "" if rel_dir == "." else rel_dir.replace(os.sep, "/") + "/"
+            # prune: เหลือเฉพาะ subdir ที่ไม่ถูก ignore (แก้ dirnames in-place ตามสเปก os.walk)
+            dirnames[:] = [d for d in dirnames if not _is_ignored(prefix + d, patterns)]
+            for fn in filenames:
+                rel = prefix + fn
+                if _is_ignored(rel, patterns):
+                    continue
+                results.append(Path(dirpath) / fn)
     except OSError as e:
         print(f"[context][warn] สแกนโปรเจกต์ไม่สำเร็จ: {e}")
     return results
