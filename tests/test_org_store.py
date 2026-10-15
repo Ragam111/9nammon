@@ -131,6 +131,11 @@ class ApiKeyTest(OrgStoreTestBase):
         org_store.set_user_active(self.root, "dev", False, actor_role="CEO")
         self.assertIsNone(org_store.verify_api_key(self.root, issued["key"]))
 
+    def test_verify_key_includes_username(self):
+        issued = org_store.create_api_key(self.root, "dev", "free", actor_role="CEO")
+        rec = org_store.verify_api_key(self.root, issued["key"])
+        self.assertEqual(rec["username"], "dev")
+
     def test_list_keys_hides_secret(self):
         org_store.create_api_key(self.root, "dev", "free", actor_role="CEO")
         keys = org_store.list_api_keys(self.root)
@@ -158,6 +163,27 @@ class QuotaTest(OrgStoreTestBase):
         ok, remaining = org_store.consume_quota(self.root, kid)
         self.assertFalse(ok)
         self.assertEqual(remaining, 0)
+
+    def test_has_quota_peek_does_not_consume(self):
+        issued = org_store.create_api_key(self.root, "dev", "free", actor_role="CEO")
+        kid = issued["key_id"]
+        for _ in range(10):
+            self.assertTrue(org_store.has_quota(self.root, kid))  # peek ซ้ำ ไม่หัก
+        limit = org_store.TIER_DAILY_LIMIT["free"]
+        ok, remaining = org_store.consume_quota(self.root, kid)
+        self.assertTrue(ok)
+        self.assertEqual(remaining, limit - 1)  # เพิ่งหักครั้งแรก
+
+    def test_has_quota_false_when_exhausted(self):
+        issued = org_store.create_api_key(self.root, "dev", "free", actor_role="CEO")
+        kid = issued["key_id"]
+        for _ in range(org_store.TIER_DAILY_LIMIT["free"]):
+            org_store.consume_quota(self.root, kid)
+        self.assertFalse(org_store.has_quota(self.root, kid))
+
+    def test_has_quota_paid_always_true(self):
+        issued = org_store.create_api_key(self.root, "dev", "paid", actor_role="CEO")
+        self.assertTrue(org_store.has_quota(self.root, issued["key_id"]))
 
     def test_paid_tier_unlimited(self):
         issued = org_store.create_api_key(self.root, "dev", "paid", actor_role="CEO")

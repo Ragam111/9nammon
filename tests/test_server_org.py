@@ -53,9 +53,15 @@ class ServerOrgTest(unittest.TestCase):
 
     # ---- bootstrap + identity ----
     def test_full_org_flow(self):
-        # 1) bootstrap: สร้าง CEO คนแรกได้โดยไม่ต้อง auth
-        st, d = self._req("POST", "/api/admin/users",
+        master_hdr = {"X-Auth-Token": MASTER}
+
+        # 1) bootstrap: server ตั้ง master token ไว้ → ต้องใส่ token ถึงสร้าง CEO คนแรกได้
+        st, _ = self._req("POST", "/api/admin/users",
                           {"username": "boss", "password": "password123", "role": "CEO"})
+        self.assertEqual(st, 401)  # ไม่ใส่ token → ปฏิเสธ (กันชิงสิทธิ์)
+        st, d = self._req("POST", "/api/admin/users",
+                          {"username": "boss", "password": "password123", "role": "CEO"},
+                          headers=master_hdr)
         self.assertEqual(st, 200, d)
         self.assertTrue(d.get("bootstrap"))
 
@@ -63,8 +69,6 @@ class ServerOrgTest(unittest.TestCase):
         st, _ = self._req("POST", "/api/admin/users",
                           {"username": "x", "password": "password123", "role": "USER"})
         self.assertEqual(st, 401)
-
-        master_hdr = {"X-Auth-Token": MASTER}
 
         # 3) master token = CEO
         st, d = self._req("GET", "/api/me", headers=master_hdr)
@@ -105,10 +109,54 @@ class ServerOrgTest(unittest.TestCase):
                           headers={"X-API-Key": "lca_f_wrong"})
         self.assertEqual(st, 401)
 
-    def test_quota_exhaustion_returns_429(self):
-        self._req("POST", "/api/admin/users",
-                  {"username": "boss", "password": "password123", "role": "CEO"})
+    def _bootstrap_dev_key(self, tier="free"):
+        """ช่วย: bootstrap CEO + สร้าง dev USER + ออก key — คืน (master_hdr, key)"""
         master_hdr = {"X-Auth-Token": MASTER}
+        self._req("POST", "/api/admin/users",
+                  {"username": "boss", "password": "password123", "role": "CEO"},
+                  headers=master_hdr)
+        self._req("POST", "/api/admin/users",
+                  {"username": "dev", "password": "password123", "role": "USER"},
+                  headers=master_hdr)
+        _, d = self._req("POST", "/api/admin/apikeys",
+                         {"owner": "dev", "tier": tier}, headers=master_hdr)
+        return master_hdr, d["api_key"]["key"]
+
+    def test_api_key_user_me_has_username(self):
+        _, key = self._bootstrap_dev_key()
+        st, me = self._req("GET", "/api/me", headers={"X-API-Key": key})
+        self.assertEqual(st, 200)
+        self.assertEqual(me["username"], "dev")  # ต้องไม่เป็น null
+
+    def test_malformed_body_does_not_consume_quota(self):
+        _, key = self._bootstrap_dev_key()
+        # ส่ง body ที่ไม่ใช่ JSON → 400 และต้องไม่หักโควตา
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("POST", "/api/chat", body="{not valid json",
+                     headers={"X-API-Key": key})
+        resp = conn.getresponse()
+        resp.read()
+        conn.close()
+        self.assertEqual(resp.status, 400)
+        from app import org_store
+        keys = org_store.list_api_keys(Path(self._tmp.name))
+        self.assertEqual(keys[0]["used_today"], 0)  # ไม่โดนหัก
+
+    def test_successful_chat_consumes_one_quota(self):
+        _, key = self._bootstrap_dev_key()
+        st, _ = self._req("POST", "/api/chat",
+                          {"messages": [{"role": "user", "content": "hi"}]},
+                          headers={"X-API-Key": key})
+        self.assertEqual(st, 200)
+        from app import org_store
+        keys = org_store.list_api_keys(Path(self._tmp.name))
+        self.assertEqual(keys[0]["used_today"], 1)  # หักพอดี 1
+
+    def test_quota_exhaustion_returns_429(self):
+        master_hdr = {"X-Auth-Token": MASTER}
+        self._req("POST", "/api/admin/users",
+                  {"username": "boss", "password": "password123", "role": "CEO"},
+                  headers=master_hdr)
         self._req("POST", "/api/admin/users",
                   {"username": "dev", "password": "password123", "role": "USER"},
                   headers=master_hdr)

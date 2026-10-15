@@ -32,14 +32,31 @@ Interface หลักที่ server.py เรียกใช้:
     list_api_keys(project_root) -> list[dict]                       # ไม่คืน key/hash
 """
 
+import functools
 import hashlib
 import hmac
 import json
+import os
 import secrets
+import tempfile
+import threading
 from datetime import date, datetime
 from pathlib import Path
 
 ORG_FILE_NAME = "org.json"
+
+# server รันบน ThreadingHTTPServer → การ read-modify-write org.json ต้องกันชนกัน
+# ไม่งั้น request พร้อมกันทำให้ quota เพี้ยนหรือเขียนทับกันหาย (lost update)
+_lock = threading.RLock()
+
+
+def _synchronized(fn):
+    """ครอบฟังก์ชันที่ทำ read-modify-write org.json ให้ทำทีละตัว (atomic ต่อ process)"""
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        with _lock:
+            return fn(*args, **kwargs)
+    return wrapper
 
 # ลำดับชั้นบทบาท — ตัวเลขมากกว่า = สิทธิ์สูงกว่า
 ROLE_LEVEL = {"USER": 1, "ADMIN": 2, "CEO": 3}
@@ -82,9 +99,22 @@ def _load(project_root: Path) -> dict:
 
 
 def _save(project_root: Path, data: dict) -> None:
+    # เขียนแบบ atomic (temp + os.replace) เพื่อให้ผู้อ่านพร้อมกันเห็นไฟล์เก่าหรือใหม่เต็มๆ
+    # เสมอ ไม่เห็นไฟล์ครึ่งๆ กลางๆ (กัน JSON พังตอนอ่านชนกับตอนเขียน)
     path = _org_path(project_root)
     try:
-        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".org.", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            os.replace(tmp, path)
+        except OSError:
+            # เก็บกวาด temp ถ้าเขียน/replace ไม่สำเร็จ
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
     except OSError as e:
         # fail loud (Rule 14) แต่ไม่ทำโปรแกรมพัง — ผู้เรียกจะเห็นว่า state ไม่ถูกบันทึก
         print(f"[org][error] เขียน {ORG_FILE_NAME} ไม่ได้: {e}")
@@ -134,6 +164,7 @@ def bootstrap_needed(project_root: Path) -> bool:
     return len(_load(project_root)["users"]) == 0
 
 
+@_synchronized
 def create_user(project_root: Path, username: str, password: str, role: str,
                 created_by_role: str | None = None) -> dict:
     """สร้าง user ใหม่ คืน record (ไม่มี hash)
@@ -189,6 +220,7 @@ def verify_password(project_root: Path, username: str, password: str) -> dict | 
     return {"username": username, "role": user["role"], "active": True}
 
 
+@_synchronized
 def set_user_active(project_root: Path, username: str, active: bool, actor_role: str) -> bool:
     """เปิด/ปิด user — ต้องเป็น ADMIN ขึ้นไป คืน True ถ้าเจอและแก้สำเร็จ"""
     if not role_at_least(actor_role, "ADMIN"):
@@ -225,6 +257,7 @@ def _today_str() -> str:
     return date.today().isoformat()
 
 
+@_synchronized
 def create_api_key(project_root: Path, owner: str, tier: str, actor_role: str) -> dict:
     """ออก API key ใหม่ให้ owner — ต้องเป็น ADMIN ขึ้นไป
 
@@ -285,6 +318,7 @@ def verify_api_key(project_root: Path, raw_key: str) -> dict | None:
                 return None  # เจ้าของถูกปิด → key ใช้ไม่ได้
             return {
                 "key_id": key_id,
+                "username": owner,   # ให้ identity มี field เดียวกับ master/local (/api/me)
                 "owner": owner,
                 "role": user["role"],
                 "tier": rec.get("tier"),
@@ -293,6 +327,25 @@ def verify_api_key(project_root: Path, raw_key: str) -> dict | None:
     return None
 
 
+def has_quota(project_root: Path, key_id: str) -> bool:
+    """เช็คว่า key นี้ยังมีโควตาเหลือวันนี้ไหม โดย 'ไม่หัก' (peek อย่างเดียว)
+
+    ใช้ที่ server เพื่อปฏิเสธคำขอที่เกินโควตา 'ก่อน' ลงมือทำงานจริง แล้วค่อยเรียก
+    consume_quota หลังทำสำเร็จ — คำขอที่ล้มเหลว (body พัง/Ollama ล่ม) จะได้ไม่โดนหัก
+    """
+    data = _load(project_root)
+    rec = data["api_keys"].get(key_id)
+    if not rec or not rec.get("active", False):
+        return False
+    limit = rec.get("daily_limit", 0)
+    if limit == 0:
+        return True  # paid = ไม่จำกัด
+    if rec.get("usage_date") != _today_str():
+        return True  # ข้ามวันแล้ว โควตารีเซ็ต
+    return rec.get("used_today", 0) < limit
+
+
+@_synchronized
 def consume_quota(project_root: Path, key_id: str) -> tuple:
     """หัก 1 โควตาของ key — คืน (ok, remaining)
 
@@ -323,6 +376,7 @@ def consume_quota(project_root: Path, key_id: str) -> tuple:
     return (True, limit - rec["used_today"])
 
 
+@_synchronized
 def revoke_api_key(project_root: Path, key_id: str, actor_role: str) -> bool:
     """ยกเลิก API key (ปิดใช้งาน ไม่ลบประวัติ) — ต้องเป็น ADMIN ขึ้นไป"""
     if not role_at_least(actor_role, "ADMIN"):

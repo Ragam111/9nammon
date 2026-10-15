@@ -168,8 +168,14 @@ def make_handler(project_root: Path, auth_token: Optional[str]):
             username = data.get("username", "")
             password = data.get("password", "")
             role = data.get("role", "USER")
-            # bootstrap: ยังไม่มี user เลย → อนุญาตสร้าง CEO คนแรกโดยไม่ต้อง auth
+            # bootstrap: ยังไม่มี user เลย → สร้าง CEO คนแรกได้
+            # แต่ถ้าตั้ง master token ไว้ (เช่น เปิดออกนอก 127.0.0.1) ต้องยืนยันด้วย token
+            # ก่อน กัน attacker ใน network ชิงสร้าง CEO คนแรกก่อนเจ้าของเครื่อง
             if org_store.bootstrap_needed(project_root):
+                if auth_token and self.headers.get("X-Auth-Token") != auth_token:
+                    self._send_json(401, {"error": "bootstrap: ต้องใส่ X-Auth-Token ให้ตรง master token "
+                                                   "ก่อนสร้าง CEO คนแรก (กันการชิงสิทธิ์บน network)"})
+                    return
                 rec = org_store.create_user(project_root, username, password, role)
                 self._send_json(200, {"created": rec, "bootstrap": True})
                 return
@@ -224,13 +230,12 @@ def make_handler(project_root: Path, auth_token: Optional[str]):
             ident = self._require("USER")
             if ident is None:
                 return
-            # กินโควตาเฉพาะเมื่อเข้ามาด้วย API key (master/local ไม่มีโควตา)
-            if ident.get("key_id"):
-                ok, remaining = org_store.consume_quota(project_root, ident["key_id"])
-                if not ok:
-                    self._send_json(429, {"error": "เกินโควตาการใช้งานรายวันของ API key นี้แล้ว "
-                                                   "(อัปเกรดเป็น tier paid เพื่อใช้ได้ไม่จำกัด)"})
-                    return
+            # peek โควตาก่อนลงมือ (ปฏิเสธเร็ว) — หักจริงหลังตอบสำเร็จเท่านั้น เพื่อไม่ให้
+            # request ที่ body พังหรือ Ollama ล่มไปกินโควตาของผู้ใช้ฟรีทิ้งเปล่าๆ
+            if ident.get("key_id") and not org_store.has_quota(project_root, ident["key_id"]):
+                self._send_json(429, {"error": "เกินโควตาการใช้งานรายวันของ API key นี้แล้ว "
+                                               "(อัปเกรดเป็น tier paid เพื่อใช้ได้ไม่จำกัด)"})
+                return
             data = self._read_json_body()
             model = data.get("model", "qwen2.5-coder:0.5b")
             messages = data.get("messages", [])
@@ -251,6 +256,9 @@ def make_handler(project_root: Path, auth_token: Optional[str]):
                 # ไม่ตายทั้งโปรเซส จึงจับ SystemExit แล้วแปลงเป็น error response แทน
                 self._send_json(502, {"error": "เรียก Ollama ไม่สำเร็จ ตรวจสอบว่า ollama serve รันอยู่หรือไม่"})
                 return
+            # หักโควตาหลังได้คำตอบจริงเท่านั้น (master/local ไม่มี key_id = ไม่หัก)
+            if ident.get("key_id"):
+                org_store.consume_quota(project_root, ident["key_id"])
             self._send_json(200, {"reply": reply})
 
         def _handle_todos_get(self):
