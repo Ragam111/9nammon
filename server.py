@@ -28,6 +28,8 @@ from app.todo_store import load_todos, add_todo, toggle_todo, delete_todo  # noq
 from app import org_store  # noqa: E402  (ระบบองค์กร: user/role/api key/quota)
 from sysmanager.sysinfo import get_system_info  # noqa: E402  (spec เครื่องสำหรับ dev view)
 from app import job_queue  # noqa: E402  (คิวงาน server เก็บด้วย SQLite)
+from app import history_store  # noqa: E402  (ประวัติ snapshot + error log, SQLite)
+from sysmanager.monitor import collect as _collect, Analyzer as _Analyzer  # noqa: E402
 
 APP_DIR = Path(__file__).parent / "app"
 INDEX_HTML = APP_DIR / "index.html"
@@ -95,6 +97,10 @@ def make_handler(project_root: Path, auth_token: Optional[str]):
                 self._handle_apikeys_list()
             elif parsed.path == "/api/admin/jobs":
                 self._handle_jobs_list(parsed)
+            elif parsed.path == "/api/admin/history/snapshots":
+                self._handle_history_snapshots(parsed)
+            elif parsed.path == "/api/admin/history/errors":
+                self._handle_history_errors(parsed)
             else:
                 self._send_json(404, {"error": "not found"})
 
@@ -143,6 +149,23 @@ def make_handler(project_root: Path, auth_token: Optional[str]):
                 self._send_json(400, {"error": str(e)})
                 return
             self._send_json(200, {"jobs": jobs})
+
+        def _handle_history_snapshots(self, parsed):
+            if self._require("ADMIN") is None:
+                return
+            self._send_json(200, {"snapshots": history_store.list_snapshots(project_root)})
+
+        def _handle_history_errors(self, parsed):
+            if self._require("ADMIN") is None:
+                return
+            qs = parse_qs(parsed.query)
+            level = qs.get("level", [None])[0]
+            try:
+                errors = history_store.list_errors(project_root, level=level)
+            except ValueError as e:
+                self._send_json(400, {"error": str(e)})
+                return
+            self._send_json(200, {"errors": errors})
 
         def _serve_index(self):
             try:
@@ -204,6 +227,10 @@ def make_handler(project_root: Path, auth_token: Optional[str]):
                     self._handle_jobs_set_status()
                 elif parsed.path == "/api/admin/jobs/delete":
                     self._handle_jobs_delete()
+                elif parsed.path == "/api/admin/history/snapshot":
+                    self._handle_history_record_snapshot()
+                elif parsed.path == "/api/admin/history/errors":
+                    self._handle_history_log_error()
                 else:
                     self._send_json(404, {"error": "not found"})
             except (json.JSONDecodeError, KeyError) as e:
@@ -308,6 +335,33 @@ def make_handler(project_root: Path, auth_token: Optional[str]):
                 return
             ok = job_queue.delete_job(project_root, int(job_id))
             self._send_json(200 if ok else 404, {"success": ok})
+
+        # ---------- Controller: History / log routes (ADMIN) ----------
+        def _handle_history_record_snapshot(self):
+            if self._require("ADMIN") is None:
+                return
+            data = self._read_json_body()
+            interval = float(data.get("interval", 0.3)) if data else 0.3  # ValueError -> 400
+            report = _Analyzer().analyze(_collect(interval=interval))
+            rep = {
+                "snapshot": report.snapshot.to_dict(),
+                "verdict": report.verdict,
+                "worst_severity": report.worst.label,
+            }
+            stored = history_store.record_snapshot(project_root, rep)
+            self._send_json(200, {"snapshot": stored})
+
+        def _handle_history_log_error(self):
+            if self._require("ADMIN") is None:
+                return
+            data = self._read_json_body()
+            entry = history_store.log_error(
+                project_root,
+                data.get("level", ""),
+                data.get("source", ""),
+                data.get("message", ""),
+            )  # ValueError -> 400 ใน do_POST
+            self._send_json(200, {"error_entry": entry})
 
         def _handle_chat(self):
             ident = self._require("USER")
