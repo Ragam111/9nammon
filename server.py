@@ -16,6 +16,7 @@ View       : app/index.html (หน้าเว็บ) + JSON response (สำ�
 
 import argparse
 import json
+import sqlite3
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -30,6 +31,7 @@ from sysmanager.sysinfo import get_system_info  # noqa: E402  (spec เครื
 from app import job_queue  # noqa: E402  (คิวงาน server เก็บด้วย SQLite)
 from app import history_store  # noqa: E402  (ประวัติ snapshot + error log, SQLite)
 from app import finance_ledger  # noqa: E402  (บันทึกการเงิน record-only, SQLite)
+from app import usage_store  # noqa: E402  (บันทึกการใช้งาน API ต่อ key, SQLite)
 from sysmanager.monitor import collect as _collect, Analyzer as _Analyzer  # noqa: E402
 
 APP_DIR = Path(__file__).parent / "app"
@@ -106,6 +108,10 @@ def make_handler(project_root: Path, auth_token: Optional[str]):
                 self._handle_finance_list(parsed)
             elif parsed.path == "/api/admin/finance/summary":
                 self._handle_finance_summary()
+            elif parsed.path == "/api/admin/usage":
+                self._handle_usage_list(parsed)
+            elif parsed.path == "/api/admin/usage/summary":
+                self._handle_usage_summary()
             else:
                 self._send_json(404, {"error": "not found"})
 
@@ -189,6 +195,18 @@ def make_handler(project_root: Path, auth_token: Optional[str]):
             if self._require("ADMIN") is None:
                 return
             self._send_json(200, {"summary": finance_ledger.summary(project_root)})
+
+        def _handle_usage_list(self, parsed):
+            if self._require("ADMIN") is None:
+                return
+            qs = parse_qs(parsed.query)
+            key_id = qs.get("key_id", [None])[0]
+            self._send_json(200, {"usage": usage_store.list_usage(project_root, key_id=key_id)})
+
+        def _handle_usage_summary(self):
+            if self._require("ADMIN") is None:
+                return
+            self._send_json(200, {"summary": usage_store.summary(project_root)})
 
         def _serve_index(self):
             try:
@@ -464,8 +482,17 @@ def make_handler(project_root: Path, auth_token: Optional[str]):
                 self._send_json(502, {"error": "เรียก Ollama ไม่สำเร็จ ตรวจสอบว่า ollama serve รันอยู่หรือไม่"})
                 return
             # หักโควตาหลังได้คำตอบจริงเท่านั้น (master/local ไม่มี key_id = ไม่หัก)
+            # แล้วบันทึก usage ลง SQLite ด้วย (metering ย้อนหลัง/คิดเงินต่อ tier)
             if ident.get("key_id"):
                 org_store.consume_quota(project_root, ident["key_id"])
+                try:
+                    usage_store.record_usage(
+                        project_root, ident["key_id"], ident.get("owner"),
+                        ident.get("tier"), endpoint="chat", units=1,
+                    )
+                except (ValueError, OSError, sqlite3.Error) as e:
+                    # metering ล้ม (db locked/disk เต็ม ฯลฯ) ต้องไม่ทำ response ของผู้ใช้พัง
+                    print(f"[usage][warn] บันทึก usage ไม่สำเร็จ: {e}")
             self._send_json(200, {"reply": reply})
 
         def _handle_todos_get(self):

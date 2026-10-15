@@ -308,6 +308,29 @@ class ServerOrgTest(unittest.TestCase):
         st, _ = self._req("POST", "/api/admin/finance/delete", {"id": eid}, headers=master_hdr)
         self.assertEqual(st, 404)
 
+    def test_usage_metering_rbac_and_flow(self):
+        master_hdr, key = self._bootstrap_dev_key(tier="paid")  # dev = USER, paid
+        # USER เข้า usage admin ไม่ได้ -> 403
+        st, _ = self._req("GET", "/api/admin/usage", headers={"X-API-Key": key})
+        self.assertEqual(st, 403)
+        # ยังไม่มีการใช้ -> summary ว่าง
+        st, d = self._req("GET", "/api/admin/usage/summary", headers=master_hdr)
+        self.assertEqual(st, 200, d)
+        self.assertEqual(d["summary"]["total_units"], 0)
+        # ยิง chat 2 ครั้งด้วย paid key -> ควรบันทึก usage 2 event
+        body = {"messages": [{"role": "user", "content": "hi"}]}
+        for _ in range(2):
+            st, _ = self._req("POST", "/api/chat", body, headers={"X-API-Key": key})
+            self.assertEqual(st, 200)
+        st, d = self._req("GET", "/api/admin/usage", headers=master_hdr)
+        self.assertEqual(st, 200)
+        self.assertEqual(len(d["usage"]), 2)
+        # summary สะท้อน units + cost ต่อ tier paid
+        st, d = self._req("GET", "/api/admin/usage/summary", headers=master_hdr)
+        self.assertEqual(st, 200, d)
+        self.assertEqual(d["summary"]["total_units"], 2)
+        self.assertEqual(d["summary"]["by_tier"]["paid"]["units"], 2)
+
     def test_quota_exhaustion_returns_429(self):
         master_hdr = {"X-Auth-Token": MASTER}
         self._req("POST", "/api/admin/users",
