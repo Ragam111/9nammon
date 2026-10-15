@@ -194,6 +194,18 @@ class ServerOrgTest(unittest.TestCase):
         for k in ("cpu", "memory", "storage", "gpus", "gpu_note"):
             self.assertIn(k, info)
 
+    def test_index_page_served_has_ux(self):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("GET", "/")
+        resp = conn.getresponse()
+        body = resp.read().decode("utf-8")
+        conn.close()
+        self.assertEqual(resp.status, 200)
+        # UX polish markers: responsive + ปุ่มสลับเมนู + ที่แสดง error ของ todo
+        self.assertIn("@media (max-width: 720px)", body)
+        self.assertIn('id="sidebar-toggle"', body)
+        self.assertIn('id="todo-msg"', body)
+
     def test_dev_page_served(self):
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
         conn.request("GET", "/dev")
