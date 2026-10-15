@@ -20,6 +20,7 @@ from typing import Optional
 
 from . import __version__
 from .monitor import Analyzer, Report, Severity, collect
+from .sysinfo import get_system_info
 
 _COLORS = {
     Severity.OK: "\033[32m",        # green
@@ -112,6 +113,33 @@ def _cmd_watch(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_sysinfo(args: argparse.Namespace) -> int:
+    info = get_system_info()
+    if args.json:
+        print(json.dumps(info.to_dict(), indent=2, ensure_ascii=False))
+        return 0
+    c = info.cpu
+    print(f"System — {info.hostname}")
+    print(f"  OS       : {info.platform}  (Python {info.python})")
+    print(f"  CPU      : {c.model}")
+    cores = f"{c.physical_cores}P/{c.logical_cores}L" if c.physical_cores else f"{c.logical_cores}L"
+    freq = f" @ {c.max_freq_mhz:.0f} MHz" if c.max_freq_mhz else ""
+    print(f"             {cores} cores{freq}  [{c.arch}]")
+    print(f"  Memory   : {info.memory.total_human}")
+    print("  Storage  :")
+    for s in info.storage:
+        print(f"             {s.mountpoint:<12} {s.total_human:>10}  ({s.fstype})")
+    print("  GPU      :")
+    if info.gpus:
+        for g in info.gpus:
+            tag = "compute-capable" if g.compute_capable else "integrated/display-only"
+            print(f"             {g.name}  [{tag}]")
+    else:
+        print("             (none detected)")
+    print(f"  Note     : {info.gpu_note}")
+    return 0
+
+
 def _report_to_dict(report: Report) -> dict:
     return {
         "snapshot": report.snapshot.to_dict(),
@@ -167,6 +195,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="stop after N samples (default: 0 = run forever)",
     )
     p_watch.set_defaults(func=_cmd_watch)
+
+    p_info = sub.add_parser("sysinfo", help="static machine spec (CPU/RAM/storage/GPU)")
+    p_info.add_argument("--json", action="store_true", help="output JSON")
+    p_info.add_argument("--no-color", action="store_true", help="(accepted for consistency)")
+    p_info.set_defaults(func=_cmd_sysinfo)
     return parser
 
 
