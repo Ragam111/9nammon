@@ -20,14 +20,15 @@ Source of truth เดียวสำหรับงานพัฒนา LCA �
 | F | WebUI/UX — มือถือ responsive + visible error states | #13 |
 | N | Notifier — Discord webhook + email (config-driven) + `POST /api/admin/notify` | #14 |
 | S | Support tickets — ลูกค้าแจ้งปัญหา/ขอฟีเจอร์ + ยิงแจ้งเตือนทีม | #15 |
-| B | Phase 2 — bottleneck analyzer + `/api/metrics` (live) + ตรวจ Ollama correlate RAM/swap | (PR เปิด รอ merge) |
+| B | Phase 2 — bottleneck analyzer + `/api/metrics` (live) + ตรวจ Ollama correlate RAM/swap | #16 |
+| DS | Design system กลาง `app/app.css` เน้น perf เครื่องอ่อน (8GB/iGPU, ฟอนต์ระบบ, ไม่มี GPU effect) | #17 |
+| R | Resource dashboard — มิเตอร์ live RAM/CPU/swap/disk ใน `/dev` ดึงจาก `/api/metrics` + LCA note | #18 |
 
-สถานะ main: unittest 114 เคสผ่าน, CI เขียวทุก PR, smoke test server จริงผ่านทุก endpoint
+สถานะ main: unittest 122 เคสผ่าน, CI เขียวทุก PR, smoke test server จริงผ่านทุก endpoint
 
 ## 🔜 คิวถัดไป (autopilot ไล่อัตโนมัติ)
 | ลำดับ | งาน | หมายเหตุ |
 |------|-----|---------|
-| R | **Resource management dashboard** — หน้าจอ live RAM/CPU/disk/swap + ตัวช่วยบอก "เครื่อง 8GB รับโมเดลไหนไหว" (ต่อยอดจาก Phase 2) | ชิ้นที่ user เน้น |
 | S2 | Support dashboard ใน `/dev` — แสดง ticket + เปลี่ยนสถานะผ่าน UI | ต่อจาก Item S |
 | Q | 9arm agent quality — ปรับ system prompt / context handling ให้ตอบดีขึ้น | ต้องมีเกณฑ์วัดก่อน |
 

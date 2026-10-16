@@ -104,6 +104,15 @@ body {
 .chip.bad  { color: var(--lca-bad);  border-color: var(--lca-bad); }
 .chip .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 
+/* มิเตอร์ทรัพยากร (resource dashboard) — เบา ไม่มีเงา ไม่มีอนิเมชันวน */
+.meter { display: flex; flex-direction: column; gap: 6px; }
+.meter .row { display: flex; justify-content: space-between; align-items: baseline; font-size: 13px; }
+.meter .row .lab { font-family: var(--lca-mono); color: var(--lca-muted); font-size: 12px; }
+.track { height: 8px; border-radius: 99px; background: var(--lca-surface-2); overflow: hidden; }
+.fill { height: 100%; border-radius: 99px; background: var(--lca-ok); transition: width .2s ease; }
+.fill.warn { background: var(--lca-warn); }
+.fill.bad { background: var(--lca-bad); }
+
 /* ปุ่มมาตรฐาน (ใช้คลาส ไม่แตะ element button ตรง ๆ เพื่อไม่ชนปุ่มอื่น) */
 .lca-btn {
   font: inherit; font-weight: 600;

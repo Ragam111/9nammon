@@ -15,9 +15,16 @@
     <button id="load">โหลดข้อมูล</button>
   </header>
   <main>
-    <p class="muted">หน้าสำหรับนักพัฒนา — ดู spec เครื่อง (และ metrics เมื่อ Phase 2 พร้อม) ผ่าน
-      <code>/api/sysinfo</code> ซึ่ง gate สิทธิ์ ADMIN</p>
+    <p class="muted">หน้าสำหรับนักพัฒนา — spec เครื่อง (<code>/api/sysinfo</code>) + ทรัพยากรสด/คอขวด
+      (<code>/api/metrics</code>) ทั้งคู่ gate สิทธิ์ ADMIN</p>
     <div id="error" class="err"></div>
+    <section id="metrics-wrap" class="card" style="margin-bottom:12px" hidden>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px">
+        <h2 style="margin:0">ทรัพยากรสด</h2>
+        <button id="refresh-metrics" type="button">รีเฟรช</button>
+      </div>
+      <div id="metrics"></div>
+    </section>
     <div id="content" class="grid"></div>
   </main>
 
@@ -37,6 +44,39 @@
     }
     function kv(k, v) { return `<div class="kv"><span class="muted">${k}</span><span>${v ?? '-'}</span></div>`; }
     const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+    // ---------- ทรัพยากรสด (/api/metrics) ----------
+    function pctClass(p) { p = Number(p) || 0; return p >= 90 ? 'bad' : p >= 70 ? 'warn' : ''; }
+    function meterRow(lab, pct) {
+      const p = Math.max(0, Math.min(100, Number(pct) || 0));
+      return `<div class="meter"><div class="row"><span class="lab">${esc(lab)}</span>` +
+             `<span class="lca-num">${p.toFixed(0)}%</span></div>` +
+             `<div class="track"><div class="fill ${pctClass(p)}" style="width:${p}%"></div></div></div>`;
+    }
+    function renderMetrics(m) {
+      const snap = m.snapshot || {}, mem = snap.memory || {}, cpu = snap.cpu || {};
+      let rows = meterRow('CPU', cpu.percent) + meterRow('RAM', mem.percent);
+      if (mem.swap_total) rows += meterRow('SWAP', mem.swap_percent);
+      (snap.disks || []).filter((d) => !d.readonly).slice(0, 2)
+        .forEach((d) => { rows += meterRow('DISK ' + d.mountpoint, d.percent); });
+
+      let html = `<div style="display:flex;flex-direction:column;gap:12px">${rows}</div>`;
+      html += `<div class="note" style="margin-top:12px">${esc(m.verdict || '')}</div>`;
+      if (m.lca && m.lca.note) html += `<div class="note">LCA: ${esc(m.lca.note)}</div>`;
+      const alerts = (m.findings || []).filter((f) => f.severity !== 'OK' && f.severity !== 'INFO');
+      alerts.forEach((f) => { html += `<div class="kv"><span class="muted">${esc(f.resource)}</span><span>${esc(f.message)}</span></div>`; });
+      $('metrics').innerHTML = html;
+    }
+    async function loadMetrics() {
+      try {
+        const res = await fetch('/api/metrics', { headers: authHeaders() });
+        if (!res.ok) { $('metrics').innerHTML = `<div class="err">โหลด metrics ไม่ได้ (${res.status})</div>`; }
+        else { renderMetrics(await res.json()); }
+      } catch (err) {
+        $('metrics').innerHTML = '<div class="err">ต่อ server ไม่ได้</div>';
+      }
+      $('metrics-wrap').hidden = false;
+    }
 
     function render(info) {
       const c = info.cpu || {};
@@ -84,6 +124,7 @@
         const info = await res.json();
         $('who').textContent = 'เชื่อมต่อแล้ว';
         render(info);
+        loadMetrics();   // โหลดทรัพยากรสดต่อเลยหลัง auth ผ่าน
       } catch (err) {
         $('error').textContent = 'ต่อ server ไม่ได้: ' + err.message;
       } finally {
@@ -92,6 +133,7 @@
     }
 
     $('load').addEventListener('click', load);
+    $('refresh-metrics').addEventListener('click', loadMetrics);
     $('token').addEventListener('keydown', (e) => { if (e.key === 'Enter') load(); });
     if ($('token').value) load();
   </script>
