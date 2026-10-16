@@ -217,6 +217,8 @@ class ServerOrgTest(unittest.TestCase):
         self.assertIn("Dev View", body)
         self.assertIn('href="/app.css"', body)
         self.assertIn('class="page-dev"', body)
+        self.assertIn("/api/metrics", body)      # Item R: หน้าทรัพยากรสดเรียก metrics
+        self.assertIn('id="metrics"', body)
 
     def test_app_css_served(self):
         # design system กลางต้องเสิร์ฟได้ เป็น text/css และมี token + responsive
@@ -231,6 +233,7 @@ class ServerOrgTest(unittest.TestCase):
         self.assertIn("--lca-bg", body)                     # มี design token
         self.assertIn("@media (max-width: 720px)", body)    # responsive ย้ายมาอยู่ที่นี่
         self.assertIn("prefers-reduced-motion", body)       # กฎ perf สำหรับเครื่องอ่อน
+        self.assertIn(".fill", body)                        # Item R: มิเตอร์ทรัพยากร
 
     def test_jobs_crud_and_rbac(self):
         master_hdr, key = self._bootstrap_dev_key()  # dev = USER
