@@ -40,13 +40,11 @@ EXPECTED_PRODUCTION_PATHS = [
     "uninstall.ps1",
     "update.ps1",
     "INFO_BEFORE.txt",
-    # folder_trust.py / context_manager.py ที่ root: install.ps1 อ่านจากตรงนี้เป็น
-    # "installer source" ก่อน Copy-Item ไปวางที่ app/ ปลายทางสำหรับ runtime import
-    # (สถาปัตยกรรม root → app/ ยืนยันแล้วว่าถูกต้องจริง ไม่ใช่ mismatch — ดู
-    # SOURCE PACKAGE INVESTIGATION REPORT) — เดิมขาดจากรายการนี้ ทำให้ Production
-    # ZIP มีแค่สำเนาปลายทางใน app/ แต่ไม่มี source ให้ install.ps1 อ่าน
-    "folder_trust.py",
-    "context_manager.py",
+    # โมดูลทั้งหมดอยู่ใน app/ แล้ว (folder_trust.py, context_manager.py, app.css รวมอยู่ในนั้น)
+    # ไม่มี source แยกที่ root อีก — installer ก๊อปทั้งโฟลเดอร์ app/
+    "sysmanager",        # จำเป็นสำหรับ lca-web (server.py import sysmanager.*)
+    "scripts",           # serve.sh (เปิด server คำสั่งเดียว)
+    "requirements.txt",  # psutil
 ]
 
 # Pattern ที่ต้อง exclude เสมอ แม้จะอยู่ใต้โฟลเดอร์ที่รวมเข้าไป (เช่น app/, docs/)
