@@ -476,6 +476,60 @@ class ServerOrgTest(unittest.TestCase):
         self.assertIn("ollama_running", d["lca"])
         self.assertIsInstance(d["findings"], list)
 
+    def test_dataset_rbac_and_export(self):
+        master_hdr, key = self._bootstrap_dev_key()  # dev = USER
+        # USER -> 403
+        st, _ = self._req("GET", "/api/admin/dataset", headers={"X-API-Key": key})
+        self.assertEqual(st, 403)
+        # ADMIN เพิ่มตัวอย่าง -> 200
+        st, d = self._req("POST", "/api/admin/dataset",
+                          {"prompt": "เขียน for loop", "response": "for i in range(10): pass", "rating": 5},
+                          headers=master_hdr)
+        self.assertEqual(st, 200, d)
+        self.assertEqual(d["sample"]["rating"], 5)
+        # prompt ว่าง -> 400
+        st, _ = self._req("POST", "/api/admin/dataset", {"prompt": "", "response": "x"}, headers=master_hdr)
+        self.assertEqual(st, 400)
+        # list + count
+        st, d = self._req("GET", "/api/admin/dataset", headers=master_hdr)
+        self.assertEqual(st, 200)
+        self.assertEqual(d["count"], 1)
+        # export JSONL (ไม่ใช่ JSON ธรรมดา) — ยิงตรงเพื่ออ่าน body ดิบ
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("GET", "/api/admin/dataset/export", headers=master_hdr)
+        resp = conn.getresponse()
+        body = resp.read().decode("utf-8")
+        ctype = resp.getheader("Content-Type") or ""
+        conn.close()
+        self.assertEqual(resp.status, 200)
+        self.assertIn("ndjson", ctype)
+        obj = json.loads(body.strip().splitlines()[0])
+        self.assertEqual(obj["messages"][0]["content"], "เขียน for loop")
+
+    def test_chat_collects_training_data_when_enabled(self):
+        _, key = self._bootstrap_dev_key()
+        from app import config_manager
+        root = Path(self._tmp.name)
+        config_manager.set_key(root, "COLLECT_TRAINING_DATA", "1")  # เปิด opt-in
+        st, _ = self._req("POST", "/api/chat",
+                          {"messages": [{"role": "user", "content": "hello collect"}]},
+                          headers={"X-API-Key": key})
+        self.assertEqual(st, 200)
+        from app import dataset_store
+        rows = dataset_store.list_samples(root)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["prompt"], "hello collect")
+        self.assertEqual(rows[0]["response"], "mocked-reply")  # จาก call_ollama ที่ mock ไว้
+
+    def test_chat_does_not_collect_by_default(self):
+        _, key = self._bootstrap_dev_key()  # ไม่ตั้ง config
+        st, _ = self._req("POST", "/api/chat",
+                          {"messages": [{"role": "user", "content": "hi"}]},
+                          headers={"X-API-Key": key})
+        self.assertEqual(st, 200)
+        from app import dataset_store
+        self.assertEqual(dataset_store.count(Path(self._tmp.name)), 0)  # ปิดเป็นค่าเริ่มต้น
+
     def test_quota_exhaustion_returns_429(self):
         master_hdr = {"X-Auth-Token": MASTER}
         self._req("POST", "/api/admin/users",
