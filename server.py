@@ -35,6 +35,8 @@ from app import usage_store  # noqa: E402  (บันทึกการใช้
 from app.rate_limit import RateLimiter  # noqa: E402  (จำกัด request ต่อ IP)
 from app import notifier  # noqa: E402  (แจ้งเตือน Discord/email, config-driven)
 from app import support_store  # noqa: E402  (รับเรื่อง support/บั๊กจากลูกค้า, SQLite)
+from app import dataset_store  # noqa: E402  (เก็บตัวอย่างไว้ทำ dataset fine-tune, SQLite)
+from app import config_manager  # noqa: E402  (อ่าน flag COLLECT_TRAINING_DATA จาก config.json)
 from sysmanager.monitor import collect as _collect, Analyzer as _Analyzer  # noqa: E402
 from sysmanager.monitor import lca_context as _lca_context  # noqa: E402  (Phase 2: บริบท Ollama)
 
@@ -140,6 +142,10 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._handle_usage_summary()
             elif parsed.path == "/api/admin/support/tickets":
                 self._handle_support_list(parsed)
+            elif parsed.path == "/api/admin/dataset":
+                self._handle_dataset_list(parsed)
+            elif parsed.path == "/api/admin/dataset/export":
+                self._handle_dataset_export(parsed)
             else:
                 self._send_json(404, {"error": "not found"})
 
@@ -372,6 +378,10 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                     self._handle_support_create()
                 elif parsed.path == "/api/admin/support/tickets/status":
                     self._handle_support_set_status()
+                elif parsed.path == "/api/admin/dataset":
+                    self._handle_dataset_add()
+                elif parsed.path == "/api/admin/dataset/delete":
+                    self._handle_dataset_delete()
                 else:
                     self._send_json(404, {"error": "not found"})
             except (json.JSONDecodeError, KeyError) as e:
@@ -443,6 +453,63 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 return
             ok = org_store.revoke_api_key(project_root, key_id, actor_role=ident["role"])
             self._send_json(200 if ok else 404, {"success": ok})
+
+        # ---------- Controller: Dataset routes (ADMIN) — เก็บไว้ fine-tune ทีหลัง ----------
+        def _handle_dataset_list(self, parsed):
+            if self._require("ADMIN") is None:
+                return
+            qs = parse_qs(parsed.query)
+            min_rating = qs.get("min_rating", [None])[0]
+            samples = dataset_store.list_samples(
+                project_root, min_rating=(int(min_rating) if min_rating else None))
+            self._send_json(200, {"samples": samples, "count": dataset_store.count(project_root)})
+
+        def _handle_dataset_add(self):
+            if self._require("ADMIN") is None:
+                return
+            data = self._read_json_body()
+            sample = dataset_store.add_sample(  # ValueError -> 400 ใน do_POST
+                project_root,
+                prompt=data.get("prompt", ""),
+                response=data.get("response", ""),
+                model=data.get("model"),
+                rating=data.get("rating"),
+                source=data.get("source", "manual"),
+            )
+            self._send_json(200, {"sample": sample})
+
+        def _handle_dataset_delete(self):
+            if self._require("ADMIN") is None:
+                return
+            data = self._read_json_body()
+            sample_id = data.get("id")
+            if sample_id is None:
+                self._send_json(400, {"error": "ต้องระบุ id"})
+                return
+            ok = dataset_store.delete_sample(project_root, int(sample_id))
+            self._send_json(200 if ok else 404, {"success": ok})
+
+        def _handle_dataset_export(self, parsed):
+            # export JSONL พร้อม fine-tune — ส่งเป็น text/plain ให้โหลดไปใช้ต่อ
+            if self._require("ADMIN") is None:
+                return
+            qs = parse_qs(parsed.query)
+            fmt = qs.get("fmt", ["messages"])[0]
+            min_rating = qs.get("min_rating", [None])[0]
+            try:
+                jsonl = dataset_store.export_jsonl(
+                    project_root, fmt=fmt,
+                    min_rating=(int(min_rating) if min_rating else None))
+            except ValueError as e:
+                self._send_json(400, {"error": str(e)})
+                return
+            body = (jsonl + ("\n" if jsonl else "")).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
+            self.send_header("Content-Disposition", 'attachment; filename="lca_dataset.jsonl"')
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
 
         # ---------- Controller: Job queue routes (ADMIN) ----------
         def _handle_jobs_create(self):
@@ -642,6 +709,17 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 except (ValueError, OSError, sqlite3.Error) as e:
                     # metering ล้ม (db locked/disk เต็ม ฯลฯ) ต้องไม่ทำ response ของผู้ใช้พัง
                     print(f"[usage][warn] บันทึก usage ไม่สำเร็จ: {e}")
+            # เก็บคู่สนทนาไว้ทำ dataset fine-tune — "ปิดเป็นค่าเริ่มต้น" (ความเป็นส่วนตัว)
+            # เปิดเมื่อ config COLLECT_TRAINING_DATA เป็น 1/true/yes เท่านั้น (ต้องขอ consent ผู้ใช้)
+            if str(config_manager.get_key(project_root, "COLLECT_TRAINING_DATA") or "").lower() in ("1", "true", "yes"):
+                last_user = next((m.get("content") for m in reversed(messages)
+                                  if m.get("role") == "user"), None)
+                if last_user:
+                    try:
+                        dataset_store.add_sample(project_root, last_user, reply,
+                                                 model=model, source="chat")
+                    except (ValueError, OSError, sqlite3.Error) as e:
+                        print(f"[dataset][warn] เก็บตัวอย่างไม่สำเร็จ: {e}")
             self._send_json(200, {"reply": reply})
 
         def _handle_todos_get(self):
