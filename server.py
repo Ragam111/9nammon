@@ -41,9 +41,18 @@ from sysmanager.monitor import collect as _collect, Analyzer as _Analyzer  # noq
 from sysmanager.monitor import lca_context as _lca_context  # noqa: E402  (Phase 2: บริบท Ollama)
 
 APP_DIR = Path(__file__).parent / "app"
-INDEX_HTML = APP_DIR / "index.html"
-DEV_HTML = APP_DIR / "dev.html"
-APP_CSS = APP_DIR / "app.css"
+
+# ตารางหน้าเว็บ (web) ทั้งหมดในระบบ — route -> (ไฟล์ใน app/, content-type, cache?)
+# เพิ่มหน้าใหม่ = เพิ่ม 1 บรรทัดที่นี่ + วางไฟล์ใน app/ (ไม่ต้องเขียน method serve ใหม่ทุกหน้า)
+# ทุกหน้าเสิร์ฟ shell ได้โดยไม่ต้อง auth — ข้อมูลจริงถูก gate ที่ /api/* อีกชั้น
+STATIC_ROUTES = {
+    "/":        ("index.html",   "text/html; charset=utf-8",              False),
+    "/dev":     ("dev.html",     "text/html; charset=utf-8",              False),
+    "/login":   ("login.html",   "text/html; charset=utf-8",              False),
+    "/support": ("support.html", "text/html; charset=utf-8",              False),
+    "/app.css": ("app.css",      "text/css; charset=utf-8",               True),
+    "/app.js":  ("app.js",       "application/javascript; charset=utf-8",  True),
+}
 
 
 def make_handler(project_root: Path, auth_token: Optional[str],
@@ -108,12 +117,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             parsed = urlparse(self.path)
             if self._rate_limited(parsed):
                 return
-            if parsed.path == "/":
-                self._serve_index()
-            elif parsed.path == "/dev":
-                self._serve_dev()
-            elif parsed.path == "/app.css":
-                self._serve_css()
+            if parsed.path in STATIC_ROUTES:
+                self._serve_static(parsed.path)
             elif parsed.path == "/api/todos":
                 self._handle_todos_get()
             elif parsed.path == "/api/sysinfo":
@@ -255,47 +260,21 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 return
             self._send_json(200, {"tickets": tickets, "counts": support_store.counts_by_status(project_root)})
 
-        def _serve_index(self):
+        def _serve_static(self, route: str):
+            # เสิร์ฟหน้าเว็บ/asset ตาม STATIC_ROUTES ตัวเดียวจบ (html/css/js)
+            # อ่านเป็น bytes ตรงๆ — ไฟล์ทุกตัวเป็น utf-8 อยู่แล้ว ไม่ต้อง decode/encode วน
+            filename, content_type, cache = STATIC_ROUTES[route]
             try:
-                html = INDEX_HTML.read_text(encoding="utf-8")
+                body = (APP_DIR / filename).read_bytes()
             except OSError as e:
-                self._send_json(500, {"error": f"อ่าน index.html ไม่ได้: {e}"})
+                self._send_json(500, {"error": f"อ่าน {filename} ไม่ได้: {e}"})
                 return
-            body = html.encode("utf-8")
             self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-
-        def _serve_dev(self):
-            # หน้า shell ของ dev view เสิร์ฟได้โดยไม่ต้อง auth (เหมือน index.html) —
-            # ข้อมูลจริง (/api/sysinfo) ถูก gate ADMIN อีกชั้น หน้าเว็บจะถาม token เอง
-            try:
-                html = DEV_HTML.read_text(encoding="utf-8")
-            except OSError as e:
-                self._send_json(500, {"error": f"อ่าน dev.html ไม่ได้: {e}"})
-                return
-            body = html.encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-
-        def _serve_css(self):
-            # design system กลาง — เสิร์ฟครั้งเดียว เบราว์เซอร์ cache ไว้ (ดีกับเครื่องอ่อน)
-            # เปิดสาธารณะเหมือน index/dev (เป็นแค่สไตล์ ไม่มีข้อมูลลับ)
-            try:
-                css = APP_CSS.read_text(encoding="utf-8")
-            except OSError as e:
-                self._send_json(500, {"error": f"อ่าน app.css ไม่ได้: {e}"})
-                return
-            body = css.encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "text/css; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.send_header("Cache-Control", "public, max-age=3600")
+            if cache:
+                # asset ที่ไม่ค่อยเปลี่ยน (css/js) — ให้ browser cache ลดภาระเครื่องอ่อน
+                self.send_header("Cache-Control", "public, max-age=3600")
             self.end_headers()
             self.wfile.write(body)
 

@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>เข้าสู่ระบบ — LCA</title>
+  <link rel="stylesheet" href="/app.css" />
+  <script src="/app.js" defer></script>
+</head>
+<body class="page-dev">
+  <header>
+    <h1>LCA · เข้าสู่ระบบ</h1>
+    <span class="muted" style="margin-left:auto">Local Code Assistant</span>
+  </header>
+
+  <main style="max-width:440px">
+    <div class="card">
+      <h2>วาง API key หรือ token</h2>
+
+      <div id="status" class="note">กำลังตรวจสอบสถานะ…</div>
+
+      <div id="form" style="display:none; margin-top:10px">
+        <div style="display:flex; gap:8px; flex-wrap:wrap">
+          <input id="key" type="password" autocomplete="off" style="flex:1"
+                 placeholder="X-API-Key หรือ X-Auth-Token" />
+          <button id="go">เข้าสู่ระบบ</button>
+        </div>
+        <p id="err" class="err" style="display:none; margin-top:8px"></p>
+        <p class="note">
+          ยังไม่มี key? ถ้าเปิด server แบบ local (127.0.0.1 ไม่ตั้ง token)
+          จะเข้าใช้ได้เลยในสิทธิ์ CEO — <a href="/">ไปหน้าแชต</a> ได้โดยตรง
+        </p>
+      </div>
+
+      <div id="signed" style="display:none; margin-top:10px">
+        <div class="kv"><span>ผู้ใช้</span><span id="who-name">—</span></div>
+        <div class="kv"><span>สิทธิ์</span><span id="who-role">—</span></div>
+        <div class="kv"><span>ระดับ</span><span id="who-tier">—</span></div>
+        <div style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap">
+          <button id="to-chat">ไปหน้าแชต</button>
+          <button id="to-dev" style="background:var(--lca-surface-2); color:var(--lca-fg); border-color:var(--lca-line)">หน้า dev</button>
+          <button id="logout" style="background:var(--lca-surface-2); color:var(--lca-bad); border-color:var(--lca-line)">ออกจากระบบ</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    function qs(id) { return document.getElementById(id); }
+    function nextTarget() {
+      var p = new URLSearchParams(location.search).get("next");
+      // รับเฉพาะ path ภายใน (ขึ้นต้น "/" ตัวเดียว) กัน open-redirect
+      return (p && /^\/[^/]/.test(p)) ? p : "/";
+    }
+
+    function showForm(msg) {
+      qs("status").textContent = msg || "วาง key แล้วกดเข้าสู่ระบบ";
+      qs("form").style.display = "";
+      qs("signed").style.display = "none";
+    }
+    function showSigned(me) {
+      qs("status").textContent = "เข้าสู่ระบบแล้ว";
+      qs("who-name").textContent = me.username || "—";
+      qs("who-role").textContent = me.role || "—";
+      qs("who-tier").textContent = me.tier || "—";
+      qs("form").style.display = "none";
+      qs("signed").style.display = "";
+    }
+
+    async function refresh() {
+      var me = await window.lca.whoami();
+      if (me) showSigned(me); else showForm();
+    }
+
+    async function doLogin() {
+      var v = qs("key").value.trim();
+      qs("err").style.display = "none";
+      if (!v) { qs("err").textContent = "กรุณาวาง key ก่อน"; qs("err").style.display = ""; return; }
+      qs("go").disabled = true;
+      window.lca.setKey(v);
+      var me = await window.lca.whoami();
+      qs("go").disabled = false;
+      if (me) { location.href = nextTarget(); }
+      else {
+        window.lca.clearKey();
+        qs("err").textContent = "key ไม่ถูกต้องหรือหมดอายุ — ลองใหม่";
+        qs("err").style.display = "";
+      }
+    }
+
+    window.addEventListener("DOMContentLoaded", function () {
+      qs("go").addEventListener("click", doLogin);
+      qs("key").addEventListener("keydown", function (e) { if (e.key === "Enter") doLogin(); });
+      qs("to-chat").addEventListener("click", function () { location.href = "/"; });
+      qs("to-dev").addEventListener("click", function () { location.href = "/dev"; });
+      qs("logout").addEventListener("click", function () { window.lca.clearKey(); refresh(); });
+      refresh();
+    });
+  </script>
+</body>
+</html>
