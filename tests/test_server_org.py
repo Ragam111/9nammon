@@ -457,6 +457,22 @@ class ServerOrgTest(unittest.TestCase):
                           {"id": 99999, "status": "open"}, headers=master_hdr)
         self.assertEqual(st, 404)
 
+    def test_metrics_rbac_and_shape(self):
+        master_hdr, key = self._bootstrap_dev_key()  # dev = USER
+        # ไม่ auth -> 401
+        st, _ = self._req("GET", "/api/metrics")
+        self.assertEqual(st, 401)
+        # USER -> 403
+        st, _ = self._req("GET", "/api/metrics", headers={"X-API-Key": key})
+        self.assertEqual(st, 403)
+        # ADMIN -> 200 + โครงครบ (snapshot/verdict/findings/lca)
+        st, d = self._req("GET", "/api/metrics?interval=0.1", headers=master_hdr)
+        self.assertEqual(st, 200, d)
+        for k in ("snapshot", "verdict", "worst_severity", "findings", "lca"):
+            self.assertIn(k, d)
+        self.assertIn("ollama_running", d["lca"])
+        self.assertIsInstance(d["findings"], list)
+
     def test_quota_exhaustion_returns_429(self):
         master_hdr = {"X-Auth-Token": MASTER}
         self._req("POST", "/api/admin/users",

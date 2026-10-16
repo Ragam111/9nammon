@@ -36,6 +36,7 @@ from app.rate_limit import RateLimiter  # noqa: E402  (จำกัด request �
 from app import notifier  # noqa: E402  (แจ้งเตือน Discord/email, config-driven)
 from app import support_store  # noqa: E402  (รับเรื่อง support/บั๊กจากลูกค้า, SQLite)
 from sysmanager.monitor import collect as _collect, Analyzer as _Analyzer  # noqa: E402
+from sysmanager.monitor import lca_context as _lca_context  # noqa: E402  (Phase 2: บริบท Ollama)
 
 APP_DIR = Path(__file__).parent / "app"
 INDEX_HTML = APP_DIR / "index.html"
@@ -115,6 +116,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._handle_todos_get()
             elif parsed.path == "/api/sysinfo":
                 self._handle_sysinfo()
+            elif parsed.path == "/api/metrics":
+                self._handle_metrics(parsed)
             elif parsed.path == "/api/me":
                 self._handle_me()
             elif parsed.path == "/api/admin/users":
@@ -295,6 +298,35 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             if self._require("ADMIN") is None:
                 return
             self._send_json(200, get_system_info().to_dict())
+
+        def _handle_metrics(self, parsed):
+            # Phase 2: metrics สด (snapshot + วิเคราะห์คอขวด + บริบท LCA/Ollama) — ADMIN ขึ้นไป
+            # ไม่เก็บลง db (ใช้ /api/admin/history/snapshot ถ้าต้องการเก็บ)
+            if self._require("ADMIN") is None:
+                return
+            qs = parse_qs(parsed.query)
+            try:
+                interval = float(qs.get("interval", ["0.3"])[0])
+            except (TypeError, ValueError):
+                interval = 0.3
+            report = _Analyzer().analyze(_collect(interval=interval))
+            findings = [
+                {
+                    "resource": f.resource,
+                    "severity": f.severity.label,
+                    "value": round(f.value, 2),
+                    "message": f.message,
+                    "suggestion": f.suggestion,
+                }
+                for f in report.findings
+            ]
+            self._send_json(200, {
+                "snapshot": report.snapshot.to_dict(),
+                "verdict": report.verdict,
+                "worst_severity": report.worst.label,
+                "findings": findings,
+                "lca": _lca_context.correlate(report),
+            })
 
         # ---------- Controller: API routes ----------
         def do_POST(self):

@@ -19,14 +19,14 @@ Source of truth เดียวสำหรับงานพัฒนา LCA �
 | G | Security — rate limit ต่อ IP + ปิด GET /api/todos | #12 |
 | F | WebUI/UX — มือถือ responsive + visible error states | #13 |
 | N | Notifier — Discord webhook + email (config-driven) + `POST /api/admin/notify` | #14 |
-| S | Support tickets — ลูกค้าแจ้งปัญหา/ขอฟีเจอร์ + ยิงแจ้งเตือนทีม | (กำลัง) |
+| S | Support tickets — ลูกค้าแจ้งปัญหา/ขอฟีเจอร์ + ยิงแจ้งเตือนทีม | #15 |
+| B | Phase 2 — bottleneck analyzer + `/api/metrics` (live) + ตรวจ Ollama correlate RAM/swap | (PR เปิด รอ merge) |
 
 สถานะ main: unittest 114 เคสผ่าน, CI เขียวทุก PR, smoke test server จริงผ่านทุก endpoint
 
 ## 🔜 คิวถัดไป (autopilot ไล่อัตโนมัติ)
 | ลำดับ | งาน | หมายเหตุ |
 |------|-----|---------|
-| B / Phase 2 | Bottleneck analyzer + `/api/metrics` (เชื่อม sysmanager, รู้จัก Ollama RAM/swap) | scheduled ~ตี 1 ไทย |
 | R | **Resource management dashboard** — หน้าจอ live RAM/CPU/disk/swap + ตัวช่วยบอก "เครื่อง 8GB รับโมเดลไหนไหว" (ต่อยอดจาก Phase 2) | ชิ้นที่ user เน้น |
 | S2 | Support dashboard ใน `/dev` — แสดง ticket + เปลี่ยนสถานะผ่าน UI | ต่อจาก Item S |
 | Q | 9arm agent quality — ปรับ system prompt / context handling ให้ตอบดีขึ้น | ต้องมีเกณฑ์วัดก่อน |
