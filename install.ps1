@@ -5,7 +5,7 @@
 $ErrorActionPreference = "Stop"
 
 $ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$CurrentVersion = "0.0.2"
+$CurrentVersion = "0.1.0"
 
 Write-Host "=== Local Code Assistant — ตัวติดตั้ง (Windows) ===" -ForegroundColor Cyan
 
@@ -107,16 +107,31 @@ if (Test-Path $InstallDir) {
 
 Copy-Item -Path (Join-Path $ScriptRoot "local_coder.py") -Destination $InstallDir -Force
 Copy-Item -Path (Join-Path $ScriptRoot "server.py") -Destination $InstallDir -Force
+if (Test-Path (Join-Path $ScriptRoot "requirements.txt")) {
+    Copy-Item -Path (Join-Path $ScriptRoot "requirements.txt") -Destination $InstallDir -Force
+}
+
+# app\ มีโมดูลทั้งหมดแล้ว (folder_trust.py, context_manager.py, app.css ฯลฯ รวมอยู่ในนี้)
+# — ก๊อปทั้งโฟลเดอร์ ไม่ต้องไล่ก๊อปทีละไฟล์จาก root (ไฟล์พวกนั้นไม่ได้อยู่ที่ root แล้ว)
 $AppDestDir = Join-Path $InstallDir "app"
 if (-not (Test-Path $AppDestDir)) { New-Item -ItemType Directory -Path $AppDestDir | Out-Null }
 Copy-Item -Path (Join-Path $ScriptRoot "app\*") -Destination $AppDestDir -Recurse -Force
 
-# folder_trust.py / context_manager.py อยู่ที่ root ของแพ็กเกจ (ไม่ใช่ใน app\)
-# แต่ local_coder.py import ผ่าน sys.path ที่ชี้ไปโฟลเดอร์ app\ ตอนรัน
-# ต้องคัดลอกมาไว้ที่นี่ด้วยเสมอ ไม่งั้นจะเจอ ModuleNotFoundError ตอนเปิดโปรแกรม
-# (เคยเกิดจริง — ดู SKILL.md Troubleshooting และ fix_missing_modules.ps1)
-Copy-Item -Path (Join-Path $ScriptRoot "folder_trust.py") -Destination $AppDestDir -Force
-Copy-Item -Path (Join-Path $ScriptRoot "context_manager.py") -Destination $AppDestDir -Force
+# sysmanager\ — จำเป็นสำหรับ lca-web (server.py import sysmanager.sysinfo / sysmanager.monitor)
+if (Test-Path (Join-Path $ScriptRoot "sysmanager")) {
+    $SysDestDir = Join-Path $InstallDir "sysmanager"
+    if (Test-Path $SysDestDir) { Remove-Item $SysDestDir -Recurse -Force }
+    Copy-Item -Path (Join-Path $ScriptRoot "sysmanager") -Destination $InstallDir -Recurse -Force
+}
+
+# psutil = dependency เดียวนอก stdlib (sysmanager ใช้) — ติดตั้งแบบ best-effort ไม่บล็อกถ้าล้ม
+Write-Host "[info] ติดตั้ง dependency (psutil)..."
+try {
+    & $pythonCmd -m pip install --user --quiet psutil 2>$null
+    Write-Host "[ok] psutil พร้อม (หรือมีอยู่แล้ว)"
+} catch {
+    Write-Host "[warn] ติดตั้ง psutil ไม่สำเร็จ — หน้าเว็บ/metrics อาจใช้ไม่ได้ ลองรันเอง: $pythonCmd -m pip install psutil" -ForegroundColor Yellow
+}
 
 Set-Content -Path $VersionFile -Value $CurrentVersion -Encoding UTF8
 Set-Content -Path (Join-Path $InstallDir "default_model.txt") -Value $modelChoice -Encoding UTF8

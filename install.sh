@@ -11,7 +11,7 @@ INSTALL_DIR="${LCA_INSTALL_DIR:-$HOME/.local-code-assistant}"
 # (เทียบเท่ากับตัวเลือกไดรฟ์ D: ในเวอร์ชัน Windows — Linux/macOS ไม่มี drive letter
 # แต่ mount point อื่นทำหน้าที่เดียวกันได้)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VERSION="0.0.2"
+VERSION="0.1.0"
 
 BOLD='\033[1m'; CYAN='\033[96m'; GREEN='\033[92m'; YELLOW='\033[93m'; RED='\033[91m'; RESET='\033[0m'
 
@@ -75,15 +75,20 @@ fi
 
 cp "$SCRIPT_DIR/local_coder.py" "$INSTALL_DIR/"
 cp "$SCRIPT_DIR/server.py" "$INSTALL_DIR/"
-mkdir -p "$INSTALL_DIR/app"
-cp "$SCRIPT_DIR"/app/*.py "$INSTALL_DIR/app/"
-cp "$SCRIPT_DIR"/app/*.html "$INSTALL_DIR/app/"
+if [ -f "$SCRIPT_DIR/requirements.txt" ]; then cp "$SCRIPT_DIR/requirements.txt" "$INSTALL_DIR/"; fi
 
-# folder_trust.py / context_manager.py อยู่ที่ root ของแพ็กเกจ (ไม่ใช่ใน app/)
-# แต่ local_coder.py import ผ่าน sys.path ที่ชี้ไปโฟลเดอร์ app/ ตอนรัน
-# ต้องคัดลอกมาไว้ที่นี่ด้วยเสมอ ไม่งั้นจะเจอ ModuleNotFoundError ตอนเปิดโปรแกรม
-cp "$SCRIPT_DIR/folder_trust.py" "$INSTALL_DIR/app/"
-cp "$SCRIPT_DIR/context_manager.py" "$INSTALL_DIR/app/"
+# app/ มีโมดูลทั้งหมดแล้ว (folder_trust.py, context_manager.py, app.css รวมอยู่ในนี้) —
+# ก๊อปทั้งโฟลเดอร์ ไม่ต้องไล่ก๊อปทีละไฟล์จาก root (ไฟล์พวกนั้นไม่ได้อยู่ที่ root แล้ว)
+mkdir -p "$INSTALL_DIR/app"
+cp -r "$SCRIPT_DIR/app/." "$INSTALL_DIR/app/"
+
+# sysmanager/ — จำเป็นสำหรับ lca-web (server.py import sysmanager.sysinfo / sysmanager.monitor)
+if [ -d "$SCRIPT_DIR/sysmanager" ]; then cp -r "$SCRIPT_DIR/sysmanager" "$INSTALL_DIR/"; fi
+
+# psutil = dependency เดียวนอก stdlib — ติดตั้งแบบ best-effort (|| กัน set -e ล้มการติดตั้ง)
+echo "[info] ติดตั้ง dependency (psutil)..."
+"$PYTHON_CMD" -m pip install --user --quiet psutil \
+  || echo -e "${YELLOW}[warn] ติดตั้ง psutil ไม่สำเร็จ — ลองรันเอง: $PYTHON_CMD -m pip install psutil${RESET}"
 
 echo "$VERSION" > "$INSTALL_DIR/version.txt"
 echo "$MODEL_CHOICE" > "$INSTALL_DIR/default_model.txt"
