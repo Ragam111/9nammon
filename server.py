@@ -25,7 +25,7 @@ from typing import Optional
 from urllib.parse import urlparse, parse_qs
 
 sys.path.insert(0, str(Path(__file__).parent))
-from local_coder import call_ollama, get_system_prompt  # noqa: E402
+from local_coder import get_system_prompt  # noqa: E402
 from app.todo_store import load_todos, add_todo, toggle_todo, delete_todo  # noqa: E402
 from app import org_store  # noqa: E402  (ระบบองค์กร: user/role/api key/quota)
 from sysmanager.sysinfo import get_system_info  # noqa: E402  (spec เครื่องสำหรับ dev view)
@@ -39,6 +39,7 @@ from app import support_store  # noqa: E402  (รับเรื่อง suppor
 from app import dataset_store  # noqa: E402  (เก็บตัวอย่างไว้ทำ dataset fine-tune, SQLite)
 from app import config_manager  # noqa: E402  (อ่าน flag COLLECT_TRAINING_DATA จาก config.json)
 from app import resource_budget  # noqa: E402  (ก้านสมอง: เลือกโมเดล/backend ตาม RAM)
+from app import model_backend  # noqa: E402  (adapter: Ollama / OpenAI-compatible สลับด้วย config)
 from sysmanager.monitor import collect as _collect, Analyzer as _Analyzer  # noqa: E402
 from sysmanager.monitor import lca_context as _lca_context  # noqa: E402  (Phase 2: บริบท Ollama)
 
@@ -708,13 +709,12 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             # ให้ server แทรกให้เองตาม lang ที่เลือก
             if not messages or messages[0].get("role") != "system":
                 messages = [{"role": "system", "content": get_system_prompt(lang)}] + messages
-            # Model layer: เรียก Ollama ผ่านฟังก์ชันเดียวกับ CLI (ไม่ซ้ำ logic)
+            # Model layer: เรียกผ่าน adapter (เลือก Ollama / OpenAI-compatible ตาม config)
+            # แอปไม่ผูกกับ runtime ตัวใดตัวหนึ่ง — สลับ backend ได้โดยไม่แก้ตรงนี้
             try:
-                reply = call_ollama(model, messages, num_ctx)
-            except SystemExit:
-                # call_ollama เดิมออกแบบมาให้ exit ตอน error (CLI context) — server ต้อง
-                # ไม่ตายทั้งโปรเซส จึงจับ SystemExit แล้วแปลงเป็น error response แทน
-                self._send_json(502, {"error": "เรียก Ollama ไม่สำเร็จ ตรวจสอบว่า ollama serve รันอยู่หรือไม่"})
+                reply = model_backend.generate(project_root, model, messages, num_ctx)
+            except model_backend.BackendError as e:
+                self._send_json(502, {"error": str(e)})
                 return
             # หักโควตาหลังได้คำตอบจริงเท่านั้น (master/local ไม่มี key_id = ไม่หัก)
             # แล้วบันทึก usage ลง SQLite ด้วย (metering ย้อนหลัง/คิดเงินต่อ tier)

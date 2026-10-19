@@ -17,6 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import server  # noqa: E402
+from app import model_backend  # noqa: E402
 
 MASTER = "master-secret-token"
 
@@ -24,8 +25,10 @@ MASTER = "master-secret-token"
 class ServerOrgTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        # mock Model layer — ไม่เรียก Ollama จริง
-        server.call_ollama = lambda model, messages, num_ctx=8192: "mocked-reply"
+        # mock Model layer ที่ชั้น adapter — ไม่เรียก Ollama จริง
+        model_backend.generate = (
+            lambda project_root, model, messages, num_ctx=8192, options=None: "mocked-reply"
+        )
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
