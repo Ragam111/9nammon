@@ -52,6 +52,10 @@ class RunnerLogicTest(unittest.TestCase):
         self.assertIn("cases", rep)
         self.assertEqual(len(rep["cases"]), len(live.GOLDEN_CASES))
 
+    def test_model_name_passed_through_to_report(self):
+        rep = live.run_live_eval(responder=good_responder, model="qwen2.5-coder:1.5b")
+        self.assertEqual(rep["model"], "qwen2.5-coder:1.5b")
+
     def test_refusal_is_caught(self):
         res = live.run_case(_case("th_write_add"), refusal_responder)
         checks = {r["check"]: r["passed"] for r in res["checks"]}

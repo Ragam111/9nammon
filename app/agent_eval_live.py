@@ -182,4 +182,12 @@ def _print_report(rep: dict) -> None:
 
 
 if __name__ == "__main__":
-    _print_report(run_live_eval())
+    import argparse
+
+    ap = argparse.ArgumentParser(description="วัดคุณภาพ agent ด้วย golden prompts จริง")
+    ap.add_argument("--model", default=DEFAULT_MODEL,
+                    help=f"โมเดล Ollama ที่จะวัด (default {DEFAULT_MODEL}); "
+                         f"ลองโมเดลใหญ่ขึ้นได้ เช่น qwen2.5-coder:1.5b ถ้า RAM ไหว")
+    ap.add_argument("--num-ctx", type=int, default=DEFAULT_NUM_CTX)
+    _args = ap.parse_args()
+    _print_report(run_live_eval(model=_args.model, num_ctx=_args.num_ctx))
