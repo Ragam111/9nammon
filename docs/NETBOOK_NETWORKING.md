@@ -80,7 +80,8 @@ Client ──────────► [ reverse proxy (Caddy :443, HTTPS) ] �
 | N1 | รัน 3 คำสั่งข้อ 1 ส่ง output ให้ Claude → ยืนยัน NIC/LinkSpeed จริง | 👤 พี่ | ⏳ |
 | N2 | ลง Ollama (P2-2) → chat จริงบน CPU | 👤 พี่ | ⏳ |
 | N3 | ถ้าจะใช้ใน LAN: สตาร์ทด้วย `--host 0.0.0.0 --token` + เปิด firewall เฉพาะพอร์ต | 👤 พี่ | ⏳ |
-| N4 | (option) `/api/health` โชว์ bind host + โหมดเครือข่าย (local/LAN) ให้เห็นชัด | 🤖 Claude | backlog |
+| N4 | `/api/health` โชว์ bind host + โหมดเครือข่าย (local/LAN) + auth_required | 🤖 Claude | ✅ เสร็จ |
+| N4b | **Auto-scale compute** — chat เลือกโมเดลตาม RAM อัตโนมัติ (ไม่ระบุ/`auto` → `pick_model()`) | 🤖 Claude | ✅ เสร็จ |
 | N5 | เปิดสู่อินเทอร์เน็ต 24/7 → VPS + Caddy | 👤 พี่ (decision) | HOSTING.md ตัวเลือก B |
 | N6 | ลงเงินที่คอขวดจริง: **SSD → RAM** ไม่ใช่ network | 👤 พี่ (decision) | — |
 
