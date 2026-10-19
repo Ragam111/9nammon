@@ -81,6 +81,13 @@ class ServerPagesTest(unittest.TestCase):
         _, _, _, body = self._get("/support")
         self.assertIn(b"/api/support/ticket", body)
 
+    def test_dev_page_has_support_dashboard(self):
+        # S2: /dev ต้องมี support dashboard ที่เรียก list + เปลี่ยนสถานะ ticket
+        _, _, _, body = self._get("/dev")
+        self.assertIn(b"/api/admin/support/tickets", body)
+        self.assertIn(b"/api/admin/support/tickets/status", body)
+        self.assertIn(b"support-wrap", body)
+
     def test_unknown_route_404(self):
         st, _, _, _ = self._get("/does-not-exist")
         self.assertEqual(st, 404)

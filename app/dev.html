@@ -25,8 +25,35 @@
       </div>
       <div id="metrics"></div>
     </section>
+    <section id="support-wrap" class="card" style="margin-bottom:12px" hidden>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px">
+        <h2 style="margin:0">Support tickets</h2>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="support-filter" class="sel" aria-label="กรองสถานะ">
+            <option value="">ทุกสถานะ</option>
+            <option value="open">open</option>
+            <option value="in_progress">in_progress</option>
+            <option value="resolved">resolved</option>
+            <option value="closed">closed</option>
+          </select>
+          <button id="refresh-support" type="button">รีเฟรช</button>
+        </div>
+      </div>
+      <div id="support-counts" class="support-tiles"></div>
+      <p id="support-err" class="err" style="display:none"></p>
+      <div id="support-table"></div>
+    </section>
     <div id="content" class="grid"></div>
   </main>
+
+  <style>
+    /* select + tile เฉพาะหน้า dev — ใช้ token design system กลาง ไม่แตะ app.css */
+    .page-dev .sel { font:inherit; background:var(--lca-surface-2); color:var(--lca-fg); border:1px solid var(--lca-line); border-radius:var(--lca-r); padding:9px 11px; }
+    .page-dev .support-tiles { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:12px; }
+    .page-dev .tile { display:flex; flex-direction:column; gap:2px; min-width:72px; padding:10px 12px; border:1px solid var(--lca-line); border-radius:var(--lca-r); }
+    .page-dev .tile .lca-num { font-size:20px; font-weight:600; }
+    .page-dev .tile .muted { font-family:var(--lca-mono); font-size:11px; }
+  </style>
 
   <script>
     const $ = (id) => document.getElementById(id);
@@ -78,6 +105,48 @@
       $('metrics-wrap').hidden = false;
     }
 
+    // ---------- Support tickets (/api/admin/support/tickets) ----------
+    const SUP_STATUSES = ['open', 'in_progress', 'resolved', 'closed'];
+    function supStatusSelect(id, current) {
+      const opts = SUP_STATUSES.map((s) =>
+        `<option value="${s}"${s === current ? ' selected' : ''}>${s}</option>`).join('');
+      return `<select class="sel sup-row-status" data-id="${esc(id)}">${opts}</select>`;
+    }
+    function renderSupportCounts(counts) {
+      counts = counts || {};
+      const order = ['total'].concat(SUP_STATUSES);
+      $('support-counts').innerHTML = order.map((k) => {
+        const n = counts[k] != null ? counts[k] : 0;
+        return `<div class="tile"><span class="lca-num">${esc(n)}</span><span class="muted">${k}</span></div>`;
+      }).join('');
+    }
+    function renderSupportRows(tickets) {
+      if (!tickets.length) { $('support-table').innerHTML = '<div class="muted">ยังไม่มีเรื่องแจ้ง</div>'; return; }
+      let h = '<table><tr><th>#</th><th>ช่อง</th><th>ชนิด</th><th>หัวข้อ</th><th>ผู้แจ้ง</th><th>สถานะ</th><th></th></tr>';
+      tickets.forEach((t) => {
+        h += `<tr><td>${esc(t.id)}</td><td>${esc(t.channel)}</td><td>${esc(t.kind)}</td>` +
+             `<td>${esc(t.subject)}</td><td>${esc(t.reporter || '—')}</td>` +
+             `<td>${supStatusSelect(t.id, t.status)}</td>` +
+             `<td><button class="sup-save" data-id="${esc(t.id)}" type="button">บันทึก</button></td></tr>`;
+      });
+      h += '</table>';
+      $('support-table').innerHTML = h;
+    }
+    async function loadSupport() {
+      $('support-err').style.display = 'none';
+      const status = $('support-filter').value;
+      const url = '/api/admin/support/tickets' + (status ? '?status=' + encodeURIComponent(status) : '');
+      try {
+        const res = await fetch(url, { headers: authHeaders() });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { $('support-err').textContent = data.error || ('error ' + res.status); $('support-err').style.display = ''; }
+        else { renderSupportCounts(data.counts); renderSupportRows(data.tickets || []); }
+      } catch (err) {
+        $('support-err').textContent = 'ต่อ server ไม่ได้'; $('support-err').style.display = '';
+      }
+      $('support-wrap').hidden = false;
+    }
+
     function render(info) {
       const c = info.cpu || {};
       const cores = c.physical_cores ? `${c.physical_cores}P / ${c.logical_cores}L` : `${c.logical_cores}L`;
@@ -125,6 +194,7 @@
         $('who').textContent = 'เชื่อมต่อแล้ว';
         render(info);
         loadMetrics();   // โหลดทรัพยากรสดต่อเลยหลัง auth ผ่าน
+        loadSupport();   // + support dashboard (ใช้ token เดียวกัน, สิทธิ์ ADMIN)
       } catch (err) {
         $('error').textContent = 'ต่อ server ไม่ได้: ' + err.message;
       } finally {
@@ -134,6 +204,27 @@
 
     $('load').addEventListener('click', load);
     $('refresh-metrics').addEventListener('click', loadMetrics);
+    $('refresh-support').addEventListener('click', loadSupport);
+    $('support-filter').addEventListener('change', loadSupport);
+    // บันทึกสถานะ ticket — ใช้ event delegation (ปุ่มถูกสร้างใหม่ทุกครั้งที่ render)
+    $('support-table').addEventListener('click', async (e) => {
+      const btn = e.target.closest('.sup-save');
+      if (!btn) return;
+      const id = btn.dataset.id;
+      const sel = $('support-table').querySelector('.sup-row-status[data-id="' + id + '"]');
+      if (!sel) return;
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/admin/support/tickets/status', {
+          method: 'POST',
+          headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+          body: JSON.stringify({ id: Number(id), status: sel.value })
+        });
+        if (!res.ok) { const d = await res.json().catch(() => ({})); alert('บันทึกไม่สำเร็จ: ' + (d.error || res.status)); }
+        else { loadSupport(); }
+      } catch (err) { alert('ต่อ server ไม่ได้'); }
+      finally { btn.disabled = false; }
+    });
     $('token').addEventListener('keydown', (e) => { if (e.key === 'Enter') load(); });
     if ($('token').value) load();
   </script>
