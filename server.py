@@ -16,6 +16,7 @@ View       : app/index.html (หน้าเว็บ) + JSON response (สำ�
 
 import argparse
 import json
+import socket
 import sqlite3
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -37,6 +38,7 @@ from app import notifier  # noqa: E402  (แจ้งเตือน Discord/ema
 from app import support_store  # noqa: E402  (รับเรื่อง support/บั๊กจากลูกค้า, SQLite)
 from app import dataset_store  # noqa: E402  (เก็บตัวอย่างไว้ทำ dataset fine-tune, SQLite)
 from app import config_manager  # noqa: E402  (อ่าน flag COLLECT_TRAINING_DATA จาก config.json)
+from app import resource_budget  # noqa: E402  (ก้านสมอง: เลือกโมเดล/backend ตาม RAM)
 from sysmanager.monitor import collect as _collect, Analyzer as _Analyzer  # noqa: E402
 from sysmanager.monitor import lca_context as _lca_context  # noqa: E402  (Phase 2: บริบท Ollama)
 
@@ -121,6 +123,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._serve_static(parsed.path)
             elif parsed.path == "/api/todos":
                 self._handle_todos_get()
+            elif parsed.path == "/api/health":
+                self._handle_health()
             elif parsed.path == "/api/sysinfo":
                 self._handle_sysinfo()
             elif parsed.path == "/api/metrics":
@@ -277,6 +281,27 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self.send_header("Cache-Control", "public, max-age=3600")
             self.end_headers()
             self.wfile.write(body)
+
+        def _ollama_up(self, host="127.0.0.1", port=11434, timeout=0.3) -> bool:
+            """เช็กเบาๆ ว่า Ollama เปิด port อยู่ไหม (TCP connect สั้นๆ ไม่ยิง request)"""
+            try:
+                with socket.create_connection((host, port), timeout=timeout):
+                    return True
+            except OSError:
+                return False
+
+        def _handle_health(self):
+            """สัญญาณชีพของระบบ (public, ไม่ auth) — ข้อมูลไม่ลับ:
+            Ollama เปิดไหม, RAM ตึงไหม, โมเดล/ backend ที่แนะนำสำหรับเครื่องนี้"""
+            rec = resource_budget.pick_model()
+            self._send_json(200, {
+                "ok": True,
+                "ollama": "up" if self._ollama_up() else "down",
+                "ram_pressure": resource_budget.ram_pressure(),
+                "recommended_model": rec["model"],
+                "recommend_reason": rec["reason"],
+                "backend": resource_budget.pick_backend(project_root),
+            })
 
         def _handle_sysinfo(self):
             # spec เครื่อง (static) สำหรับ dev view / ระบบจัดการทรัพยากร — ADMIN ขึ้นไป
