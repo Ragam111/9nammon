@@ -17,13 +17,16 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import server  # noqa: E402
+from app import model_backend  # noqa: E402
 
 
 class ServerHealthTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        # mock สะท้อน model กลับมา เพื่อตรวจ auto-scale ว่าเลือกโมเดลตัวไหน
-        server.call_ollama = lambda model, messages, num_ctx=8192: f"MODEL={model}"
+        # mock ที่ชั้น adapter (seam ใหม่) — สะท้อน model กลับมาเพื่อตรวจ auto-scale
+        model_backend.generate = (
+            lambda project_root, model, messages, num_ctx=8192, options=None: f"MODEL={model}"
+        )
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
