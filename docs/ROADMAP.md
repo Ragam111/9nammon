@@ -57,7 +57,7 @@ Source of truth เดียวสำหรับงานพัฒนา LCA �
 | ลำดับ | งาน | หมายเหตุ |
 |------|-----|---------|
 | P2-1 | **Resource Manager (code)** — `app/resource_budget.py` + `GET /api/health` + `pick_backend()` คืน CPU ตามผลวัด #26 | ต่อจาก design #23/#25 |
-| P2-2 | Ollama บนเครื่อง user → แชตจริงบน CPU (ค้างจาก Phase 1) | งานฝั่ง user |
+| P2-2 | Ollama บนเครื่อง user → แชตจริงบน CPU (ค้างจาก Phase 1) — runbook เต็มใน `NETBOOK_SOFTWARE_STACK.md` | งานฝั่ง user |
 | P2-3 | SSD upgrade — แก้คอขวด HDD (โหลดโมเดลเร็วขึ้น + เครื่องลื่น) | ตัดสินจากข้อมูล Phase 1 |
 | S2 | ✅ Support dashboard ใน `/dev` — แสดง ticket + เปลี่ยนสถานะผ่าน UI (#30) | เสร็จ |
 | Q | 9arm agent quality — **เกณฑ์วัดก่อน** (2 ชั้น): `app/agent_eval.py` offline scorecard 28/28 ✅ + `app/agent_eval_live.py` golden-prompt runner (ยิง prompt จริงเข้า Ollama, skip เองถ้าไม่มี) ✅ | เครื่องมือวัดครบแล้ว → ขั้นต่อไป: รัน runner จริงบน Ollama → ดูคะแนน → ปรับ prompt เทียบ before/after |
