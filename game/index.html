@@ -1,0 +1,709 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>เมืองคอมพิวเตอร์</title>
+<style>
+:root{
+  --bg:#1d2433;--panel:#fffaf0;--ink:#2b2433;--muted:#7a7186;--accent:#ff7a3d;--ok:#2fa866;--bad:#e5484d;
+  --zone-lava:#f08a4b;--zone-wood:#c9a26b;--zone-rock:#9aa3ad;--zone-water:#5aa9e6;--zone-violet:#a58bd8;--zone-grass:#8fcf7a;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:"Noto Sans Thai","Sarabun",system-ui,sans-serif;-webkit-tap-highlight-color:transparent}
+button{font:inherit;cursor:pointer;border:0;border-radius:10px;padding:.55em 1em;background:var(--accent);color:#fff;font-weight:700}
+button:disabled{opacity:.45;cursor:not-allowed}
+button.ghost{background:#0000;color:var(--ink);border:2px solid #0002}
+button.sel{outline:3px solid var(--ink)}
+#app{max-width:980px;margin:0 auto;padding:10px 16px;min-height:100%;display:flex;flex-direction:column;gap:8px}
+#hud{display:flex;align-items:center;gap:10px;color:#fff;flex-wrap:wrap}
+#hud .who{font-weight:700;flex:1;min-width:140px}
+.meter{height:12px;border-radius:8px;background:#0003;overflow:hidden;min-width:90px}
+.meter>i{display:block;height:100%;background:var(--ok);transition:width .3s}
+.meter.heat>i{background:var(--accent)}
+.meter.bad>i{background:var(--bad)}
+#stage{position:relative;line-height:0}
+#map{width:100%;height:auto;border-radius:14px;background:#6aa84f;touch-action:none;display:block}
+#mini{position:absolute;right:8px;top:8px;width:120px;height:75px;border:2px solid #fff;border-radius:8px;opacity:.92}
+#prompt{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:none;font-size:1.05rem;box-shadow:0 4px 14px #0006;line-height:1.3}
+#help{color:#cfd6e6;font-size:.85rem;text-align:center}
+.screen{background:var(--panel);border-radius:16px;padding:20px;max-width:760px;margin:10px auto;width:100%}
+.screen h1,.screen h2{margin:.2em 0 .4em}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:.5em 0}
+.sw{width:34px;height:34px;border-radius:50%;border:3px solid #0002;padding:0}
+.sw.sel{border-color:var(--ink);outline:0;transform:scale(1.15)}
+.job{background:#fff;color:var(--ink);border:2px solid #0002;text-align:left;font-weight:400;flex:1 1 210px}
+.job b{display:block}
+.job.sel{border-color:var(--accent);background:#fff1e6;outline:0}
+input[type=text]{font:inherit;padding:.5em .7em;border-radius:10px;border:2px solid #0003;width:100%;max-width:300px}
+#modal{position:fixed;inset:0;background:#000a;display:none;align-items:center;justify-content:center;padding:10px;z-index:5}
+.card{background:var(--panel);border-radius:16px;width:100%;max-width:700px;max-height:94vh;overflow:auto;padding:18px;position:relative}
+.card h2{margin:0 0 .3em;padding-right:36px}
+.x{position:absolute;right:10px;top:10px;padding:.2em .6em;background:#0001;color:var(--ink)}
+.story{background:#fff;border-left:5px solid var(--accent);padding:10px 14px;border-radius:8px;margin:.6em 0;line-height:1.6}
+.hintbar{background:#fff7c2;border-radius:8px;padding:8px 12px;margin:.5em 0;display:none}
+.msg{min-height:1.6em;font-weight:700;margin:.4em 0}
+.msg.ok{color:var(--ok)}.msg.bad{color:var(--bad)}
+.lamps,.slots,.cards{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin:.6em 0}
+.lamp{width:70px;height:70px;font-size:2rem;background:#333;border-radius:50%}
+.lamp.on{background:#ffd23f}
+.bigdisp{font-size:3.5rem;font-weight:800;text-align:center;background:#111;color:#7CFC00;border-radius:12px;padding:.1em;margin:.3em 0;font-family:monospace}
+.goal{font-weight:700;text-align:center;font-size:1.15rem}
+.slot{min-width:84px;min-height:70px;font-size:1.8rem;background:#fff;border:3px dashed #0003;color:var(--ink)}
+.slot.full{border-style:solid;background:#fff1e6}
+.cardbtn{background:#fff;color:var(--ink);border:2px solid #0003;font-weight:600}
+.bar{height:16px;border-radius:8px;background:#0002;overflow:hidden}
+.bar>i{display:block;height:100%;background:var(--ok);width:0;transition:width .2s linear}
+.bar.pat>i{background:var(--accent)}
+.lane{display:flex;gap:8px;align-items:center;margin:4px 0}
+.lane .bar{flex:1}
+.lane>span{min-width:92px;font-size:.9rem}
+.item{display:flex;gap:8px;align-items:center;background:#fff;border-radius:10px;padding:8px;margin:6px 0;flex-wrap:wrap}
+.item .d{flex:1 1 200px;font-size:.92rem}
+.opt{background:#eee;color:var(--ink);padding:.4em .7em;font-weight:600}
+.opt.sel{background:var(--accent);color:#fff}
+.proc{background:#fff;border:3px solid #0002;color:var(--ink);text-align:left;width:100%;margin:6px 0;display:block}
+.proc.sel{border-color:var(--ok);background:#e9fbf0}
+.proc.dead{border-color:var(--bad);background:#fde8e8}
+.terms dt{font-weight:800;margin-top:.5em}.terms dd{margin:0 0 0 1em}
+.limit{background:#eef3ff;border-radius:8px;padding:8px 12px;margin:.6em 0}
+.job-note{background:#e9fbf0;border-radius:8px;padding:8px 12px;margin:.6em 0}
+table{border-collapse:collapse;width:100%}td,th{padding:6px;border-bottom:1px solid #0002;text-align:left}
+.tag{display:inline-block;padding:.1em .6em;border-radius:99px;font-size:.8rem;background:#0001}
+.tag.s1{background:#ffe9a8}.tag.s2{background:#c8f2d8}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="modal"><div class="card" id="card"></div></div>
+<script>
+'use strict';
+/* ---------- helpers ---------- */
+const $=s=>document.querySelector(s);
+function h(tag,props,...kids){
+  const e=document.createElement(tag);
+  for(const k in (props||{})){
+    const v=props[k];
+    if(k==='class')e.className=v;
+    else if(k.startsWith('on'))e.addEventListener(k.slice(2),v);
+    else if(k==='html')e.innerHTML=v;
+    else if(k==='style')e.style.cssText=v;
+    else e.setAttribute(k,v);
+  }
+  kids.flat(9).filter(c=>c!=null&&c!==false).forEach(c=>e.append(c));
+  return e;
+}
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
+function setMsg(el,text,kind){el.textContent=text;el.className='msg '+(kind||'');}
+
+/* ---------- state ---------- */
+const SKEY='computer-city-v1';
+const SKINS=['#fbd5b5','#e8b88a','#c68e5f','#8d5a3b','#5b3a26'];
+const HAIRS=['#2b2118','#6b3f1d','#c9a227','#d4452f','#7a5cc4'];
+const SHIRTS=['#e5484d','#3e7bfa','#2fa866','#f5a524','#9b59d0','#20b2aa'];
+const JOBS=[
+  {id:'bit',name:'ช่างไฟ',emoji:'💡',desc:'ชอบสวิตช์และหลอดไฟ'},
+  {id:'cpu',name:'เชฟ',emoji:'👨‍🍳',desc:'ทำตามสูตรทีละขั้น'},
+  {id:'ram',name:'เลขาโต๊ะทำงาน',emoji:'🗂️',desc:'จัดโต๊ะให้หยิบง่าย'},
+  {id:'disk',name:'บรรณารักษ์',emoji:'📚',desc:'เก็บของให้ไม่หาย'},
+  {id:'net',name:'บุรุษไปรษณีย์',emoji:'📮',desc:'ส่งพัสดุข้ามเมือง'},
+  {id:'os',name:'เสมียนศาลากลาง',emoji:'🏛️',desc:'จัดคิวให้ทุกคนเป็นธรรม'},
+];
+let state=load()||{name:'',look:null,job:null,skill:{}};
+function load(){try{return JSON.parse(localStorage.getItem(SKEY));}catch(e){return null;}}
+function save(){try{localStorage.setItem(SKEY,JSON.stringify(state));}catch(e){}}
+function jobName(id){const j=JOBS.find(j=>j.id===id);return j?j.name:'';}
+
+/* ---------- character drawing ---------- */
+function drawPerson(c,x,y,look,job,s=1){
+  c.save();c.translate(x,y);c.scale(s,s);
+  c.fillStyle='#0003';c.beginPath();c.ellipse(0,16,14,5,0,0,7);c.fill();
+  c.fillStyle=look.shirt;c.beginPath();c.roundRect(-11,-8,22,24,6);c.fill();
+  c.fillStyle=look.skin;c.beginPath();c.arc(0,-16,11,0,7);c.fill();
+  c.fillStyle=look.hair;c.beginPath();c.arc(0,-19,11,Math.PI,0);c.fill();
+  c.fillStyle='#222';c.fillRect(-5,-16,2.5,3);c.fillRect(3,-16,2.5,3);
+  const j=JOBS.find(j=>j.id===job);
+  if(j){c.font='16px serif';c.textAlign='center';c.fillText(j.emoji,0,-32);}
+  c.restore();
+}
+
+/* ---------- world ---------- */
+const W=960,H=600;
+const ZONES=[
+  {id:'bit', name:'เสาไฟกลางเมือง', emoji:'💡', x:480,y:330, rect:null, color:'#f2e6a0', n:1},
+  {id:'cpu', name:'ห้องครัว (CPU)', emoji:'🍳', x:190,y:238, rect:[50,40,280,170], color:'#f08a4b', n:2},
+  {id:'ram', name:'โต๊ะทำงาน (RAM)', emoji:'🗂️', x:770,y:238, rect:[630,40,280,170], color:'#c9a26b', n:3},
+  {id:'disk',name:'คลังสินค้า (Disk)', emoji:'📦', x:190,y:372, rect:[50,395,280,165], color:'#9aa3ad', n:4},
+  {id:'net', name:'ไปรษณีย์ (Network)', emoji:'📮', x:770,y:372, rect:[630,395,280,165], color:'#5aa9e6', n:5},
+  {id:'os',  name:'ศาลากลาง (OS)', emoji:'🏛️', x:480,y:178, rect:[380,30,200,120], color:'#a58bd8', n:6},
+];
+const player={x:480,y:300,tx:null,ty:null};
+const keys={};
+let nearZone=null,mapRunning=false;
+
+function buildMap(){
+  const app=$('#app');app.innerHTML='';
+  const learned=Object.values(state.skill).filter(v=>v===2).length;
+  const hud=h('div',{id:'hud'},
+    h('div',{class:'who'},`${state.name} · ${jobName(state.job)}`),
+    h('div',{style:'display:flex;align-items:center;gap:6px'},h('span',{},'ความเข้าใจ'),h('div',{class:'meter'},h('i',{style:`width:${learned/6*100}%`})),h('b',{},`${learned}/6`)),
+    h('button',{class:'ghost',style:'color:#fff;border-color:#fff6',onclick:showSkills},'📖 สมุดทักษะ'),
+    h('button',{class:'ghost',style:'color:#fff;border-color:#fff6',onclick:showMenu},'⚙️')
+  );
+  const canvas=h('canvas',{id:'map',width:W,height:H});
+  const mini=h('canvas',{id:'mini',width:120,height:75});
+  const prompt=h('button',{id:'prompt',onclick:enterNear},'');
+  app.append(hud,h('div',{id:'stage'},canvas,mini,prompt),
+    h('div',{id:'help'},'เดิน: ลูกศร/WASD หรือแตะที่แผนที่ · เข้าอาคาร: E/Enter หรือกดปุ่มที่โผล่มา'));
+  canvas.addEventListener('pointerdown',e=>{
+    const r=canvas.getBoundingClientRect();
+    player.tx=(e.clientX-r.left)*W/r.width;player.ty=(e.clientY-r.top)*H/r.height;
+  });
+  mapRunning=true;
+  if(learned===6&&!state.ended)setTimeout(showEnding,400);
+}
+
+function drawMap(){
+  const cv=$('#map');if(!cv)return;
+  const c=cv.getContext('2d');
+  c.fillStyle='#8fcf7a';c.fillRect(0,0,W,H);
+  c.fillStyle='#d9d3c3';
+  c.fillRect(0,285,W,50);c.fillRect(455,0,50,H);       // roads
+  c.fillStyle='#e8e2d2';c.beginPath();c.arc(480,310,70,0,7);c.fill();
+  for(const z of ZONES){
+    if(!z.rect)continue;
+    const [x,y,w,hh]=z.rect;
+    c.fillStyle=z.color;c.beginPath();c.roundRect(x,y,w,hh,16);c.fill();
+    c.fillStyle='#0002';c.fillRect(x,y+hh-8,w,8);
+    c.fillStyle='#fff';c.font='700 18px sans-serif';c.textAlign='center';
+    c.fillText(z.name,x+w/2,y+28);
+    c.font='54px serif';c.fillText(z.emoji,x+w/2,y+hh/2+24);
+  }
+  const t=performance.now()/400;
+  for(const z of ZONES){
+    const done=state.skill[z.id]===2;
+    const bob=Math.sin(t+z.n)*4;
+    c.fillStyle=done?'#2fa866':'#ff7a3d';
+    c.beginPath();c.arc(z.x,z.y-26+bob,15,0,7);c.fill();
+    c.strokeStyle='#fff';c.lineWidth=3;c.stroke();
+    c.fillStyle='#fff';c.font='700 15px sans-serif';c.textAlign='center';
+    c.fillText(done?'✓':z.n,z.x,z.y-21+bob);
+    if(z.id==='bit'){c.font='34px serif';c.fillText('💡',z.x,z.y+22);}
+  }
+  drawPerson(c,player.x,player.y,state.look,state.job);
+  // minimap
+  const m=$('#mini');if(m){
+    const mc=m.getContext('2d');mc.clearRect(0,0,120,75);
+    mc.fillStyle='#8fcf7a';mc.fillRect(0,0,120,75);
+    for(const z of ZONES){mc.fillStyle=z.color;
+      if(z.rect){const [x,y,w,hh]=z.rect;mc.fillRect(x/8,y/8,w/8,hh/8);}else mc.fillRect(z.x/8-4,z.y/8-4,8,8);}
+    mc.fillStyle='#e5484d';mc.beginPath();mc.arc(player.x/8,player.y/8,3.5,0,7);mc.fill();
+  }
+}
+
+let last=0;
+function loop(ts){
+  const dt=Math.min(.05,(ts-last)/1000||0);last=ts;
+  if(mapRunning&&$('#map')&&$('#modal').style.display!=='flex'){
+    let dx=0,dy=0;
+    if(keys.ArrowLeft||keys.a)dx--;if(keys.ArrowRight||keys.d)dx++;
+    if(keys.ArrowUp||keys.w)dy--;if(keys.ArrowDown||keys.s)dy++;
+    if(dx||dy){player.tx=null;const l=Math.hypot(dx,dy);dx/=l;dy/=l;}
+    else if(player.tx!=null){
+      const ex=player.tx-player.x,ey=player.ty-player.y,d=Math.hypot(ex,ey);
+      if(d<4)player.tx=null;else{dx=ex/d;dy=ey/d;}
+    }
+    player.x=Math.max(16,Math.min(W-16,player.x+dx*220*dt));
+    player.y=Math.max(40,Math.min(H-20,player.y+dy*220*dt));
+    let best=null,bd=60;
+    for(const z of ZONES){const d=Math.hypot(z.x-player.x,z.y-player.y);if(d<bd){bd=d;best=z;}}
+    if(best!==nearZone){
+      nearZone=best;const p=$('#prompt');
+      if(p){if(best){p.style.display='block';p.textContent=`${best.emoji} เข้า ${best.name} (E)`;}else p.style.display='none';}
+    }
+    drawMap();
+  }
+  requestAnimationFrame(loop);
+}
+addEventListener('keydown',e=>{
+  keys[e.key]=true;
+  if((e.key==='e'||e.key==='E'||e.key==='Enter')&&nearZone&&$('#modal').style.display!=='flex'&&$('#map'))enterNear();
+  if(e.key.startsWith('Arrow'))e.preventDefault();
+});
+addEventListener('keyup',e=>{keys[e.key]=false;});
+function enterNear(){if(nearZone)openLevel(LEVELS[nearZone.id]);}
+
+/* ---------- screens ---------- */
+function showCreator(){
+  mapRunning=false;
+  const look={skin:SKINS[0],hair:HAIRS[0],shirt:SHIRTS[0]};
+  let job=null;
+  const app=$('#app');app.innerHTML='';
+  const prev=h('canvas',{width:140,height:150,style:'background:#e8e2d2;border-radius:12px'});
+  const nameIn=h('input',{type:'text',placeholder:'ชื่อตัวละคร',value:'น้องใหม่',maxlength:16});
+  const startBtn=h('button',{disabled:'',onclick:()=>{
+    state={name:nameIn.value.trim()||'น้องใหม่',look:{...look},job,skill:{}};save();
+    player.x=480;player.y=300;buildMap();
+  }},'🚪 เข้าเมือง');
+  const redraw=()=>{const c=prev.getContext('2d');c.clearRect(0,0,140,150);drawPerson(c,70,92,look,job,2);};
+  const swatches=(key,list)=>h('div',{class:'row'},list.map(col=>{
+    const b=h('button',{class:'sw'+(look[key]===col?' sel':''),style:`background:${col}`,onclick:()=>{
+      look[key]=col;b.parentNode.querySelectorAll('.sw').forEach(x=>x.classList.remove('sel'));b.classList.add('sel');redraw();}});
+    return b;}));
+  const jobBtns=JOBS.map(j=>h('button',{class:'job',onclick:e=>{
+    job=j.id;jobBtns.forEach(b=>b.classList.remove('sel'));e.currentTarget.classList.add('sel');
+    startBtn.removeAttribute('disabled');redraw();}},h('b',{},`${j.emoji} ${j.name}`),j.desc));
+  app.append(h('div',{class:'screen'},
+    h('h1',{},'🏙️ เมืองคอมพิวเตอร์'),
+    h('p',{},'คุณเป็นคนตัวเล็กที่เพิ่งย้ายเข้ามาในเมืองแปลก ๆ ที่ทุกโซนคือชิ้นส่วนของคอมพิวเตอร์ ไม่ต้องรู้ศัพท์มาก่อน แค่ใช้ชีวิตแล้วสังเกต'),
+    h('div',{class:'row'},prev,h('div',{style:'flex:1'},h('p',{},'ชื่อ'),nameIn)),
+    h('p',{},'ผิว'),swatches('skin',SKINS),h('p',{},'ผม'),swatches('hair',HAIRS),h('p',{},'เสื้อ'),swatches('shirt',SHIRTS),
+    h('h2',{},'เลือกอาชีพ'),
+    h('p',{style:'margin:0;color:var(--muted)'},'อาชีพมีผลกับมุมมอง: ในจุดที่ตรงกับอาชีพ คุณจะได้ "มุมมองพิเศษ" ตอนสรุป'),
+    h('div',{class:'row'},jobBtns),
+    h('div',{class:'row'},startBtn)));
+  redraw();
+}
+
+function showMenu(){
+  openCard('เมนู',b=>{
+    b.append(h('p',{},'ความก้าวหน้าบันทึกในเบราว์เซอร์นี้อัตโนมัติ'),
+      h('div',{class:'row'},
+        h('button',{class:'ghost',onclick:()=>{closeCard();showCreator();}},'🧑‍🎨 สร้างตัวละครใหม่ (ล้างความก้าวหน้า)'),
+        h('button',{onclick:closeCard},'เล่นต่อ')));
+  });
+}
+
+function showSkills(){
+  openCard('📖 สมุดทักษะ',b=>{
+    const rows=ZONES.map(z=>{
+      const s=state.skill[z.id]||0;
+      return h('tr',{},h('td',{},`${z.emoji} ${LEVELS[z.id].concept}`),
+        h('td',{},h('span',{class:'tag s'+s},['ยังไม่เจอ','รู้สึกแล้ว','รู้ชื่อแล้ว ✓'][s])));
+    });
+    b.append(h('p',{},'ลำดับ: รู้สึกก่อน แล้วค่อยเรียกชื่อ'),h('table',{},rows));
+  });
+}
+
+/* ---------- card / level framework ---------- */
+function openCard(title,fill){
+  const card=$('#card');card.innerHTML='';
+  card.append(h('button',{class:'x',onclick:closeCard},'✕'),h('h2',{},title));
+  const body=h('div',{});card.append(body);fill(body,card);
+  $('#modal').style.display='flex';
+}
+function closeCard(){
+  $('#modal').style.display='none';$('#card').innerHTML='';
+  if(window.__timer){clearInterval(window.__timer);window.__timer=null;}
+}
+
+function openLevel(L){
+  openCard(`${L.emoji} ${L.title}`,(body)=>{
+    body.append(h('div',{class:'story'},L.story),
+      h('button',{onclick:()=>startPlay(L,body)},'🔬 เริ่มทดลอง'));
+  });
+}
+function startPlay(L,body){
+  body.innerHTML='';
+  const mine=state.job===L.job;
+  const hint=h('div',{class:'hintbar'},'💡 '+L.hint+(mine?` (มุมมอง${jobName(L.job)}: ${L.jobHint})`:''));
+  body.append(h('button',{class:'ghost',style:'float:right',onclick:()=>{hint.style.display=hint.style.display==='block'?'none':'block';}},'💡 คำใบ้'),hint);
+  const box=h('div',{});body.append(box);
+  let finished=false;
+  L.play(box,()=>{
+    if(finished)return;finished=true;
+    if(!state.skill[L.id])state.skill[L.id]=1;save();
+    if(window.__timer){clearInterval(window.__timer);window.__timer=null;}
+    setTimeout(()=>showReveal(L,body),700);
+  });
+}
+function showReveal(L,body){
+  body.innerHTML='';
+  const mine=state.job===L.job;
+  body.append(
+    h('div',{class:'story'},'🎉 ผ่านแล้ว! ตอนนี้ลองมาเรียกชื่อสิ่งที่คุณเพิ่งสัมผัสกัน'),
+    h('dl',{class:'terms'},L.terms.map(([t,m])=>[h('dt',{},t),h('dd',{},m)])),
+    h('div',{class:'limit'},'⚠️ อุปมานี้หลุดตรงไหน: '+L.limit),
+    mine?h('div',{class:'job-note'},`${JOBS.find(j=>j.id===L.job).emoji} มุมมองของ${jobName(L.job)}: ${L.jobNote}`):null,
+    h('div',{class:'row'},h('button',{onclick:()=>{
+      state.skill[L.id]=2;save();closeCard();buildMap();}},'✅ เข้าใจแล้ว กลับเมือง')));
+}
+
+function showEnding(){
+  state.ended=true;save();
+  openCard('🏆 คุณรู้จักเมืองนี้ทั้งหมดแล้ว!',b=>{
+    b.append(h('div',{class:'story'},'ลองนึกภาพว่าคุณกดเปิดเว็บสักหน้า สิ่งที่เกิดขึ้นในเมืองคือ…'),
+      h('ol',{style:'line-height:1.8'},
+        h('li',{},'🏛️ ศาลากลาง (OS) จัดคิวให้เบราว์เซอร์ได้ใช้ทรัพยากร'),
+        h('li',{},'📦 คลังสินค้า (Disk) ส่งโปรแกรมที่เก็บถาวรขึ้นมา'),
+        h('li',{},'🗂️ โต๊ะทำงาน (RAM) วางโปรแกรมไว้ให้หยิบเร็ว ๆ'),
+        h('li',{},'🍳 ห้องครัว (CPU) ทำตามคำสั่งทีละขั้น ด้วย 0 กับ 1 จากเสาไฟ 💡'),
+        h('li',{},'📮 ไปรษณีย์ (Network) ส่งคำขอเป็นพัสดุเล็ก ๆ ไปเอาหน้าเว็บกลับมา')),
+      h('p',{},'ทุกอุปมามีจุดที่หลุด แต่ตอนนี้คุณมีภาพในหัวแล้ว ศัพท์ใหม่ ๆ จะไม่ใช่เรื่องแปลกอีกต่อไป'),
+      h('div',{class:'row'},h('button',{onclick:()=>{closeCard();buildMap();}},'เดินเล่นต่อในเมือง')));
+  });
+}
+
+/* ---------- LEVELS ---------- */
+const LEVELS={};
+
+LEVELS.bit={
+  id:'bit',job:'bit',emoji:'💡',title:'เสาไฟกลางเมือง',concept:'Bit และข้อมูล',
+  story:'กลางเมืองมีเสาไฟที่มีหลอด 4 ดวง แต่ละดวงเปิดหรือปิดได้ ป้ายเขียวด้านบนจะโชว์ตัวเลข ชาวเมืองขอให้คุณทำให้ป้ายขึ้นเลขที่พวกเขาต้องการ ไม่มีใครบอกกติกา ลองกดดูเอง',
+  hint:'ลองเปิดทีละดวง แล้วดูว่าเลขเปลี่ยนเท่าไหร่ ดวงซ้ายสุดกับขวาสุดต่างกันไหม',
+  jobHint:'ช่างไฟรู้ว่าแต่ละดวงมี "น้ำหนัก" ไม่เท่ากัน',
+  terms:[['บิต (bit)','สวิตช์ 1 ดวง มีแค่ 2 สถานะ คือ 0 (ปิด) หรือ 1 (เปิด)'],
+    ['เลขฐานสอง (binary)','ดวงจากขวาไปซ้ายมีค่า 1, 2, 4, 8 เปิดดวงไหนก็รวมค่าดวงนั้น เช่น 5 = 4+1'],
+    ['ไบต์ (byte)','สวิตช์ 8 ดวงรวมกัน แทนได้ 256 ค่า คอมพิวเตอร์เก็บทุกอย่างเป็นสวิตช์แบบนี้']],
+  limit:'คอมพิวเตอร์จริงไม่ได้ใช้หลอดไฟ แต่ใช้ทรานซิสเตอร์ตัวจิ๋วนับพันล้านตัว สถานะคือแรงดันไฟฟ้าสูงหรือต่ำ',
+  jobNote:'ช่างไฟคุ้นกับการเปิด/ปิดอยู่แล้ว ใส่ใจว่าแค่ 4 ดวงก็แทนได้ 16 ค่า ถ้าเพิ่มทีละดวง จำนวนค่าจะเพิ่มเป็นสองเท่าทุกครั้ง',
+  play(box,done){
+    const targets=[5,9,14];let ti=0;const bits=[0,0,0,0];let locked=false;
+    const disp=h('div',{class:'bigdisp'},'0');
+    const goal=h('p',{class:'goal'});
+    const msg=h('p',{class:'msg'});
+    const btns=bits.map((_,i)=>h('button',{class:'lamp',onclick:()=>{if(locked)return;bits[i]^=1;upd();}}));
+    function val(){return bits.reduce((a,b,i)=>a+b*(1<<(3-i)),0);}
+    function upd(){
+      const v=val();disp.textContent=v;
+      btns.forEach((b,i)=>{b.textContent=bits[i]?'💡':'⚫';b.classList.toggle('on',!!bits[i]);});
+      if(v===targets[ti]){
+        setMsg(msg,'ได้แล้ว! ✨','ok');ti++;
+        if(ti===targets.length){locked=true;done();}
+        else{locked=true;setTimeout(()=>{locked=false;showGoal();setMsg(msg,'');},900);}
+      }
+    }
+    function showGoal(){goal.textContent=`ชาวเมืองคนที่ ${ti+1}/3 ขอเลข ${targets[ti]}`;}
+    showGoal();
+    box.append(goal,disp,h('div',{class:'lamps'},btns),msg);upd();
+  }
+};
+
+LEVELS.cpu={
+  id:'cpu',job:'cpu',emoji:'🍳',title:'ห้องครัว',concept:'CPU: ทำตามคำสั่งทีละขั้น',
+  story:'เชฟประจำเมืองทำได้เฉพาะ "ทำตามสูตรทีละบรรทัด" ไม่คิดเอง ไม่ข้ามขั้น ช่วยเขียนสูตรแซนด์วิชไข่ให้ถูกลำดับ แล้วช่วยให้ครัวทำออเดอร์ทันเวลา แต่ครัวมีข้อจำกัดเรื่องความร้อนและงบจ้างเชฟ',
+  hint:'ส่วนแรก: คิดว่าอะไรต้องมีก่อนอะไร ส่วนที่สอง: ลองทั้งเพิ่มเชฟและเร่งนาฬิกา แล้วดูว่าออเดอร์แบบไหนช่วยด้วยอะไร',
+  jobHint:'เชฟรู้ว่างานที่ "ต้องรอขั้นก่อนหน้า" แบ่งให้หลายคนทำพร้อมกันไม่ได้',
+  terms:[['คำสั่ง (instruction)','ขั้นตอนเล็ก ๆ หนึ่งบรรทัดในสูตร CPU ทำทีละคำสั่งตามลำดับ'],
+    ['สัญญาณนาฬิกา (clock)','จังหวะที่เชฟลงมือ เร็วขึ้นทำได้มากขึ้น แต่ร้อนขึ้นและกินไฟมากขึ้น'],
+    ['แกน (core)','เชฟอีกคนในครัว ช่วยได้เมื่อมีงานอิสระหลายชิ้นให้ทำพร้อมกัน แต่งานที่ต้องต่อเนื่องก้อนเดียวไม่ช่วย']],
+  limit:'CPU จริงทำเป็นพันล้านคำสั่งต่อวินาที และเชฟของเราไม่ได้อธิบายการ "เดา" ล่วงหน้า (branch prediction) หรือสายพานที่ทำหลายขั้นซ้อนกัน (pipeline)',
+  jobNote:'เชฟอย่างคุณรู้ดี: เพิ่มคนไม่ช่วยทุกกรณี ถ้าใช้ได้แค่หม้อเดียว ต้องเพิ่มความเร็วมือแทน',
+  play(box,done){
+    const STEPS=[{id:'cut',t:'🔪 หั่นขนมปัง'},{id:'fry',t:'🍳 ทอดไข่'},{id:'put',t:'🥪 วางไข่บนขนมปัง'},{id:'serve',t:'🛎️ เสิร์ฟ'}];
+    function partA(){
+      box.innerHTML='';
+      let recipe=[];const pool=shuffle(STEPS);let busy=false;
+      const msg=h('p',{class:'msg'});
+      const rList=h('div',{class:'cards'}),pList=h('div',{class:'cards'});
+      const run=h('button',{onclick:exec},'👨‍🍳 ให้เชฟทำตามสูตร');
+      function render(){
+        rList.innerHTML='';pList.innerHTML='';
+        recipe.forEach((s,i)=>rList.append(h('button',{class:'cardbtn',id:'r'+i,onclick:()=>{if(busy)return;recipe.splice(i,1);pool.push(s);render();}},`${i+1}. ${s.t}`)));
+        if(!recipe.length)rList.append(h('span',{style:'color:var(--muted)'},'(สูตรว่าง แตะการ์ดด้านล่างเพื่อใส่)'));
+        pool.forEach(s=>pList.append(h('button',{class:'cardbtn',onclick:()=>{if(busy)return;pool.splice(pool.indexOf(s),1);recipe.push(s);render();}},s.t)));
+      }
+      async function exec(){
+        if(busy)return;
+        if(pool.length){setMsg(msg,'ใส่การ์ดให้ครบทุกขั้นก่อน','bad');return;}
+        busy=true;run.disabled=true;const have={};
+        for(let i=0;i<recipe.length;i++){
+          const s=recipe[i];const el=rList.children[i];el.style.background='#ffe9a8';setMsg(msg,`เชฟกำลัง: ${s.t}`);
+          await sleep(750);
+          let err=null;
+          if(s.id==='put'&&!(have.cut&&have.fry))err=!have.cut?'ไม่มีขนมปังที่หั่นแล้วให้วาง!':'ไม่มีไข่ทอดให้วาง!';
+          if(s.id==='serve'&&!have.put)err='ยังไม่มีแซนด์วิชให้เสิร์ฟ!';
+          if(err){el.style.background='#fbc4c4';setMsg(msg,'😵 เชฟงง: '+err+' (เชฟไม่เดาเอง ทำตามสูตรเท่านั้น)','bad');busy=false;run.disabled=false;return;}
+          have[s.id]=true;el.style.background='#c8f2d8';
+        }
+        setMsg(msg,'🎉 แซนด์วิชเสร็จ! เชฟทำตามสูตรได้ถูกต้อง','ok');await sleep(1200);partB();
+      }
+      box.append(h('p',{},'ส่วนที่ 1: เรียงสูตร (แตะการ์ดเพื่อใส่/เอาออก)'),h('b',{},'สูตรของเชฟ'),rList,h('b',{},'การ์ดขั้นตอน'),pList,run,msg);
+      render();
+    }
+    function partB(){
+      box.innerHTML='';
+      let clock=1,chefs=1;const goals={sand:false,cake:false};
+      const msg=h('p',{class:'msg'});const lanes=h('div',{});
+      const heatBar=h('div',{class:'meter heat'},h('i',{})),payBar=h('div',{class:'meter'},h('i',{}));
+      const heatTxt=h('span',{}),payTxt=h('span',{});
+      const g1=h('li',{},'🥪 ทำแซนด์วิช 6 ชุด ภายใน 5 วินาที'),g2=h('li',{},'🎂 ทำเค้กก้อนใหญ่ (12 ขั้นต่อเนื่อง) ภายใน 3.5 วินาที');
+      const clockBtns=[1,2,3].map(v=>h('button',{class:'opt',onclick:()=>{clock=v;upd();}},`${v}x`));
+      const chefBtns=[1,2,3,4].map(v=>h('button',{class:'opt',onclick:()=>{chefs=v;upd();}},`${v} คน`));
+      function upd(){
+        clockBtns.forEach((b,i)=>b.classList.toggle('sel',i+1===clock));
+        chefBtns.forEach((b,i)=>b.classList.toggle('sel',i+1===chefs));
+        const heat=clock*clock,ok1=heat<=5,ok2=chefs<=3;
+        heatBar.firstChild.style.width=Math.min(100,heat/9*100)+'%';heatBar.classList.toggle('bad',!ok1);
+        payBar.firstChild.style.width=chefs/4*100+'%';payBar.classList.toggle('bad',!ok2);
+        heatTxt.textContent=`ความร้อน ${heat}/5`+(ok1?'':' 🔥เกิน');payTxt.textContent=`ค่าจ้าง ${chefs}/3 คน`+(ok2?'':' 💸เกินงบ');
+      }
+      function check(){if(goals.sand&&goals.cake){done();}}
+      function run(kind){
+        const heat=clock*clock;
+        if(heat>5){setMsg(msg,'🔥 ครัวร้อนเกินไป! ลดนาฬิกาลง','bad');return;}
+        if(chefs>3){setMsg(msg,'💸 เกินงบจ้างเชฟ ลดจำนวนคนลง','bad');return;}
+        let busy,time;
+        if(kind==='sand'){const per=Math.ceil(6/chefs)*4;busy=Array.from({length:chefs},(_,i)=>Math.max(0,Math.min(per,24-i*per)));time=per*.5/clock;}
+        else{busy=Array.from({length:chefs},(_,i)=>i===0?12:0);time=12*.5/clock;}
+        lanes.innerHTML='';
+        const maxBusy=Math.max(...busy);
+        busy.forEach((b,i)=>{
+          const bar=h('div',{class:'bar'},h('i',{}));
+          lanes.append(h('div',{class:'lane'},h('span',{},`👨‍🍳 เชฟ ${i+1}`),bar,h('span',{},b?`${b} ขั้น`:'😴 ว่างงาน')));
+          requestAnimationFrame(()=>{bar.firstChild.style.transition=`width ${Math.min(2.5,time)}s linear`;bar.firstChild.style.width=(b/maxBusy*100)+'%';});
+        });
+        const limit=kind==='sand'?5:3.5;
+        if(time<=limit){
+          setMsg(msg,`✅ ใช้เวลา ${time.toFixed(1)} วินาที ทันกำหนด!`,'ok');
+          goals[kind]=true;(kind==='sand'?g1:g2).textContent+=' ✓';check();
+        }else{
+          setMsg(msg,`⏱️ ใช้เวลา ${time.toFixed(1)} วินาที ช้าเกินไป (เกิน ${limit}) ลองปรับใหม่`+(kind==='cake'&&chefs>1?' · สังเกตเชฟที่ว่างงานไหม':''),'bad');
+        }
+      }
+      box.append(h('p',{},'ส่วนที่ 2: บริหารครัว'),h('ul',{},g1,g2),
+        h('b',{},'⏱️ นาฬิกา (ความเร็วมือ)'),h('div',{class:'row'},clockBtns),
+        h('b',{},'👥 จำนวนเชฟ'),h('div',{class:'row'},chefBtns),
+        h('div',{class:'row'},heatBar,heatTxt),h('div',{class:'row'},payBar,payTxt),
+        h('div',{class:'row'},h('button',{onclick:()=>run('sand')},'🥪 เริ่มทำแซนด์วิช 6 ชุด'),h('button',{onclick:()=>run('cake')},'🎂 เริ่มทำเค้ก')),
+        msg,lanes);
+      upd();
+    }
+    partA();
+  }
+};
+
+LEVELS.ram={
+  id:'ram',job:'ram',emoji:'🗂️',title:'โต๊ะทำงาน',concept:'RAM: ที่ทำงานชั่วคราว',
+  story:'โต๊ะนี้วางเอกสารได้แค่ 3 เล่ม แต่หยิบได้ทันที (1 วินาที) เอกสารอื่นอยู่ที่ชั้นไกลสุดทาง เดินไปเอาต้องใช้ 3 วินาที มีลูกค้าขอเอกสาร 12 ครั้ง ลองทำให้เสร็จเร็วที่สุด (เกณฑ์ 3 ดาวคือไม่เกิน 22 วินาที)',
+  hint:'สังเกตว่าเอกสารเล่มไหนถูกขอบ่อย ๆ แล้วเก็บไว้บนโต๊ะ ส่วนเล่มที่ถูกขอครั้งเดียวค่อยเอาไปสลับ',
+  jobHint:'เลขาจะเก็บเล่มที่ใช้บ่อยไว้ใกล้มือเสมอ',
+  terms:[['RAM','โต๊ะทำงานของคอมพิวเตอร์ เร็วมาก แต่ความจุน้อย'],
+    ['หน่วยความจำชั่วคราว (volatile)','ปิดไฟเมื่อไหร่ ของบนโต๊ะหายหมด'],
+    ['ความจุจำกัด','โต๊ะเต็มแล้วต้องเลือกว่าจะเอาอะไรออก ถ้าเลือกพลาดต้องเสียเวลาไปเอากลับมาใหม่']],
+  limit:'RAM จริงไม่ได้ "ทีละเล่ม" แต่เป็นล้านล้านช่อง และมีหลายชั้น (แคชในตัว CPU) ที่เร็วกว่าอีก',
+  jobNote:'การเลือกเก็บเอกสารที่ใช้บ่อยไว้ใกล้มือ คือหลักเดียวกับแคชของคอมพิวเตอร์',
+  play(box,done){
+    const seq=['A','B','A','C','A','B','D','A','B','E','A','B'];
+    const DOC={A:'📕',B:'📗',C:'📘',D:'📙',E:'📓'};
+    let slots,i,time,pending,over;
+    const req=h('p',{class:'goal'}),msg=h('p',{class:'msg'}),tm=h('p',{},''),
+      slotWrap=h('div',{class:'slots'}),far=h('button',{onclick:fetchFar},'🚶 ไปหยิบที่ชั้นไกล (3 วิ)'),
+      actions=h('div',{class:'row'});
+    function reset(){slots=[null,null,null];i=0;time=0;pending=null;over=false;actions.innerHTML='';setMsg(msg,'');render();}
+    function render(){
+      slotWrap.innerHTML='';
+      slots.forEach((s,k)=>slotWrap.append(h('button',{class:'slot'+(s?' full':''),onclick:()=>clickSlot(k)},s?DOC[s]:'ว่าง')));
+      req.textContent=over?'ครบ 12 คำขอแล้ว':`คำขอที่ ${i+1}/12: ลูกค้าขอ ${DOC[seq[i]]}`;
+      tm.textContent=`เวลารวม: ${time} วินาที`;
+      far.disabled=over;
+    }
+    function next(){i++;if(i>=seq.length){over=true;render();finish();}else render();}
+    function clickSlot(k){
+      if(over)return;
+      if(pending){slots[k]=pending;pending=null;setMsg(msg,'จัดโต๊ะใหม่แล้ว','ok');next();return;}
+      if(!slots[k])return;
+      if(slots[k]===seq[i]){time+=1;setMsg(msg,'หยิบจากโต๊ะ เร็ว! (+1)','ok');next();}
+      else{time+=1;setMsg(msg,'ไม่ใช่เล่มนี้! (+1 วิ)','bad');render();}
+    }
+    function fetchFar(){
+      if(over||pending)return;
+      if(slots.includes(seq[i])){setMsg(msg,'เล่มนี้อยู่บนโต๊ะแล้ว ไม่ต้องไปไกล!','bad');return;}
+      time+=3;
+      const e=slots.indexOf(null);
+      if(e>=0){slots[e]=seq[i];setMsg(msg,'เดินไปเอามาแล้ว (+3)','bad');next();}
+      else{pending=seq[i];setMsg(msg,'โต๊ะเต็ม! เลือกว่าจะเก็บเล่มไหนกลับไปชั้นไกล','bad');render();}
+    }
+    function finish(){
+      const stars=time<=22?3:time<=26?2:1;
+      setMsg(msg,`จบแล้ว! ใช้ ${time} วินาที ${'⭐'.repeat(stars)}`,stars===3?'ok':'bad');
+      actions.append(h('button',{class:'ghost',onclick:reset},'🔁 ลองใหม่'),
+        h('button',{onclick:()=>{
+          slots=[null,null,null];render();
+          setMsg(msg,'⚡ ปิดไฟ... เอกสารบนโต๊ะหายเกลี้ยง! (แต่ของที่ชั้นไกลยังอยู่) นี่คือ RAM','bad');
+          actions.innerHTML='';actions.append(h('button',{onclick:done},'ไปสรุป ➜'));
+        }},'⚡ ทดสอบปิดไฟ'));
+    }
+    box.append(req,h('b',{},'โต๊ะ (วางได้ 3 เล่ม)'),slotWrap,far,tm,msg,actions);reset();
+  }
+};
+
+LEVELS.disk={
+  id:'disk',job:'disk',emoji:'📦',title:'คลังสินค้า',concept:'Disk: เก็บถาวร ใหญ่ แต่ช้า',
+  story:'ข่าวด่วน: เย็นนี้ไฟจะดับ! คุณต้องตัดสินใจว่าของแต่ละชิ้นจะวางที่ไหน 🪑 โต๊ะ (หยิบเร็ว แต่ไฟดับแล้วหาย วางได้รวมไม่เกิน 3 หน่วย) 🏭 คลัง (ใหญ่ ปลอดภัย แต่ต้องเดินไปเอา) หรือ 📋 ทั้งสอง (เก็บต้นฉบับในคลัง และถ่ายสำเนามาไว้บนโต๊ะ)',
+  hint:'ถามตัวเองสองข้อกับของแต่ละชิ้น: "หายแล้วเสียใจไหม" และ "ต้องใช้ตลอดเวลาไหม" ถ้าใช่ทั้งคู่ต้องทำสองที่',
+  jobHint:'บรรณารักษ์เก็บต้นฉบับไว้ในห้องสมุดเสมอ แล้วให้คนยืมสำเนาไปใช้',
+  terms:[['ดิสก์ (Disk)','คลังเก็บถาวร ความจุใหญ่ ไฟดับแล้วของไม่หาย แต่เข้าถึงช้ากว่า RAM มาก'],
+    ['การบันทึก (save)','คัดลอกของจากโต๊ะ (RAM) ไปเก็บในคลัง (Disk) ไม่บันทึก = ไฟดับแล้วงานหาย'],
+    ['แคช (cache)','สำเนาของที่ใช้บ่อยมาวางใกล้มือ เพื่อไม่ต้องเดินไปคลังทุกครั้ง']],
+  limit:'ดิสก์สมัยใหม่ (SSD) ไม่มีส่วนที่หมุนหรือต้อง "เดิน" แล้ว เร็วกว่าฮาร์ดดิสก์เก่ามาก แต่ยังช้ากว่า RAM หลายเท่า',
+  jobNote:'การเก็บต้นฉบับไว้ที่เดียวแล้วถ่ายสำเนาไปใช้ คือหัวใจของการสำรองข้อมูลและแคช',
+  play(box,done){
+    const items=[
+      {id:'rep',n:'✍️ รายงานที่กำลังพิมพ์',size:1,imp:true,freq:true,d:'ใช้ตลอดเวลา หายแล้วเสียใจมาก'},
+      {id:'alb',n:'📷 อัลบั้มรูป 2,000 ใบ',size:5,imp:true,freq:false,d:'ใหญ่มาก ไม่ค่อยเปิด ห้ามหาย'},
+      {id:'cal',n:'🧮 เครื่องคิดเลข',size:1,imp:false,freq:true,d:'ใช้ตลอดเวลา หายแล้วซื้อใหม่ได้'},
+      {id:'con',n:'📜 สัญญาบ้าน',size:1,imp:true,freq:false,d:'สำคัญมาก เปิดปีละครั้ง'},
+      {id:'note',n:'🗒️ โน้ตจดเร็ว ๆ',size:1,imp:false,freq:true,d:'ใช้ชั่วคราว ไม่สำคัญ'},
+    ];
+    const choice={};const msg=h('p',{class:'msg'});const capTxt=h('b',{});
+    const capBar=h('div',{class:'meter heat'},h('i',{}));
+    const list=h('div',{});
+    const optsOf=it=>[['desk','🪑 โต๊ะ'],['store','🏭 คลัง'],['both','📋 ทั้งสอง']];
+    function used(){return items.reduce((a,it)=>a+((choice[it.id]==='desk'||choice[it.id]==='both')?it.size:0),0);}
+    function render(){
+      list.innerHTML='';
+      items.forEach(it=>list.append(h('div',{class:'item'},h('div',{class:'d'},h('b',{},it.n),h('br'),`${it.d} · ขนาด ${it.size} หน่วย`),
+        optsOf(it).map(([v,t])=>h('button',{class:'opt'+(choice[it.id]===v?' sel':''),onclick:()=>{choice[it.id]=v;render();}},t)))));
+      const u=used();capTxt.textContent=`โต๊ะใช้ไป ${u}/3 หน่วย`+(u>3?' ❌ ล้น':'');
+      capBar.firstChild.style.width=Math.min(100,u/3*100)+'%';capBar.classList.toggle('bad',u>3);
+    }
+    function blackout(){
+      if(items.some(it=>!choice[it.id])){setMsg(msg,'เลือกที่วางให้ครบทุกชิ้นก่อน','bad');return;}
+      if(used()>3){setMsg(msg,'โต๊ะล้น! วางเกิน 3 หน่วยไม่ได้','bad');return;}
+      const probs=[];
+      for(const it of items){
+        const c=choice[it.id];
+        if(it.imp&&c==='desk')probs.push(`❌ ${it.n} หายเมื่อไฟดับ (อยู่แต่บนโต๊ะ ไม่ได้บันทึก)`);
+        if(it.freq&&c==='store')probs.push(`⏱️ ${it.n} ใช้ตลอดแต่อยู่ในคลัง ต้องเดินไปเอาทุกครั้ง ช้ามาก`);
+        if(it.size>3&&c!=='store')probs.push(`${it.n} ใหญ่เกินกว่าจะวางโต๊ะ`);
+      }
+      if(probs.length){
+        msg.className='msg bad';msg.innerHTML='⚡ ไฟดับ!<br>'+probs.join('<br>')+'<br>ลองจัดใหม่';
+      }else{setMsg(msg,'⚡ ไฟดับ... ไม่มีอะไรสูญหาย และงานที่ใช้บ่อยยังหยิบเร็ว! 🎉','ok');done();}
+    }
+    box.append(h('div',{class:'row'},capBar,capTxt),list,h('button',{onclick:blackout},'⚡ ไฟดับแล้ว!'),msg);render();
+  }
+};
+
+LEVELS.net={
+  id:'net',job:'net',emoji:'📮',title:'ไปรษณีย์',concept:'Network: ส่งข้อมูลข้ามเมือง',
+  story:'ไปรษณีย์เมืองนี้ไม่ส่งจดหมายทั้งฉบับ แต่แบ่งเป็นพัสดุชิ้นเล็ก ๆ ติดเลขลำดับ ส่งไปคนละรถ ไปถึงไม่พร้อมกัน บางชิ้นอาจหล่นหายระหว่างทาง ภารกิจมีสองส่วน คือส่งข้อความให้ครบ และเลือกถนนให้เหมาะกับของ',
+  hint:'ส่วนแรก: ดูเลขลำดับ ใครหายไป แล้วขอให้ส่งใหม่ ส่วนที่สอง: ลองกดดูเวลาได้เลย เวลา = ระยะรอ + ขนาด ÷ ความกว้างถนน',
+  jobHint:'บุรุษไปรษณีย์รู้ว่าของเล็กต้องการถนนสั้น ของใหญ่ต้องการถนนกว้าง',
+  terms:[['แพ็กเก็ต (packet)','ชิ้นเล็ก ๆ ที่ข้อมูลถูกหั่นแล้วส่งไปทีละชิ้น ติดเลขลำดับไว้ประกอบกลับ'],
+    ['การส่งซ้ำ','ถ้าชิ้นไหนหาย ผู้รับขอให้ส่งใหม่เฉพาะชิ้นนั้น ไม่ต้องส่งใหม่ทั้งหมด'],
+    ['ความหน่วง (latency)','เวลารอจนของชิ้นแรกถึง เหมาะกับข้อความสั้น ๆ'],
+    ['แบนด์วิดท์ (bandwidth)','ถนนกว้างแค่ไหน ส่งของได้ต่อวินาทีเท่าไหร่ สำคัญกับไฟล์ใหญ่']],
+  limit:'ในเครือข่ายจริง ข้อมูลไม่ได้ผ่านถนนเดียว และการ "ขอส่งใหม่" เป็นหน้าที่ของโปรโตคอลอัตโนมัติ (เช่น TCP) ไม่ใช่คนไปขอ',
+  jobNote:'การเลือกเส้นทางให้เหมาะกับขนาดของ คือสิ่งที่เราเตอร์และ CDN ทำให้เราทุกวัน',
+  play(box,done){
+    const words=['สวัสดี','ฉัน','คิดถึง','เธอ','มาก','เลย'];
+    const order=[2,0,4,1,5],lost=3;
+    function partA(){
+      box.innerHTML='';
+      const msg=h('p',{class:'msg'}),inbox=h('div',{class:'slots'}),text=h('p',{class:'goal'});
+      const send=h('button',{onclick:go},'🚚 ส่งพัสดุทั้ง 6 ชิ้น');
+      const sortBtn=h('button',{style:'display:none',onclick:sortIt},'🔢 จัดเรียงตามเลขพัสดุ');
+      let got=[],sorted=false;
+      function show(){
+        inbox.innerHTML='';
+        if(!sorted)got.forEach(i=>inbox.append(h('div',{class:'slot full'},`#${i+1}`,h('br'),words[i])));
+        else for(let i=0;i<6;i++){
+          if(got.includes(i))inbox.append(h('div',{class:'slot full'},`#${i+1}`,h('br'),words[i]));
+          else inbox.append(h('button',{class:'slot',style:'border-color:var(--bad)',onclick:()=>resend(i)},`#${i+1}`,h('br'),'ขาด! ขอใหม่'));
+        }
+        text.textContent='ข้อความที่ได้: '+(sorted?words.map((w,i)=>got.includes(i)?w:'[?]').join(' '):got.map(i=>words[i]).join(' '));
+      }
+      async function go(){
+        send.disabled=true;setMsg(msg,'รถพัสดุกำลังวิ่ง...');
+        for(const i of order){await sleep(700);got.push(i);show();}
+        await sleep(700);
+        setMsg(msg,'ถึงแล้ว 5 ชิ้น! ชิ้นที่เหลือหายไปไหน? ข้อความอ่านไม่รู้เรื่องเพราะเรียงสลับกัน','bad');
+        sortBtn.style.display='inline-block';
+      }
+      function sortIt(){sorted=true;sortBtn.style.display='none';show();setMsg(msg,'จัดเรียงแล้ว สังเกตช่องที่ขาด แตะเพื่อขอให้ส่งใหม่','bad');}
+      async function resend(i){
+        setMsg(msg,'ขอส่งชิ้น #'+(i+1)+' ใหม่...');await sleep(900);
+        got.push(i);show();setMsg(msg,'ครบแล้ว! ข้อความอ่านรู้เรื่อง 🎉','ok');await sleep(1300);partB();
+      }
+      box.append(h('p',{},'ส่วนที่ 1: ส่งข้อความ "'+words.join(' ')+'"'),send,sortBtn,msg,h('b',{},'กล่องจดหมายผู้รับ'),inbox,text);show();
+    }
+    function partB(){
+      box.innerHTML='';
+      const roads=[{n:'🛤️ ทางลัดแคบ',lat:1,bw:1},{n:'🚄 ทางด่วนยาว',lat:4,bw:10},{n:'🛣️ ถนนสายกลาง',lat:2,bw:4}];
+      const jobs=[{n:'💌 โน้ตสั้น (0.5 MB)',size:.5},{n:'🖼️ รูปถ่าย (8 MB)',size:8},{n:'🎬 วิดีโอ (40 MB)',size:40}];
+      const okAll=jobs.map(()=>false);const msg=h('p',{class:'msg'});
+      const t=(r,j)=>r.lat+j.size/r.bw;
+      box.append(h('p',{},'ส่วนที่ 2: เลือกถนนให้เหมาะกับของ (เวลา = ระยะรอ + ขนาด÷ความกว้าง) หาถนนที่เร็วที่สุดให้ทั้ง 3 อย่าง'),
+        h('ul',{},roads.map(r=>h('li',{},`${r.n}: รอ ${r.lat} วิ · กว้าง ${r.bw} MB/วิ`))));
+      jobs.forEach((j,ji)=>{
+        const res=h('span',{style:'font-size:.9rem'});
+        box.append(h('div',{class:'item'},h('b',{},j.n),roads.map(r=>h('button',{class:'opt',onclick:()=>{
+          const best=Math.min(...roads.map(x=>t(x,j)));const mine=t(r,j);
+          if(mine===best){okAll[ji]=true;res.textContent=`✅ ${mine.toFixed(1)} วิ — เร็วที่สุด`;res.style.color='var(--ok)';}
+          else{res.textContent=`⏱️ ${mine.toFixed(1)} วิ — มีเส้นที่เร็วกว่า (${best.toFixed(1)} วิ)`;res.style.color='var(--bad)';}
+          if(okAll.every(Boolean)){setMsg(msg,'เลือกถูกทั้ง 3 อย่าง! 🎉','ok');done();}
+        }},r.n)),res));
+      });
+      box.append(msg);
+    }
+    partA();
+  }
+};
+
+LEVELS.os={
+  id:'os',job:'os',emoji:'🏛️',title:'ศาลากลาง',concept:'OS: จัดคิวใช้ทรัพยากร',
+  story:'ศาลากลางมีช่องบริการเดียว แต่มีงาน 3 อย่างรออยู่ 🎵 เพลง 🌐 เว็บ และ 🖨️ งานพิมพ์ก้อนใหญ่ ใครรอนานเกินไปจะหมดความอดทนและเดินหนี คุณเป็นผู้จัดการ แตะที่งานเพื่อเรียกเข้าช่องบริการ ลองดูว่าเลี่ยงไม่ให้ใครโกรธได้ไหม',
+  hint:'งานพิมพ์ใช้เวลานาน ถ้าให้มันทำจนจบ คนอื่นจะรอไม่ไหว ลองสลับคิวให้ทุกคนได้ทำนิดหน่อยสลับกันไป',
+  jobHint:'เสมียนรู้ว่า "ยุติธรรม" ไม่ได้แปลว่าให้ใครทำจนจบก่อน',
+  terms:[['โพรเซส (process)','งานหนึ่งอย่างที่กำลังรันอยู่ เช่น เพลง เว็บ งานพิมพ์'],
+    ['ตัวจัดตารางงาน (scheduler)','ส่วนของ OS ที่ตัดสินว่าใครได้ใช้ CPU เมื่อไหร่'],
+    ['ช่วงเวลา (time slice)','แบ่งเวลาเป็นช่วงสั้น ๆ ให้ทุกงานผลัดกันทำ ดูเหมือนทำพร้อมกันทั้งที่จริงสลับเร็วมาก']],
+  limit:'คอมพิวเตอร์จริงมีหลายแกน (หลายช่องบริการ) และ OS ต้องดูแลเรื่องหน่วยความจำ ความปลอดภัย และอุปกรณ์ด้วย ไม่ใช่แค่จัดคิว',
+  jobNote:'การสลับให้ทุกคนได้ทีละนิดโดยไม่ให้ใครอดตาย คือหลักของ round-robin ที่ OS ส่วนใหญ่ใช้',
+  play(box,done){
+    const defs=[{n:'🎵 เพลง',need:12},{n:'🌐 เว็บ',need:12},{n:'🖨️ งานพิมพ์ก้อนใหญ่',need:36}];
+    let ps,sel,auto,running,slice;
+    const msg=h('p',{class:'msg'}),list=h('div',{});
+    const startBtn=h('button',{onclick:()=>start(false)},'▶️ เริ่ม (คุมเอง)'),
+      autoBtn=h('button',{class:'ghost',onclick:()=>start(true)},'🤖 ให้ผู้จัดการจัดคิวเอง');
+    function render(){
+      list.innerHTML='';
+      ps.forEach((p,i)=>{
+        const dead=p.pat<=0,fin=p.prog>=p.need;
+        const el=h('button',{class:'proc'+(sel===i&&running?' sel':'')+(dead?' dead':''),onclick:()=>{if(running&&!auto&&!dead&&!fin){sel=i;render();}}},
+          h('b',{},p.n+(fin?' ✅ เสร็จแล้ว':dead?' 😡 เดินหนี':sel===i&&running?' ◀ กำลังใช้ช่องบริการ':'')),
+          h('div',{style:'font-size:.8rem'},'ความคืบหน้า'),h('div',{class:'bar'},h('i',{style:`width:${Math.min(100,p.prog/p.need*100)}%`})),
+          h('div',{style:'font-size:.8rem'},'ความอดทน'),h('div',{class:'bar pat'},h('i',{style:`width:${Math.max(0,p.pat)}%`})));
+        list.append(el);
+      });
+    }
+    function start(a){
+      if(window.__timer)clearInterval(window.__timer);
+      ps=defs.map(d=>({...d,prog:0,pat:100}));sel=a?0:null;auto=a;running=true;slice=0;
+      startBtn.disabled=autoBtn.disabled=true;
+      setMsg(msg,a?'ผู้จัดการสลับคิวทุก 2 ขั้น...':'แตะที่งานเพื่อเรียกเข้าช่องบริการ!');render();
+      window.__timer=setInterval(tick,250);
+    }
+    function tick(){
+      const live=ps.map((p,i)=>i).filter(i=>ps[i].prog<ps[i].need&&ps[i].pat>0);
+      if(auto){
+        if(!live.length){}else{
+          if(!live.includes(sel)||slice>=2){const k=live.indexOf(sel);sel=live[(k+1)%live.length];slice=0;}
+        }
+      }
+      if(sel!=null&&ps[sel].prog<ps[sel].need&&ps[sel].pat>0){ps[sel].prog++;slice++;}
+      ps.forEach((p,i)=>{if(i!==sel&&p.prog<p.need&&p.pat>0)p.pat-=2.5;});
+      render();
+      if(ps.some(p=>p.pat<=0)){
+        clearInterval(window.__timer);running=false;startBtn.disabled=autoBtn.disabled=false;
+        setMsg(msg,'😡 มีคนรอนานจนเดินหนี! ลองใหม่ (ลองสลับคิวให้ถี่ขึ้น)','bad');render();
+      }else if(ps.every(p=>p.prog>=p.need)){
+        clearInterval(window.__timer);running=false;startBtn.disabled=autoBtn.disabled=false;
+        setMsg(msg,'🎉 ทุกงานเสร็จ และไม่มีใครโกรธ!','ok');render();done();
+      }
+    }
+    ps=defs.map(d=>({...d,prog:0,pat:100}));running=false;
+    box.append(list,h('div',{class:'row'},startBtn,autoBtn),msg);render();
+  }
+};
+
+/* ---------- boot ---------- */
+requestAnimationFrame(loop);
+if(state.job&&state.look)buildMap();else showCreator();
+window.CC={LEVELS,get state(){return state;},openLevel,player,ZONES};
+</script>
+</body>
+</html>
