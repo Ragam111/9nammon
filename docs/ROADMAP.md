@@ -59,8 +59,10 @@ Source of truth เดียวสำหรับงานพัฒนา LCA �
 | P2-1 | **Resource Manager (code)** — `app/resource_budget.py` + `GET /api/health` + `pick_backend()` คืน CPU ตามผลวัด #26 | ต่อจาก design #23/#25 |
 | P2-2 | Ollama บนเครื่อง user → แชตจริงบน CPU (ค้างจาก Phase 1) | งานฝั่ง user |
 | P2-3 | SSD upgrade — แก้คอขวด HDD (โหลดโมเดลเร็วขึ้น + เครื่องลื่น) | ตัดสินจากข้อมูล Phase 1 |
-| S2 | Support dashboard ใน `/dev` — แสดง ticket + เปลี่ยนสถานะผ่าน UI | ต่อจาก Item S |
-| Q | 9arm agent quality — ปรับ system prompt / context handling | ต้องมีเกณฑ์วัดก่อน |
+| S2 | ✅ Support dashboard ใน `/dev` — แสดง ticket + เปลี่ยนสถานะผ่าน UI (#30) | เสร็จ |
+| Q | 9arm agent quality — **เกณฑ์วัดก่อน**: `app/agent_eval.py` offline scorecard (routing/diff-format/prompt contract) baseline 28/28 ✅ | ต่อ: golden-prompt runner (รอ Ollama) → แล้วค่อยปรับ prompt |
+
+**เจอจาก harness (ค้างไว้ทำตอนปรับ prompt):** ไฟล์ใหม่ที่ SEARCH block ไม่มีบรรทัดว่างคั่น (`<<<<<<< SEARCH\n=======`) `DIFF_BLOCK_RE` แกะไม่ได้ → โมเดลสร้างไฟล์ใหม่พลาดเงียบๆ ได้ (แก้โดยทำ regex ยืดหยุ่น หรือย้ำ format ใน prompt)
 | CL | (option) Cloud runbook — vLLM + LoRA เทรนบน GPU เช่า | เมื่อพร้อมเทรนจริง |
 
 หลัง backlog หมด → **maintenance mode**: เปิดใช้จริง หาบั๊กจริง, เพิ่ม coverage, เช็ก security/dependency
