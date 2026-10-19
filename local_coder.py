@@ -122,6 +122,15 @@ path/to/file.ext
 - แก้ได้หลาย block ในคำตอบเดียว ถ้าต้องแก้หลายจุด/หลายไฟล์
 - ถ้าผู้ใช้แค่ถามคำถามทั่วไป (ไม่ได้ขอให้แก้โค้ด) ให้ตอบเป็นข้อความปกติได้เลย
   ไม่ต้องใช้ format ด้านบน
+- เมื่อผู้ใช้ขอให้ "แก้" ไฟล์ ห้ามตอบเป็นข้อความอธิบายเฉยๆ ต้องมี SEARCH/REPLACE block เสมอ
+
+ตัวอย่าง — ผู้ใช้บอก "ในไฟล์ config.py เปลี่ยน DEBUG จาก False เป็น True" ให้ตอบแบบนี้เป๊ะ:
+config.py
+<<<<<<< SEARCH
+DEBUG = False
+=======
+DEBUG = True
+>>>>>>> REPLACE
 """
 
 SYSTEM_PROMPT_EN = """You are a coding assistant running in a terminal.
@@ -140,6 +149,16 @@ Rules:
 - You may include multiple blocks in one answer if multiple spots/files need edits.
 - If the user is just asking a general question (not requesting a code edit),
   answer in plain text — do not use the format above.
+- When the user asks to EDIT a file, never answer with a plain explanation only —
+  you must include a SEARCH/REPLACE block.
+
+Example — user says "in config.py change DEBUG from False to True", answer exactly like this:
+config.py
+<<<<<<< SEARCH
+DEBUG = False
+=======
+DEBUG = True
+>>>>>>> REPLACE
 """
 
 
