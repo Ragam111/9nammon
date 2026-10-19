@@ -116,7 +116,7 @@ def ollama_available(host: str = "127.0.0.1", port: int = 11434, timeout: float 
 
 
 def run_case(case: dict, responder) -> dict:
-    """ยิง 1 เคสผ่าน responder แล้วรัน checks — คืนผลรายเช็ก"""
+    """ยิง 1 เคสผ่าน responder แล้วรัน checks — คืนผลรายเช็ก + raw response (ไว้ debug)"""
     resp = responder(build_messages(case))
     results = []
     for chk in case["checks"]:
@@ -128,7 +128,8 @@ def run_case(case: dict, responder) -> dict:
             name += f"(error:{e})"
         results.append({"check": name, "passed": ok})
     passed = sum(1 for r in results if r["passed"])
-    return {"id": case["id"], "total": len(results), "passed": passed, "checks": results}
+    return {"id": case["id"], "total": len(results), "passed": passed,
+            "checks": results, "response": resp}
 
 
 def run_live_eval(responder=None, model: str = DEFAULT_MODEL, num_ctx: int = DEFAULT_NUM_CTX) -> dict:
@@ -140,7 +141,10 @@ def run_live_eval(responder=None, model: str = DEFAULT_MODEL, num_ctx: int = DEF
     if responder is None:
         if not ollama_available():
             return {"skipped": True, "reason": "ไม่พบ Ollama ที่ 127.0.0.1:11434", "model": model}
-        responder = lambda messages: call_ollama(model, messages, num_ctx)  # noqa: E731
+        # temperature 0 + seed คงที่ = greedy decoding -> ผลนิ่ง รันซ้ำได้เท่าเดิม
+        # (จำเป็นสำหรับ eval ที่น่าเชื่อถือ ไม่งั้นโมเดลเล็กตอบไม่เหมือนเดิมทุกครั้ง)
+        det = {"temperature": 0, "seed": 0}
+        responder = lambda messages: call_ollama(model, messages, num_ctx, options=det)  # noqa: E731
 
     cases = [run_case(c, responder) for c in GOLDEN_CASES]
     total = sum(c["total"] for c in cases)
@@ -162,13 +166,17 @@ def _print_report(rep: dict) -> None:
         print(f"[skip] golden-prompt runner: {rep['reason']} "
               f"(รัน `ollama serve` + `ollama pull {rep['model']}` ก่อน)")
         return
-    print(f"=== LCA agent quality — live golden prompts (model={rep['model']}) ===")
+    print(f"=== LCA agent quality — live golden prompts (model={rep['model']}, temp=0) ===")
     for c in rep["cases"]:
         mark = "OK " if c["passed"] == c["total"] else "!! "
         print(f"  [{mark}] {c['id']:28s} {c['passed']}/{c['total']}")
-        for r in c["checks"]:
-            if not r["passed"]:
-                print(f"        - FAIL: {r['check']}")
+        if c["passed"] != c["total"]:
+            for r in c["checks"]:
+                if not r["passed"]:
+                    print(f"        - FAIL: {r['check']}")
+            # โชว์คำตอบดิบของโมเดล (ตัด 500 ตัว) เพื่อให้เห็นว่ามันตอบอะไรจริงๆ
+            raw = (c.get("response") or "").strip().replace("\n", "\n          ")
+            print(f"        - โมเดลตอบ: {raw[:500]}")
     ov = rep["overall"]
     print(f"  ---\n  overall: {ov['passed']}/{ov['total']} ({ov['score_pct']}%)")
 

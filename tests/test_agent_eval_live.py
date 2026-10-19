@@ -63,6 +63,11 @@ class RunnerLogicTest(unittest.TestCase):
         checks = {r["check"]: r["passed"] for r in res["checks"]}
         self.assertFalse(checks["chk_nonempty"])
 
+    def test_run_case_captures_raw_response(self):
+        # เก็บคำตอบดิบไว้ debug เคสที่ตก
+        res = live.run_case(_case("th_write_add"), good_responder)
+        self.assertEqual(res["response"], _GOOD)
+
     def test_edit_case_requires_parseable_diff(self):
         edit = _case("th_edit_change_value")
         # มี block ที่ parse ได้ -> ผ่าน

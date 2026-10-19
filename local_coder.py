@@ -41,6 +41,7 @@ import threading
 import urllib.request
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).parent / "app"))
 from todo_store import load_todos, add_todo, toggle_todo, delete_todo  # noqa: E402
@@ -214,12 +215,16 @@ def get_tuning_options(num_ctx: int) -> dict:
     return {"num_ctx": num_ctx, "num_thread": threads, "keep_alive": "5m"}
 
 
-def call_ollama(model: str, messages: list, num_ctx: int = 8192) -> str:
+def call_ollama(model: str, messages: list, num_ctx: int = 8192,
+                options: Optional[dict] = None) -> str:
+    opts = get_tuning_options(num_ctx)
+    if options:
+        opts.update(options)  # เช่น {"temperature": 0} สำหรับ eval ให้ผลนิ่ง (reproducible)
     payload = {
         "model": model,
         "messages": messages,
         "stream": False,
-        "options": get_tuning_options(num_ctx),
+        "options": opts,
     }
     req = urllib.request.Request(
         OLLAMA_URL,
