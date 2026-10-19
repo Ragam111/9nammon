@@ -1,0 +1,665 @@
+<roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd" version="4">
+	<External>null</External>
+	<External>nil</External>
+
+	<!-- ===== ServerScriptService ===== -->
+	<Item class="ServerScriptService" referent="SSS">
+		<Properties>
+			<string name="Name">ServerScriptService</string>
+		</Properties>
+
+		<!-- Leaderstats -->
+		<Item class="Script" referent="LeaderstatsScript">
+			<Properties>
+				<string name="Name">LeaderstatsScript</string>
+				<ProtectedString name="Source"><![CDATA[
+game.Players.PlayerAdded:Connect(function(player)
+	local leaderstats = Instance.new("Folder")
+	leaderstats.Name = "leaderstats"
+	leaderstats.Parent = player
+
+	local cash = Instance.new("IntValue")
+	cash.Name = "Cash"
+	cash.Value = 100
+	cash.Parent = leaderstats
+
+	local rebirth = Instance.new("IntValue")
+	rebirth.Name = "Rebirth"
+	rebirth.Value = 0
+	rebirth.Parent = leaderstats
+end)
+]]></ProtectedString>
+			</Properties>
+		</Item>
+
+		<!-- DataStore Save/Load -->
+		<Item class="Script" referent="DataStoreScript">
+			<Properties>
+				<string name="Name">DataStoreScript</string>
+				<ProtectedString name="Source"><![CDATA[
+local DSS = game:GetService("DataStoreService")
+local store = DSS:GetDataStore("PlayerData_v1")
+
+game.Players.PlayerAdded:Connect(function(player)
+	local key = "Player_" .. player.UserId
+	local success, data = pcall(function()
+		return store:GetAsync(key)
+	end)
+	if success and data then
+		player.leaderstats.Cash.Value = data.Cash or 0
+		player.leaderstats.Rebirth.Value = data.Rebirth or 0
+	end
+end)
+
+game.Players.PlayerRemoving:Connect(function(player)
+	local key = "Player_" .. player.UserId
+	pcall(function()
+		store:SetAsync(key, {
+			Cash = player.leaderstats.Cash.Value,
+			Rebirth = player.leaderstats.Rebirth.Value,
+		})
+	end)
+end)
+
+game:BindToClose(function()
+	for _, player in ipairs(game.Players:GetPlayers()) do
+		local key = "Player_" .. player.UserId
+		pcall(function()
+			store:SetAsync(key, {
+				Cash = player.leaderstats.Cash.Value,
+				Rebirth = player.leaderstats.Rebirth.Value,
+			})
+		end)
+	end
+end)
+]]></ProtectedString>
+			</Properties>
+		</Item>
+
+		<!-- Rebirth System -->
+		<Item class="Script" referent="RebirthScript">
+			<Properties>
+				<string name="Name">RebirthScript</string>
+				<ProtectedString name="Source"><![CDATA[
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local rebirthEvent = Instance.new("RemoteEvent")
+rebirthEvent.Name = "RebirthEvent"
+rebirthEvent.Parent = ReplicatedStorage
+
+local REBIRTH_COST = 10000
+
+rebirthEvent.OnServerEvent:Connect(function(player)
+	local cash = player.leaderstats.Cash
+	local rebirth = player.leaderstats.Rebirth
+	if cash.Value >= REBIRTH_COST then
+		rebirth.Value = rebirth.Value + 1
+		cash.Value = 100
+	end
+end)
+]]></ProtectedString>
+			</Properties>
+		</Item>
+
+		<!-- Tycoon Setup (assigns plots to players) -->
+		<Item class="Script" referent="TycoonSetup">
+			<Properties>
+				<string name="Name">TycoonSetupScript</string>
+				<ProtectedString name="Source"><![CDATA[
+local plots = workspace.Zones.StarterPlots:GetChildren()
+local assignedPlots = {}
+
+game.Players.PlayerAdded:Connect(function(player)
+	for _, plot in ipairs(plots) do
+		if not assignedPlots[plot] then
+			assignedPlots[plot] = player.Name
+			local owner = plot:FindFirstChild("Owner")
+			if owner then
+				owner.Value = player.Name
+			end
+			-- Set spawn
+			local spawn = plot:FindFirstChild("SpawnLocation")
+			if spawn then
+				player.RespawnLocation = spawn
+			end
+			break
+		end
+	end
+end)
+
+game.Players.PlayerRemoving:Connect(function(player)
+	for plot, name in pairs(assignedPlots) do
+		if name == player.Name then
+			assignedPlots[plot] = nil
+			local owner = plot:FindFirstChild("Owner")
+			if owner then
+				owner.Value = ""
+			end
+		end
+	end
+end)
+]]></ProtectedString>
+			</Properties>
+		</Item>
+	</Item>
+
+	<!-- ===== ReplicatedStorage ===== -->
+	<Item class="ReplicatedStorage" referent="RS">
+		<Properties>
+			<string name="Name">ReplicatedStorage</string>
+		</Properties>
+	</Item>
+
+	<!-- ===== StarterGui ===== -->
+	<Item class="StarterGui" referent="SG">
+		<Properties>
+			<string name="Name">StarterGui</string>
+		</Properties>
+
+		<!-- Cash Display UI -->
+		<Item class="ScreenGui" referent="CashGui">
+			<Properties>
+				<string name="Name">CashGui</string>
+				<bool name="ResetOnSpawn">false</bool>
+			</Properties>
+			<Item class="TextLabel" referent="CashLabel">
+				<Properties>
+					<string name="Name">CashLabel</string>
+					<UDim2 name="Position"><XS>0</XS><XO>10</XO><YS>0</YS><YO>10</YO></UDim2>
+					<UDim2 name="Size"><XS>0</XS><XO>250</XO><YS>0</YS><YO>50</YO></UDim2>
+					<string name="Text">Cash: $0</string>
+					<float name="TextSize">24</float>
+					<Color3 name="TextColor3"><R>1</R><G>1</G><B>1</B></Color3>
+					<Color3 name="BackgroundColor3"><R>0.1</R><G>0.1</G><B>0.1</B></Color3>
+					<float name="BackgroundTransparency">0.3</float>
+					<token name="Font">12</token>
+					<token name="TextXAlignment">0</token>
+				</Properties>
+			</Item>
+			<Item class="TextButton" referent="RebirthBtn">
+				<Properties>
+					<string name="Name">RebirthButton</string>
+					<UDim2 name="Position"><XS>0</XS><XO>10</XO><YS>0</YS><YO>70</YO></UDim2>
+					<UDim2 name="Size"><XS>0</XS><XO>250</XO><YS>0</YS><YO>40</YO></UDim2>
+					<string name="Text">Rebirth ($10,000)</string>
+					<float name="TextSize">20</float>
+					<Color3 name="TextColor3"><R>1</R><G>1</G><B>1</B></Color3>
+					<Color3 name="BackgroundColor3"><R>0.8</R><G>0.6</G><B>0</B></Color3>
+					<token name="Font">12</token>
+				</Properties>
+			</Item>
+		</Item>
+	</Item>
+
+	<!-- ===== StarterPlayerScripts ===== -->
+	<Item class="StarterPlayer" referent="SP">
+		<Properties>
+			<string name="Name">StarterPlayer</string>
+		</Properties>
+		<Item class="StarterPlayerScripts" referent="SPS">
+			<Properties>
+				<string name="Name">StarterPlayerScripts</string>
+			</Properties>
+			<Item class="LocalScript" referent="CashUIScript">
+				<Properties>
+					<string name="Name">CashUIScript</string>
+					<ProtectedString name="Source"><![CDATA[
+local player = game.Players.LocalPlayer
+local gui = player.PlayerGui:WaitForChild("CashGui")
+local cashLabel = gui:WaitForChild("CashLabel")
+local rebirthBtn = gui:WaitForChild("RebirthButton")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local leaderstats = player:WaitForChild("leaderstats")
+local cash = leaderstats:WaitForChild("Cash")
+local rebirth = leaderstats:WaitForChild("Rebirth")
+
+local function updateUI()
+	cashLabel.Text = string.format("Cash: $%s | Rebirth: %d", tostring(cash.Value), rebirth.Value)
+end
+
+cash.Changed:Connect(updateUI)
+rebirth.Changed:Connect(updateUI)
+updateUI()
+
+rebirthBtn.MouseButton1Click:Connect(function()
+	local rebirthEvent = ReplicatedStorage:WaitForChild("RebirthEvent")
+	rebirthEvent:FireServer()
+end)
+]]></ProtectedString>
+				</Properties>
+			</Item>
+		</Item>
+	</Item>
+
+	<!-- ===== Workspace ===== -->
+	<Item class="Workspace" referent="WS">
+		<Properties>
+			<string name="Name">Workspace</string>
+		</Properties>
+
+		<!-- Zones Folder -->
+		<Item class="Folder" referent="Zones">
+			<Properties>
+				<string name="Name">Zones</string>
+			</Properties>
+
+			<!-- Market Center -->
+			<Item class="Folder" referent="MarketCenter">
+				<Properties>
+					<string name="Name">MarketCenter</string>
+				</Properties>
+				<Item class="Part" referent="MarketFloor">
+					<Properties>
+						<string name="Name">MarketFloor</string>
+						<Vector3 name="size"><X>60</X><Y>1</Y><Z>60</Z></Vector3>
+						<CoordinateFrame name="CFrame"><X>0</X><Y>0.5</Y><Z>0</Z><R00>1</R00><R01>0</R01><R02>0</R02><R10>0</R10><R11>1</R11><R12>0</R12><R20>0</R20><R21>0</R21><R22>1</R22></CoordinateFrame>
+						<Color3 name="Color3uint8"><R>200</R><G>180</G><B>140</B></Color3>
+						<bool name="Anchored">true</bool>
+						<token name="Material">16</token>
+					</Properties>
+				</Item>
+			</Item>
+
+			<!-- Starter Plots (8 plots) -->
+			<Item class="Folder" referent="StarterPlots">
+				<Properties>
+					<string name="Name">StarterPlots</string>
+				</Properties>
+
+				<!-- Plot 1 -->
+				<Item class="Model" referent="Plot1">
+					<Properties>
+						<string name="Name">Plot1</string>
+					</Properties>
+					<Item class="StringValue" referent="Plot1Owner">
+						<Properties>
+							<string name="Name">Owner</string>
+							<string name="Value"></string>
+						</Properties>
+					</Item>
+					<Item class="SpawnLocation" referent="Plot1Spawn">
+						<Properties>
+							<string name="Name">SpawnLocation</string>
+							<Vector3 name="size"><X>6</X><Y>1</Y><Z>6</Z></Vector3>
+							<CoordinateFrame name="CFrame"><X>-80</X><Y>0.5</Y><Z>-80</Z><R00>1</R00><R01>0</R01><R02>0</R02><R10>0</R10><R11>1</R11><R12>0</R12><R20>0</R20><R21>0</R21><R22>1</R22></CoordinateFrame>
+							<bool name="Anchored">true</bool>
+							<bool name="Neutral">false</bool>
+						</Properties>
+					</Item>
+					<Item class="Part" referent="Plot1Floor">
+						<Properties>
+							<string name="Name">PlotFloor</string>
+							<Vector3 name="size"><X>20</X><Y>1</Y><Z>20</Z></Vector3>
+							<CoordinateFrame name="CFrame"><X>-80</X><Y>0</Y><Z>-80</Z><R00>1</R00><R01>0</R01><R02>0</R02><R10>0</R10><R11>1</R11><R12>0</R12><R20>0</R20><R21>0</R21><R22>1</R22></CoordinateFrame>
+							<Color3 name="Color3uint8"><R>100</R><G>200</G><B>100</B></Color3>
+							<bool name="Anchored">true</bool>
+							<token name="Material">6</token>
+						</Properties>
+					</Item>
+
+					<!-- Dropper -->
+					<Item class="Model" referent="Plot1Dropper">
+						<Properties>
+							<string name="Name">Dropper</string>
+						</Properties>
+						<Item class="Part" referent="Plot1DropPart">
+							<Properties>
+								<string name="Name">DropPart</string>
+								<Vector3 name="size"><X>4</X><Y>4</Y><Z>4</Z></Vector3>
+								<CoordinateFrame name="CFrame"><X>-90</X><Y>5</Y><Z>-80</Z><R00>1</R00><R01>0</R01><R02>0</R02><R10>0</R10><R11>1</R11><R12>0</R12><R20>0</R20><R21>0</R21><R22>1</R22></CoordinateFrame>
+								<Color3 name="Color3uint8"><R>100</R><G>100</G><B>100</B></Color3>
+								<bool name="Anchored">true</bool>
+							</Properties>
+						</Item>
+						<Item class="Script" referent="Plot1DropperScript">
+							<Properties>
+								<string name="Name">DropperScript</string>
+								<ProtectedString name="Source"><![CDATA[
+local dropper = script.Parent
+local dropPart = dropper:FindFirstChild("DropPart")
+
+while true do
+	wait(2)
+	local item = Instance.new("Part")
+	item.Size = Vector3.new(1, 1, 1)
+	item.BrickColor = BrickColor.new("Gold")
+	item.Position = dropPart.Position - Vector3.new(0, 2, 0)
+	item.Parent = workspace
+
+	local val = Instance.new("IntValue")
+	val.Name = "Value"
+	val.Value = 5
+	val.Parent = item
+
+	game.Debris:AddItem(item, 15)
+end
+]]></ProtectedString>
+							</Properties>
+						</Item>
+					</Item>
+
+					<!-- Conveyor Belt -->
+					<Item class="Part" referent="Plot1Conveyor">
+						<Properties>
+							<string name="Name">ConveyorBelt</string>
+							<Vector3 name="size"><X>4</X><Y>1</Y><Z>12</Z></Vector3>
+							<CoordinateFrame name="CFrame"><X>-80</X><Y>1</Y><Z>-80</Z><R00>1</R00><R01>0</R01><R02>0</R02><R10>0</R10><R11>1</R11><R12>0</R12><R20>0</R20><R21>0</R21><R22>1</R22></CoordinateFrame>
+							<Color3 name="Color3uint8"><R>50</R><G>50</G><B>50</B></Color3>
+							<bool name="Anchored">true</bool>
+						</Properties>
+						<Item class="Script" referent="Plot1ConveyorScript">
+							<Properties>
+								<string name="Name">ConveyorScript</string>
+								<ProtectedString name="Source"><![CDATA[
+local conveyor = script.Parent
+local speed = 10
+
+conveyor.Touched:Connect(function(hit)
+	if hit:FindFirstChild("Value") then
+		hit.Velocity = conveyor.CFrame.LookVector * speed
+	end
+end)
+]]></ProtectedString>
+							</Properties>
+						</Item>
+					</Item>
+
+					<!-- Upgrader -->
+					<Item class="Part" referent="Plot1Upgrader">
+						<Properties>
+							<string name="Name">Upgrader</string>
+							<Vector3 name="size"><X>4</X><Y>3</Y><Z>4</Z></Vector3>
+							<CoordinateFrame name="CFrame"><X>-75</X><Y>2</Y><Z>-80</Z><R00>1</R00><R01>0</R01><R02>0</R02><R10>0</R10><R11>1</R11><R12>0</R12><R20>0</R20><R21>0</R21><R22>1</R22></CoordinateFrame>
+							<Color3 name="Color3uint8"><R>255</R><G>165</G><B>0</B></Color3>
+							<bool name="Anchored">true</bool>
+							<float name="Transparency">0.3</float>
+						</Properties>
+						<Item class="Script" referent="Plot1UpgraderScript">
+							<Properties>
+								<string name="Name">UpgraderScript</string>
+								<ProtectedString name="Source"><![CDATA[
+local upgrader = script.Parent
+local multiplier = 1.5
+local debounce = {}
+
+upgrader.Touched:Connect(function(hit)
+	local val = hit:FindFirstChild("Value")
+	if val and not debounce[hit] then
+		debounce[hit] = true
+		val.Value = math.floor(val.Value * multiplier)
+		hit.BrickColor = BrickColor.new("Bright orange")
+		wait(0.5)
+		debounce[hit] = nil
+	end
+end)
+]]></ProtectedString>
+							</Properties>
+						</Item>
+					</Item>
+
+					<!-- Collector -->
+					<Item class="Part" referent="Plot1Collector">
+						<Properties>
+							<string name="Name">Collector</string>
+							<Vector3 name="size"><X>4</X><Y>4</Y><Z>4</Z></Vector3>
+							<CoordinateFrame name="CFrame"><X>-70</X><Y>2</Y><Z>-80</Z><R00>1</R00><R01>0</R01><R02>0</R02><R10>0</R10><R11>1</R11><R12>0</R12><R20>0</R20><R21>0</R21><R22>1</R22></CoordinateFrame>
+							<Color3 name="Color3uint8"><R>0</R><G>200</G><B>0</B></Color3>
+							<bool name="Anchored">true</bool>
+						</Properties>
+						<Item class="StringValue" referent="Plot1CollectorOwner">
+							<Properties>
+								<string name="Name">Owner</string>
+								<string name="Value"></string>
+							</Properties>
+						</Item>
+						<Item class="Script" referent="Plot1CollectorScript">
+							<Properties>
+								<string name="Name">CollectorScript</string>
+								<ProtectedString name="Source"><![CDATA[
+local collector = script.Parent
+local ownerValue = collector:FindFirstChild("Owner")
+
+collector.Touched:Connect(function(hit)
+	local val = hit:FindFirstChild("Value")
+	if val then
+		local ownerName = ownerValue.Value
+		local player = game.Players:FindFirstChild(ownerName)
+		if player then
+			player.leaderstats.Cash.Value = player.leaderstats.Cash.Value + val.Value
+		end
+		hit:Destroy()
+	end
+end)
+]]></ProtectedString>
+							</Properties>
+						</Item>
+					</Item>
+
+					<!-- Buy Button (Upgrader Level 2) -->
+					<Item class="Part" referent="Plot1Button">
+						<Properties>
+							<string name="Name">BuyUpgraderLv2</string>
+							<Vector3 name="size"><X>4</X><Y>0.5</Y><Z>4</Z></Vector3>
+							<CoordinateFrame name="CFrame"><X>-85</X><Y>0.25</Y><Z>-72</Z><R00>1</R00><R01>0</R01><R02>0</R02><R10>0</R10><R11>1</R11><R12>0</R12><R20>0</R20><R21>0</R21><R22>1</R22></CoordinateFrame>
+							<Color3 name="Color3uint8"><R>255</R><G>255</G><B>0</B></Color3>
+							<bool name="Anchored">true</bool>
+						</Properties>
+						<Item class="IntValue" referent="Plot1BtnPrice">
+							<Properties>
+								<string name="Name">Price</string>
+								<int name="Value">500</int>
+							</Properties>
+						</Item>
+						<Item class="StringValue" referent="Plot1BtnItem">
+							<Properties>
+								<string name="Name">ItemName</string>
+								<string name="Value">UpgraderLv2</string>
+							</Properties>
+						</Item>
+						<Item class="Script" referent="Plot1ButtonScript">
+							<Properties>
+								<string name="Name">ButtonScript</string>
+								<ProtectedString name="Source"><![CDATA[
+local button = script.Parent
+local price = button:FindFirstChild("Price").Value
+local itemToUnlock = button:FindFirstChild("ItemName").Value
+local debounce = false
+
+button.Touched:Connect(function(hit)
+	if debounce then return end
+	local player = game.Players:GetPlayerFromCharacter(hit.Parent)
+	if not player then return end
+	if player.leaderstats.Cash.Value >= price then
+		debounce = true
+		player.leaderstats.Cash.Value = player.leaderstats.Cash.Value - price
+		local model = workspace.HiddenItems:FindFirstChild(itemToUnlock)
+		if model then
+			model.Transparency = 0
+			model.CanCollide = true
+		end
+		button:Destroy()
+	end
+end)
+]]></ProtectedString>
+							</Properties>
+						</Item>
+					</Item>
+				</Item>
+
+				<!-- Plot 2-4 (simplified copies at different positions) -->
+				<Item class="Model" referent="Plot2">
+					<Properties><string name="Name">Plot2</string></Properties>
+					<Item class="StringValue"><Properties><string name="Name">Owner</string><string name="Value"></string></Properties></Item>
+					<Item class="SpawnLocation"><Properties><string name="Name">SpawnLocation</string><Vector3 name="size"><X>6</X><Y>1</Y><Z>6</Z></Vector3><CoordinateFrame name="CFrame"><X>-40</X><Y>0.5</Y><Z>-80</Z><R00>1</R00><R01>0</R01><R02>0</R02><R10>0</R10><R11>1</R11><R12>0</R12><R20>0</R20><R21>0</R21><R22>1</R22></CoordinateFrame><bool name="Anchored">true</bool><bool name="Neutral">false</bool></Properties></Item>
+					<Item class="Part"><Properties><string name="Name">PlotFloor</string><Vector3 name="size"><X>20</X><Y>1</Y><Z>20</Z></Vector3><CoordinateFrame name="CFrame"><X>-40</X><Y>0</Y><Z>-80</Z><R00>1</R00><R01>0</R01><R02>0</R02><R10>0</R10><R11>1</R11><R12>0</R12><R20>0</R20><R21>0</R21><R22>1</R22></CoordinateFrame><Color3 name="Color3uint8"><R>100</R><G>200</G><B>100</B></Color3><bool name="Anchored">true</bool><token name="Material">6</token></Properties></Item>
+				</Item>
+
+				<Item class="Model" referent="Plot3">
+					<Properties><string name="Name">Plot3</string></Properties>
+					<Item class="StringValue"><Properties><string name="Name">Owner</string><string name="Value"></string></Properties></Item>
+					<Item class="SpawnLocation"><Properties><string name="Name">SpawnLocation</string><Vector3 name="size"><X>6</X><Y>1</Y><Z>6</Z></Vector3><CoordinateFrame name="CFrame"><X>40</X><Y>0.5</Y><Z>-80</Z><R00>1</R00><R01>0</R01><R02>0</R02><R10>0</R10><R11>1</R11><R12>0</R12><R20>0</R20><R21>0</R21><R22>1</R22></CoordinateFrame><bool name="Anchored">true</bool><bool name="Neutral">false</bool></Properties></Item>
+					<Item class="Part"><Properties><string name="Name">PlotFloor</string><Vector3 name="size"><X>20</X><Y>1</Y><Z>20</Z></Vector3><CoordinateFrame name="CFrame"><X>40</X><Y>0</Y><Z>-80</Z><R00>1</R00><R01>0</R01><R02>0</R02><R10>0</R10><R11>1</R11><R12>0</R12><R20>0</R20><R21>0</R21><R22>1</R22></CoordinateFrame><Color3 name="Color3uint8"><R>100</R><G>200</G><B>100</B></Color3><bool name="Anchored">true</bool><token name="Material">6</token></Properties></Item>
+				</Item>
+
+				<Item class="Model" referent="Plot4">
+					<Properties><string name="Name">Plot4</string></Properties>
+					<Item class="StringValue"><Properties><string name="Name">Owner</string><string name="Value"></string></Properties></Item>
+					<Item class="SpawnLocation"><Properties><string name="Name">SpawnLocation</string><Vector3 name="size"><X>6</X><Y>1</Y><Z>6</Z></Vector3><CoordinateFrame name="CFrame"><X>80</X><Y>0.5</Y><Z>-80</Z><R00>1</R00><R01>0</R01><R02>0</R02><R10>0</R10><R11>1</R11><R12>0</R12><R20>0</R20><R21>0</R21><R22>1</R22></CoordinateFrame><bool name="Anchored">true</bool><bool name="Neutral">false</bool></Properties></Item>
+					<Item class="Part"><Properties><string name="Name">PlotFloor</string><Vector3 name="size"><X>20</X><Y>1</Y><Z>20</Z></Vector3><CoordinateFrame name="CFrame"><X>80</X><Y>0</Y><Z>-80</Z><R00>1</R00><R01>0</R01><R02>0</R02><R10>0</R10><R11>1</R11><R12>0</R12><R20>0</R20><R21>0</R21><R22>1</R22></CoordinateFrame><Color3 name="Color3uint8"><R>100</R><G>200</G><B>100</B></Color3><bool name="Anchored">true</bool><token name="Material">6</token></Properties></Item>
+				</Item>
+			</Item>
+
+			<!-- Mining Zone -->
+			<Item class="Folder" referent="MiningZone">
+				<Properties>
+					<string name="Name">MiningZone</string>
+				</Properties>
+				<Item class="Part" referent="MiningFloor">
+					<Properties>
+						<string name="Name">MiningFloor</string>
+						<Vector3 name="size"><X>60</X><Y>1</Y><Z>60</Z></Vector3>
+						<CoordinateFrame name="CFrame"><X>0</X><Y>0.5</Y><Z>-120</Z><R00>1</R00><R01>0</R01><R02>0</R02><R10>0</R10><R11>1</R11><R12>0</R12><R20>0</R20><R21>0</R21><R22>1</R22></CoordinateFrame>
+						<Color3 name="Color3uint8"><R>140</R><G>130</G><B>120</B></Color3>
+						<bool name="Anchored">true</bool>
+						<token name="Material">16</token>
+					</Properties>
+				</Item>
+				<!-- Clickable rocks -->
+				<Item class="Part" referent="Rock1">
+					<Properties>
+						<string name="Name">Rock</string>
+						<Vector3 name="size"><X>4</X><Y>4</Y><Z>4</Z></Vector3>
+						<CoordinateFrame name="CFrame"><X>-10</X><Y>3</Y><Z>-120</Z><R00>1</R00><R01>0</R01><R02>0</R02><R10>0</R10><R11>1</R11><R12>0</R12><R20>0</R20><R21>0</R21><R22>1</R22></CoordinateFrame>
+						<Color3 name="Color3uint8"><R>120</R><G>120</G><B>120</B></Color3>
+						<bool name="Anchored">true</bool>
+						<token name="Material">16</token>
+					</Properties>
+					<Item class="ClickDetector"><Properties><string name="Name">ClickDetector</string></Properties></Item>
+					<Item class="Script">
+						<Properties>
+							<string name="Name">MineScript</string>
+							<ProtectedString name="Source"><![CDATA[
+local rock = script.Parent
+local cd = rock:FindFirstChild("ClickDetector")
+local health = 5
+local maxHealth = 5
+local reward = 10
+
+cd.MouseClick:Connect(function(player)
+	health = health - 1
+	rock.Transparency = (maxHealth - health) / maxHealth * 0.8
+	if health <= 0 then
+		player.leaderstats.Cash.Value = player.leaderstats.Cash.Value + reward
+		rock.Transparency = 1
+		rock.CanCollide = false
+		wait(30)
+		health = maxHealth
+		rock.Transparency = 0
+		rock.CanCollide = true
+	end
+end)
+]]></ProtectedString>
+						</Properties>
+					</Item>
+				</Item>
+			</Item>
+
+			<!-- Forest Zone -->
+			<Item class="Folder" referent="ForestZone">
+				<Properties>
+					<string name="Name">ForestZone</string>
+				</Properties>
+				<Item class="Part" referent="ForestFloor">
+					<Properties>
+						<string name="Name">ForestFloor</string>
+						<Vector3 name="size"><X>60</X><Y>1</Y><Z>60</Z></Vector3>
+						<CoordinateFrame name="CFrame"><X>-100</X><Y>0.5</Y><Z>0</Z><R00>1</R00><R01>0</R01><R02>0</R02><R10>0</R10><R11>1</R11><R12>0</R12><R20>0</R20><R21>0</R21><R22>1</R22></CoordinateFrame>
+						<Color3 name="Color3uint8"><R>50</R><G>150</G><B>50</B></Color3>
+						<bool name="Anchored">true</bool>
+						<token name="Material">6</token>
+					</Properties>
+				</Item>
+			</Item>
+
+			<!-- Factory Zone -->
+			<Item class="Folder" referent="FactoryZone">
+				<Properties>
+					<string name="Name">FactoryZone</string>
+				</Properties>
+				<Item class="Part" referent="FactoryFloor">
+					<Properties>
+						<string name="Name">FactoryFloor</string>
+						<Vector3 name="size"><X>60</X><Y>1</Y><Z>60</Z></Vector3>
+						<CoordinateFrame name="CFrame"><X>100</X><Y>0.5</Y><Z>0</Z><R00>1</R00><R01>0</R01><R02>0</R02><R10>0</R10><R11>1</R11><R12>0</R12><R20>0</R20><R21>0</R21><R22>1</R22></CoordinateFrame>
+						<Color3 name="Color3uint8"><R>150</R><G>150</G><B>150</B></Color3>
+						<bool name="Anchored">true</bool>
+						<token name="Material">16</token>
+					</Properties>
+				</Item>
+			</Item>
+
+			<!-- Company District -->
+			<Item class="Folder" referent="CompanyDistrict">
+				<Properties>
+					<string name="Name">CompanyDistrict</string>
+				</Properties>
+				<Item class="Part" referent="CompanyFloor">
+					<Properties>
+						<string name="Name">CompanyFloor</string>
+						<Vector3 name="size"><X>60</X><Y>1</Y><Z>60</Z></Vector3>
+						<CoordinateFrame name="CFrame"><X>-60</X><Y>0.5</Y><Z>80</Z><R00>1</R00><R01>0</R01><R02>0</R02><R10>0</R10><R11>1</R11><R12>0</R12><R20>0</R20><R21>0</R21><R22>1</R22></CoordinateFrame>
+						<Color3 name="Color3uint8"><R>180</R><G>180</G><B>200</B></Color3>
+						<bool name="Anchored">true</bool>
+					</Properties>
+				</Item>
+			</Item>
+
+			<!-- VIP Zone -->
+			<Item class="Folder" referent="VIPZone">
+				<Properties>
+					<string name="Name">VIPZone</string>
+				</Properties>
+				<Item class="Part" referent="VIPFloor">
+					<Properties>
+						<string name="Name">VIPFloor</string>
+						<Vector3 name="size"><X>60</X><Y>1</Y><Z>60</Z></Vector3>
+						<CoordinateFrame name="CFrame"><X>60</X><Y>0.5</Y><Z>80</Z><R00>1</R00><R01>0</R01><R02>0</R02><R10>0</R10><R11>1</R11><R12>0</R12><R20>0</R20><R21>0</R21><R22>1</R22></CoordinateFrame>
+						<Color3 name="Color3uint8"><R>255</R><G>215</G><B>0</B></Color3>
+						<bool name="Anchored">true</bool>
+						<token name="Material">14</token>
+					</Properties>
+				</Item>
+			</Item>
+		</Item>
+
+		<!-- HiddenItems (unlocked by tycoon buttons) -->
+		<Item class="Folder" referent="HiddenItems">
+			<Properties>
+				<string name="Name">HiddenItems</string>
+			</Properties>
+			<Item class="Part" referent="UpgraderLv2">
+				<Properties>
+					<string name="Name">UpgraderLv2</string>
+					<Vector3 name="size"><X>4</X><Y>3</Y><Z>4</Z></Vector3>
+					<CoordinateFrame name="CFrame"><X>-78</X><Y>2</Y><Z>-75</Z><R00>1</R00><R01>0</R01><R02>0</R02><R10>0</R10><R11>1</R11><R12>0</R12><R20>0</R20><R21>0</R21><R22>1</R22></CoordinateFrame>
+					<Color3 name="Color3uint8"><R>255</R><G>100</G><B>0</B></Color3>
+					<bool name="Anchored">true</bool>
+					<float name="Transparency">1</float>
+					<bool name="CanCollide">false</bool>
+				</Properties>
+			</Item>
+		</Item>
+	</Item>
+
+	<!-- ===== Lighting ===== -->
+	<Item class="Lighting" referent="Lighting">
+		<Properties>
+			<string name="Name">Lighting</string>
+			<float name="Brightness">2</float>
+			<float name="ClockTime">14</float>
+			<float name="GeographicLatitude">40</float>
+			<Color3 name="Ambient"><R>0.3</R><G>0.3</G><B>0.3</B></Color3>
+			<Color3 name="OutdoorAmbient"><R>0.4</R><G>0.4</G><B>0.4</B></Color3>
+		</Properties>
+	</Item>
+</roblox>
