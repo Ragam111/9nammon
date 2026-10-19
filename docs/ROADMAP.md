@@ -3,7 +3,7 @@
 Source of truth เดียวสำหรับงานพัฒนา LCA ทั้ง user และ autopilot ใช้ไฟล์นี้ร่วมกัน
 สไตล์ทีม: **stdlib ล้วน, unittest (ไม่ใช่ pytest), ทุกการเปลี่ยนผ่าน branch → PR → CI → merge, ไม่ขายฝัน**
 
-อัปเดตล่าสุด: 2026-10-15
+อัปเดตล่าสุด: 2026-10-19 — **ปิด Phase 1** (ดูสรุปด้านล่าง)
 
 ## ✅ เสร็จแล้ว (merged เข้า main)
 | # | งาน | PR |
@@ -23,14 +23,45 @@ Source of truth เดียวสำหรับงานพัฒนา LCA �
 | B | Phase 2 — bottleneck analyzer + `/api/metrics` (live) + ตรวจ Ollama correlate RAM/swap | #16 |
 | DS | Design system กลาง `app/app.css` เน้น perf เครื่องอ่อน (8GB/iGPU, ฟอนต์ระบบ, ไม่มี GPU effect) | #17 |
 | R | Resource dashboard — มิเตอร์ live RAM/CPU/swap/disk ใน `/dev` ดึงจาก `/api/metrics` + LCA note | #18 |
+| GL | Go-live launcher `scripts/serve.sh` + runbook `GO_LIVE.md` | #19 |
+| DT | Dataset collection (collect→train later) — `dataset_store` + auto-capture (opt-in) | #20 |
+| IF | **Installer fix** — ก๊อปไฟล์ผิดที่ (folder_trust) + ตก sysmanager/psutil/app.css | #21 |
+| WS | **ระบบหน้าเว็บทั้งระบบ** — page-routing backbone + หน้า login + หน้า support | #22 |
 
-สถานะ main: unittest 122 เคสผ่าน, CI เขียวทุก PR, smoke test server จริงผ่านทุก endpoint
+สถานะ main: unittest 137 เคสผ่าน, CI เขียวทุก PR, smoke test server จริงผ่านทุก endpoint
 
-## 🔜 คิวถัดไป (autopilot ไล่อัตโนมัติ)
+## 🏁 Phase 1 — ปิดแล้ว (Local Runtime Foundation)
+
+**ขอบเขต Phase 1:** สร้างระบบ LCA ให้ครบ + **พิสูจน์เส้นทางการรันบนฮาร์ดแวร์จริง** (ไม่เดา)
+
+**ส่งมอบแล้ว (เอกสารออกแบบ + ผลวัด, #23–26):**
+| doc | PR | สาระ |
+|---|---|---|
+| `RESOURCE_MANAGER_DESIGN.md` | #23 | เลือกขนาดโมเดลตาม RAM ว่าง + health/degrade |
+| `VULKAN_GPU_EXPERIMENT.md` | #24 | runbook ทดลอง llama.cpp Vulkan |
+| `HETEROGENEOUS_COMPUTE.md` | #25 | ใช้ CPU+iGPU+dGPU วัดแล้วเลือก (ไม่ hardcode) |
+| `BENCHMARK_RESULTS.md` | #26 | **ผลวัดจริง** |
+
+**ข้อสรุป Phase 1 (ตัดสินด้วยข้อมูลจริงบน HP 14-bs043TX = i3-6006U/8GB/HDD):**
+1. **รัน LLM ด้วย CPU ล้วน** — CPU เร็วกว่า Intel HD520 (iGPU) ~18% ในงาน generation (19.70 vs 16.67 t/s); iGPU/dGPU แชร์ RAM bus เดียวกัน offload ไม่คุ้ม
+2. **คอขวดจริง = HDD + RAM** — Disk 100% ตอน idle (HDD จานหมุน), RAM 8GB ตึง → **SSD คือ upgrade ที่คุ้มสุด**
+3. **AMD Radeon 520** — ลงไดรเวอร์ไม่ได้ (error 173), Vulkan เห็นแต่ Intel → พักไว้
+4. **vLLM / เทรน** — ทำบนเครื่องนี้ไม่ได้ (ยืนยันซ้ำด้วยการวัด) → ต้อง cloud GPU
+5. หลัก 9arm ที่ได้: **"มี GPU ไม่ได้แปลว่าเร็วกว่า CPU เสมอ — วัดก่อนตัดสิน"**
+
+**ค้างจาก Phase 1 (ทำบนเครื่อง user, ไม่บล็อก repo):** ลง Ollama → ใช้แชตจริงบน CPU
+
+## 🚀 Phase 2 — คิวถัดไป
+**ธีม Phase 2:** เอาผล Phase 1 มาทำให้ "ใช้จริงได้ลื่น" + ต่อยอด compute
+
 | ลำดับ | งาน | หมายเหตุ |
 |------|-----|---------|
+| P2-1 | **Resource Manager (code)** — `app/resource_budget.py` + `GET /api/health` + `pick_backend()` คืน CPU ตามผลวัด #26 | ต่อจาก design #23/#25 |
+| P2-2 | Ollama บนเครื่อง user → แชตจริงบน CPU (ค้างจาก Phase 1) | งานฝั่ง user |
+| P2-3 | SSD upgrade — แก้คอขวด HDD (โหลดโมเดลเร็วขึ้น + เครื่องลื่น) | ตัดสินจากข้อมูล Phase 1 |
 | S2 | Support dashboard ใน `/dev` — แสดง ticket + เปลี่ยนสถานะผ่าน UI | ต่อจาก Item S |
-| Q | 9arm agent quality — ปรับ system prompt / context handling ให้ตอบดีขึ้น | ต้องมีเกณฑ์วัดก่อน |
+| Q | 9arm agent quality — ปรับ system prompt / context handling | ต้องมีเกณฑ์วัดก่อน |
+| CL | (option) Cloud runbook — vLLM + LoRA เทรนบน GPU เช่า | เมื่อพร้อมเทรนจริง |
 
 หลัง backlog หมด → **maintenance mode**: เปิดใช้จริง หาบั๊กจริง, เพิ่ม coverage, เช็ก security/dependency
 
