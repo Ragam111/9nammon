@@ -60,7 +60,14 @@ Source of truth เดียวสำหรับงานพัฒนา LCA �
 | P2-2 | ✅ Ollama บนเครื่อง user → **แชตจริงบน CPU ได้แล้ว** (qwen2.5-coder:0.5b, iGPU ถูก drop รันบน CPU ตรงตาม benchmark, RAM ว่าง ~2.6GB พอดีสำหรับ 0.5b) | เสร็จ (2026-10-19) |
 | P2-3 | SSD upgrade — แก้คอขวด HDD (โหลดโมเดลเร็วขึ้น + เครื่องลื่น) | ตัดสินจากข้อมูล Phase 1 |
 | S2 | ✅ Support dashboard ใน `/dev` — แสดง ticket + เปลี่ยนสถานะผ่าน UI (#30) | เสร็จ |
-| Q | 9arm agent quality — **เกณฑ์วัดก่อน** (2 ชั้น): `app/agent_eval.py` offline scorecard 28/28 ✅ + `app/agent_eval_live.py` golden-prompt runner (ยิง prompt จริงเข้า Ollama, skip เองถ้าไม่มี) ✅ | เครื่องมือวัดครบแล้ว → ขั้นต่อไป: รัน runner จริงบน Ollama → ดูคะแนน → ปรับ prompt เทียบ before/after |
+| Q | 9arm agent quality — เกณฑ์วัดครบ 2 ชั้น (offline 28/28 ✅ + live golden-prompt runner ✅) + **วัดจริงบนเครื่อง user แล้ว** | ดูผลด้านล่าง |
+
+**📊 ผล agent quality จริง (qwen2.5-coder:0.5b, temp=0 deterministic):** **10/11 (90.9%)**
+- ✅ เขียนโค้ด (th/en) + ถาม concept = เต็ม — 0.5b ทำงานพื้นฐานได้ดี
+- ❌ เคส edit (`th_edit_change_value`) ตก: **โมเดลตอบแค่ `` ```x = 2``` `` ในกรอบ code fence — ไม่มี SEARCH block** (ไม่บอกว่าแทนอะไร/ไฟล์ไหน) → เอาไปใช้จริงไม่ปลอดภัย
+- **ข้อสรุปแบบมีหลักฐาน:** 0.5b เล็กเกินสำหรับงานแก้โค้ดแบบมีโครงสร้าง — ใส่ few-shot แล้วก็ยังทำไม่ได้ → ห้ามแก้ parser ให้หลวม (อันตราย ข้อมูลไม่ครบ) ทางแก้จริง = **โมเดลใหญ่ขึ้น (1.5b) ซึ่งต้องการ RAM มากขึ้น**
+- **→ RAM คือคอขวดของ "คุณภาพ agent" ด้วย ไม่ใช่แค่ความเร็ว** (ยืนยันซ้ำ: SSD/RAM = การลงทุนที่คุ้มสุด)
+- ทดลองต่อ: `python -m app.agent_eval_live --model qwen2.5-coder:1.5b` (ถ้า RAM ไหว) ดูว่าเคส edit พลิกเป็นผ่านไหม
 
 **เจอจาก harness (ค้างไว้ทำตอนปรับ prompt):** ไฟล์ใหม่ที่ SEARCH block ไม่มีบรรทัดว่างคั่น (`<<<<<<< SEARCH\n=======`) `DIFF_BLOCK_RE` แกะไม่ได้ → โมเดลสร้างไฟล์ใหม่พลาดเงียบๆ ได้ (แก้โดยทำ regex ยืดหยุ่น หรือย้ำ format ใน prompt)
 | CL | (option) Cloud runbook — vLLM + LoRA เทรนบน GPU เช่า | เมื่อพร้อมเทรนจริง |
