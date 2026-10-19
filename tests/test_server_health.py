@@ -22,7 +22,8 @@ import server  # noqa: E402
 class ServerHealthTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        server.call_ollama = lambda model, messages, num_ctx=8192: "mocked-reply"
+        # mock สะท้อน model กลับมา เพื่อตรวจ auto-scale ว่าเลือกโมเดลตัวไหน
+        server.call_ollama = lambda model, messages, num_ctx=8192: f"MODEL={model}"
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -46,6 +47,15 @@ class ServerHealthTest(unittest.TestCase):
         conn.close()
         return resp.status, json.loads(raw) if raw else {}
 
+    def _post(self, path, payload):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        body = json.dumps(payload).encode("utf-8")
+        conn.request("POST", path, body=body, headers={"Content-Type": "application/json"})
+        resp = conn.getresponse()
+        raw = resp.read().decode("utf-8")
+        conn.close()
+        return resp.status, json.loads(raw) if raw else {}
+
     def test_health_ok_and_shape(self):
         st, data = self._get("/api/health")
         self.assertEqual(st, 200)
@@ -61,6 +71,32 @@ class ServerHealthTest(unittest.TestCase):
         # ไม่แนบ token ก็ต้องได้ 200 (เป็น liveness endpoint)
         st, _ = self._get("/api/health")
         self.assertEqual(st, 200)
+
+    def test_health_reports_network_mode(self):
+        # N4: /api/health ต้องบอกโหมดเครือข่าย — harness bind 127.0.0.1 => local
+        _, data = self._get("/api/health")
+        net = data["network"]
+        self.assertEqual(net["bind"], "127.0.0.1")
+        self.assertEqual(net["mode"], "local")
+        self.assertIsInstance(net["auth_required"], bool)
+
+    def test_chat_auto_scales_model_when_omitted(self):
+        # ไม่ระบุ model -> server เลือกให้ตาม RAM (resource_budget) = โมเดล qwen ตัวใดตัวหนึ่ง
+        st, data = self._post("/api/chat", {"messages": [{"role": "user", "content": "hi"}]})
+        self.assertEqual(st, 200)
+        self.assertTrue(data["reply"].startswith("MODEL=qwen2.5-coder:"))
+
+    def test_chat_auto_keyword_picks_model(self):
+        st, data = self._post("/api/chat", {"model": "auto",
+                                            "messages": [{"role": "user", "content": "hi"}]})
+        self.assertEqual(st, 200)
+        self.assertTrue(data["reply"].startswith("MODEL=qwen2.5-coder:"))
+
+    def test_chat_explicit_model_honored(self):
+        st, data = self._post("/api/chat", {"model": "qwen2.5-coder:7b",
+                                            "messages": [{"role": "user", "content": "hi"}]})
+        self.assertEqual(st, 200)
+        self.assertEqual(data["reply"], "MODEL=qwen2.5-coder:7b")
 
 
 if __name__ == "__main__":

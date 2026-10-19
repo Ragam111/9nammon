@@ -58,7 +58,8 @@ STATIC_ROUTES = {
 
 
 def make_handler(project_root: Path, auth_token: Optional[str],
-                 rate_limit_max: int = 300, rate_limit_window: float = 60.0):
+                 rate_limit_max: int = 300, rate_limit_window: float = 60.0,
+                 bind_host: str = "127.0.0.1"):
     # limiter เดียวใช้ร่วมทุก thread ของ server นี้ (in-memory ต่อ process)
     # ค่าเริ่มต้น 300 req/60s ต่อ IP — กันยิงถล่มโดยไม่รบกวนการใช้งานปกติ
     api_rate_limiter = RateLimiter(rate_limit_max, rate_limit_window)
@@ -294,6 +295,7 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             """สัญญาณชีพของระบบ (public, ไม่ auth) — ข้อมูลไม่ลับ:
             Ollama เปิดไหม, RAM ตึงไหม, โมเดล/ backend ที่แนะนำสำหรับเครื่องนี้"""
             rec = resource_budget.pick_model()
+            local = bind_host in ("127.0.0.1", "localhost", "::1")
             self._send_json(200, {
                 "ok": True,
                 "ollama": "up" if self._ollama_up() else "down",
@@ -301,6 +303,12 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 "recommended_model": rec["model"],
                 "recommend_reason": rec["reason"],
                 "backend": resource_budget.pick_backend(project_root),
+                # โหมดเครือข่าย (N4) — บอกว่าตอนนี้เปิดแค่เครื่องนี้ หรือออก LAN แล้ว
+                "network": {
+                    "bind": bind_host,
+                    "mode": "local" if local else "lan",
+                    "auth_required": (not local) or bool(auth_token),
+                },
             })
 
         def _handle_sysinfo(self):
@@ -682,7 +690,14 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                                                "(อัปเกรดเป็น tier paid เพื่อใช้ได้ไม่จำกัด)"})
                 return
             data = self._read_json_body()
-            model = data.get("model", "qwen2.5-coder:0.5b")
+            # Auto-scale compute: ถ้า client ไม่ระบุ model (หรือขอ "auto") ให้เลือก
+            # โมเดลใหญ่สุดที่ RAM ว่างตอนนี้รับไหว (resource_budget) — เครื่องอ่อนได้ 0.5b,
+            # เครื่องแรงได้ตัวใหญ่ขึ้นอัตโนมัติ; ถ้าระบุ model มาเองก็เคารพตามนั้น
+            requested = (data.get("model") or "").strip()
+            if not requested or requested.lower() == "auto":
+                model = resource_budget.pick_model()["model"]
+            else:
+                model = requested
             messages = data.get("messages", [])
             num_ctx = data.get("num_ctx", 8192)
             lang = data.get("lang", "th")
@@ -790,7 +805,7 @@ def main():
               "(กันคนอื่นใน LAN สั่งแก้ไฟล์เครื่องนี้โดยไม่ยืนยันตัวตน) — ดู Rule ข้อ 12 ใน SKILL.md")
         sys.exit(1)
 
-    handler_cls = make_handler(project_root, args.token)
+    handler_cls = make_handler(project_root, args.token, bind_host=args.host)
     httpd = ThreadingHTTPServer((args.host, args.port), handler_cls)
     print(f"=== Local Assistant Server ===")
     print(f"โปรเจกต์: {project_root}")
