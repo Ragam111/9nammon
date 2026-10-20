@@ -43,6 +43,15 @@
       <p id="support-err" class="err" style="display:none"></p>
       <div id="support-table"></div>
     </section>
+    <section id="usage-wrap" class="card" style="margin-bottom:12px" hidden>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px">
+        <h2 style="margin:0">Usage / API-key monitor</h2>
+        <button id="refresh-usage" type="button">รีเฟรช</button>
+      </div>
+      <div id="usage-tiles" class="support-tiles"></div>
+      <p id="usage-err" class="err" style="display:none"></p>
+      <div id="usage-table"></div>
+    </section>
     <div id="content" class="grid"></div>
   </main>
 
@@ -147,6 +156,39 @@
       $('support-wrap').hidden = false;
     }
 
+    // ---------- Usage / API-key monitor (/api/admin/usage/summary) ----------
+    function renderUsage(data) {
+      const tiles = [
+        { n: data.total_units, lab: 'total units' },
+        { n: (data.total_cost != null ? data.total_cost : 0), lab: 'cost (' + esc(data.currency || '') + ')' },
+        { n: (data.by_key || []).length, lab: 'keys ที่ใช้งาน' },
+      ];
+      $('usage-tiles').innerHTML = tiles.map((t) =>
+        `<div class="tile"><span class="lca-num">${esc(t.n)}</span><span class="muted">${t.lab}</span></div>`).join('');
+
+      const rows = data.by_key || [];
+      if (!rows.length) { $('usage-table').innerHTML = '<div class="muted">ยังไม่มี usage ต่อ key (ยังไม่มีใครยิงผ่าน API key)</div>'; return; }
+      let h = '<table><tr><th>key_id</th><th>owner</th><th>tier</th><th>units</th><th>events</th><th>cost</th></tr>';
+      rows.forEach((r) => {
+        h += `<tr><td>${esc(r.key_id)}</td><td>${esc(r.owner || '—')}</td><td>${esc(r.tier || '—')}</td>` +
+             `<td>${esc(r.units)}</td><td>${esc(r.events)}</td><td>${esc(r.cost)}</td></tr>`;
+      });
+      h += '</table>';
+      $('usage-table').innerHTML = h;
+    }
+    async function loadUsage() {
+      $('usage-err').style.display = 'none';
+      try {
+        const res = await fetch('/api/admin/usage/summary', { headers: authHeaders() });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { $('usage-err').textContent = data.error || ('error ' + res.status); $('usage-err').style.display = ''; }
+        else { renderUsage(data.summary || data); }
+      } catch (err) {
+        $('usage-err').textContent = 'ต่อ server ไม่ได้'; $('usage-err').style.display = '';
+      }
+      $('usage-wrap').hidden = false;
+    }
+
     function render(info) {
       const c = info.cpu || {};
       const cores = c.physical_cores ? `${c.physical_cores}P / ${c.logical_cores}L` : `${c.logical_cores}L`;
@@ -195,6 +237,7 @@
         render(info);
         loadMetrics();   // โหลดทรัพยากรสดต่อเลยหลัง auth ผ่าน
         loadSupport();   // + support dashboard (ใช้ token เดียวกัน, สิทธิ์ ADMIN)
+        loadUsage();     // + usage/API-key monitor (ต่อ key: units/cost)
       } catch (err) {
         $('error').textContent = 'ต่อ server ไม่ได้: ' + err.message;
       } finally {
@@ -205,6 +248,7 @@
     $('load').addEventListener('click', load);
     $('refresh-metrics').addEventListener('click', loadMetrics);
     $('refresh-support').addEventListener('click', loadSupport);
+    $('refresh-usage').addEventListener('click', loadUsage);
     $('support-filter').addEventListener('change', loadSupport);
     // บันทึกสถานะ ticket — ใช้ event delegation (ปุ่มถูกสร้างใหม่ทุกครั้งที่ render)
     $('support-table').addEventListener('click', async (e) => {
