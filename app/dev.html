@@ -52,6 +52,20 @@
       <p id="usage-err" class="err" style="display:none"></p>
       <div id="usage-table"></div>
     </section>
+    <section id="cluster-wrap" class="card" style="margin-bottom:12px" hidden>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px">
+        <h2 style="margin:0">Cluster monitor</h2>
+        <button id="refresh-cluster" type="button">รีเฟรช</button>
+      </div>
+      <form id="cluster-add" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+        <input id="cluster-name" type="text" placeholder="ชื่อ node (เช่น netbook-arm)" required>
+        <input id="cluster-url" type="text" placeholder="http://192.168.1.50:8420" required>
+        <button type="submit">เพิ่ม node</button>
+      </form>
+      <div id="cluster-tiles" class="support-tiles"></div>
+      <p id="cluster-err" class="err" style="display:none"></p>
+      <div id="cluster-table"></div>
+    </section>
     <div id="content" class="grid"></div>
   </main>
 
@@ -189,6 +203,73 @@
       $('usage-wrap').hidden = false;
     }
 
+    // ---------- Cluster monitor (/api/admin/cluster/*) ----------
+    function renderCluster(data) {
+      const s = data.summary || { total: 0, up: 0, down: 0 };
+      const tiles = [
+        { n: s.total, lab: 'nodes ทั้งหมด' },
+        { n: s.up, lab: 'online' },
+        { n: s.down, lab: 'offline' },
+      ];
+      $('cluster-tiles').innerHTML = tiles.map((t) =>
+        `<div class="tile"><span class="lca-num">${esc(t.n)}</span><span class="muted">${t.lab}</span></div>`).join('');
+
+      const rows = data.nodes || [];
+      if (!rows.length) { $('cluster-table').innerHTML = '<div class="muted">ยังไม่มี node — เพิ่มด้านบน (ชื่อ + url ของ LCA อีกเครื่อง)</div>'; return; }
+      let h = '<table><tr><th>node</th><th>url</th><th>สถานะ</th><th>ollama</th><th>RAM</th><th>โมเดลแนะนำ</th><th></th></tr>';
+      rows.forEach((r) => {
+        const he = (r.health || {});
+        const stat = r.reachable
+          ? '<span class="tag ok">online</span>'
+          : `<span class="tag bad">offline</span> <span class="muted">${esc(r.error || '')}</span>`;
+        const ollama = r.reachable ? esc(he.ollama || '—') : '—';
+        const ram = r.reachable ? (he.ram_pressure ? 'ตึง' : 'ปกติ') : '—';
+        const model = r.reachable ? esc(he.recommended_model || '—') : '—';
+        h += `<tr><td>${esc(r.name)}</td><td>${esc(r.url)}</td><td>${stat}</td>` +
+             `<td>${ollama}</td><td>${ram}</td><td>${model}</td>` +
+             `<td><button type="button" data-node="${esc(r.name)}" class="cluster-rm">ลบ</button></td></tr>`;
+      });
+      h += '</table>';
+      $('cluster-table').innerHTML = h;
+      document.querySelectorAll('.cluster-rm').forEach((b) =>
+        b.addEventListener('click', () => removeNode(b.getAttribute('data-node'))));
+    }
+    async function loadCluster() {
+      $('cluster-err').style.display = 'none';
+      try {
+        const res = await fetch('/api/admin/cluster/health', { headers: authHeaders() });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { $('cluster-err').textContent = data.error || ('error ' + res.status); $('cluster-err').style.display = ''; }
+        else { renderCluster(data); }
+      } catch (err) {
+        $('cluster-err').textContent = 'ต่อ server ไม่ได้'; $('cluster-err').style.display = '';
+      }
+      $('cluster-wrap').hidden = false;
+    }
+    async function addNode(name, url) {
+      $('cluster-err').style.display = 'none';
+      try {
+        const res = await fetch('/api/admin/cluster/nodes', {
+          method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+          body: JSON.stringify({ name, url }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { $('cluster-err').textContent = data.error || ('error ' + res.status); $('cluster-err').style.display = ''; return; }
+        loadCluster();
+      } catch (err) {
+        $('cluster-err').textContent = 'ต่อ server ไม่ได้'; $('cluster-err').style.display = '';
+      }
+    }
+    async function removeNode(name) {
+      try {
+        await fetch('/api/admin/cluster/nodes/remove', {
+          method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+          body: JSON.stringify({ name }),
+        });
+      } catch (err) { /* degrade: reload จะสะท้อนสถานะจริง */ }
+      loadCluster();
+    }
+
     function render(info) {
       const c = info.cpu || {};
       const cores = c.physical_cores ? `${c.physical_cores}P / ${c.logical_cores}L` : `${c.logical_cores}L`;
@@ -238,6 +319,7 @@
         loadMetrics();   // โหลดทรัพยากรสดต่อเลยหลัง auth ผ่าน
         loadSupport();   // + support dashboard (ใช้ token เดียวกัน, สิทธิ์ ADMIN)
         loadUsage();     // + usage/API-key monitor (ต่อ key: units/cost)
+        loadCluster();   // + cluster monitor (health ของทุก node)
       } catch (err) {
         $('error').textContent = 'ต่อ server ไม่ได้: ' + err.message;
       } finally {
@@ -249,6 +331,12 @@
     $('refresh-metrics').addEventListener('click', loadMetrics);
     $('refresh-support').addEventListener('click', loadSupport);
     $('refresh-usage').addEventListener('click', loadUsage);
+    $('refresh-cluster').addEventListener('click', loadCluster);
+    $('cluster-add').addEventListener('submit', (e) => {
+      e.preventDefault();
+      addNode($('cluster-name').value.trim(), $('cluster-url').value.trim());
+      $('cluster-name').value = ''; $('cluster-url').value = '';
+    });
     $('support-filter').addEventListener('change', loadSupport);
     // บันทึกสถานะ ticket — ใช้ event delegation (ปุ่มถูกสร้างใหม่ทุกครั้งที่ render)
     $('support-table').addEventListener('click', async (e) => {
