@@ -88,6 +88,12 @@ class ServerPagesTest(unittest.TestCase):
         self.assertIn(b"/api/admin/support/tickets/status", body)
         self.assertIn(b"support-wrap", body)
 
+    def test_dev_page_has_usage_monitor(self):
+        # มอนิเตอร์ต่อ API key: /dev ต้องมี panel ที่ดึง usage summary (by_key)
+        _, _, _, body = self._get("/dev")
+        self.assertIn(b"/api/admin/usage/summary", body)
+        self.assertIn(b"usage-wrap", body)
+
     def test_unknown_route_404(self):
         st, _, _, _ = self._get("/does-not-exist")
         self.assertEqual(st, 404)
