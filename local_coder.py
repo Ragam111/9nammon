@@ -132,6 +132,12 @@ DEBUG = False
 =======
 DEBUG = True
 >>>>>>> REPLACE
+
+ห้ามตอบแบบนี้ (ผิด) — โค้ดเปล่าใน code fence ไม่มี path + ไม่มี marker ระบบจะแกะไฟล์ไม่ได้:
+```python
+DEBUG = True
+```
+ต้องมี path บรรทัดแรก + <<<<<<< SEARCH / ======= / >>>>>>> REPLACE ครบทุกครั้งที่แก้ไฟล์
 """
 
 SYSTEM_PROMPT_EN = """You are a coding assistant running in a terminal.
@@ -160,6 +166,12 @@ DEBUG = False
 =======
 DEBUG = True
 >>>>>>> REPLACE
+
+Do NOT answer like this (wrong) — bare code in a fence, no path + no markers, the system cannot apply it:
+```python
+DEBUG = True
+```
+Always include the path on the first line + <<<<<<< SEARCH / ======= / >>>>>>> REPLACE whenever you edit a file.
 """
 
 

@@ -143,6 +143,11 @@ def eval_prompt_contract() -> dict:
     checks.append(("th allows plain-text answer", "plain" in th.lower() or "ปกติ" in th or "ข้อความ" in th))
     checks.append(("en allows plain-text answer", "plain text" in en.lower()))
 
+    # ต้องมี negative example: โชว์ failure mode (code fence เปล่า) แล้วห้าม
+    # เทคนิคฟรีที่ช่วยโมเดลเล็กเชื่อฟัง format (Q: ปรับ prompt ให้ agent ตอบดีขึ้น)
+    checks.append(("th has negative example", "ห้ามตอบแบบนี้" in th))
+    checks.append(("en has negative example", "Do NOT answer like this" in en))
+
     # เลือก lang ไม่รู้จัก → ต้อง fallback เป็น th (ไม่ crash / ไม่คืน en)
     checks.append(("unknown lang falls back to th", get_system_prompt("xx") == th))
 
