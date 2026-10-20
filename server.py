@@ -295,7 +295,7 @@ def make_handler(project_root: Path, auth_token: Optional[str],
         def _handle_health(self):
             """สัญญาณชีพของระบบ (public, ไม่ auth) — ข้อมูลไม่ลับ:
             Ollama เปิดไหม, RAM ตึงไหม, โมเดล/ backend ที่แนะนำสำหรับเครื่องนี้"""
-            rec = resource_budget.pick_model()
+            rec = resource_budget.pick_model(project_root=project_root)
             local = bind_host in ("127.0.0.1", "localhost", "::1")
             self._send_json(200, {
                 "ok": True,
@@ -696,7 +696,7 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             # เครื่องแรงได้ตัวใหญ่ขึ้นอัตโนมัติ; ถ้าระบุ model มาเองก็เคารพตามนั้น
             requested = (data.get("model") or "").strip()
             if not requested or requested.lower() == "auto":
-                model = resource_budget.pick_model()["model"]
+                model = resource_budget.pick_model(project_root=project_root)["model"]
             else:
                 model = requested
             messages = data.get("messages", [])
