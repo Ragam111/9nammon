@@ -101,6 +101,12 @@ class ServerPagesTest(unittest.TestCase):
         self.assertIn(b"/api/admin/cluster/nodes", body)
         self.assertIn(b"cluster-wrap", body)
 
+    def test_dev_page_has_ecosystem_settings(self):
+        # ecosystem: /dev ต้องตั้งค่าตัวตน node + join hub ได้
+        _, _, _, body = self._get("/dev")
+        self.assertIn(b"/api/admin/cluster/settings", body)
+        self.assertIn(b"/api/admin/cluster/join", body)
+
     def test_unknown_route_404(self):
         st, _, _, _ = self._get("/does-not-exist")
         self.assertEqual(st, 404)

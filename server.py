@@ -162,6 +162,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._handle_cluster_nodes_list()
             elif parsed.path == "/api/admin/cluster/health":
                 self._handle_cluster_health()
+            elif parsed.path == "/api/admin/cluster/settings":
+                self._handle_cluster_settings_get()
             else:
                 self._send_json(404, {"error": "not found"})
 
@@ -297,6 +299,26 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             self._send_json(200 if ok else 404,
                             {"removed": ok} if ok else {"error": "ไม่พบ node ชื่อนี้"})
 
+        def _handle_cluster_settings_get(self):
+            # ตัวตน node นี้ + hub ที่สังกัด (ไม่เผย HUB_TOKEN เต็ม)
+            if self._require("ADMIN") is None:
+                return
+            self._send_json(200, {"settings": cluster_store.get_settings(project_root)})
+
+        def _handle_cluster_settings_set(self):
+            if self._require("ADMIN") is None:
+                return
+            data = self._read_json_body()
+            settings = cluster_store.set_settings(project_root, data)
+            self._send_json(200, {"settings": settings})
+
+        def _handle_cluster_join(self):
+            # เครื่องนี้ register ตัวเองเข้า hub (ต้องตั้ง NODE_*/HUB_* ครบก่อน)
+            if self._require("ADMIN") is None:
+                return
+            result = cluster_store.register_with_hub(project_root)
+            self._send_json(200 if result.get("ok") else 400, result)
+
         def _serve_static(self, route: str):
             # เสิร์ฟหน้าเว็บ/asset ตาม STATIC_ROUTES ตัวเดียวจบ (html/css/js)
             # อ่านเป็น bytes ตรงๆ — ไฟล์ทุกตัวเป็น utf-8 อยู่แล้ว ไม่ต้อง decode/encode วน
@@ -430,6 +452,10 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                     self._handle_cluster_node_add()
                 elif parsed.path == "/api/admin/cluster/nodes/remove":
                     self._handle_cluster_node_remove()
+                elif parsed.path == "/api/admin/cluster/settings":
+                    self._handle_cluster_settings_set()
+                elif parsed.path == "/api/admin/cluster/join":
+                    self._handle_cluster_join()
                 else:
                     self._send_json(404, {"error": "not found"})
             except (json.JSONDecodeError, KeyError) as e:

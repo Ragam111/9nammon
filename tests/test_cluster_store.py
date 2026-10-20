@@ -111,5 +111,73 @@ class ClusterHealthTest(unittest.TestCase):
         self.assertEqual(out["nodes"], [])
 
 
+class EcosystemSettingsTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_defaults_empty_and_token_hidden(self):
+        s = cs.get_settings(self.root)
+        self.assertEqual(s["NODE_NAME"], "")
+        self.assertFalse(s["hub_token_set"])
+        self.assertNotIn("HUB_TOKEN", s)          # ไม่เผย token เต็ม
+
+    def test_set_and_readback(self):
+        cs.set_settings(self.root, {
+            "NODE_NAME": "arm", "NODE_URL": "http://a:8420/",
+            "HUB_URL": "http://hub:8420", "HUB_TOKEN": "secret",
+        })
+        s = cs.get_settings(self.root)
+        self.assertEqual(s["NODE_NAME"], "arm")
+        self.assertEqual(s["NODE_URL"], "http://a:8420")   # trailing slash ถูกตัด
+        self.assertTrue(s["hub_token_set"])                # ตั้งแล้ว แต่ไม่คืนค่า
+
+    def test_set_rejects_bad_url(self):
+        with self.assertRaises(ValueError):
+            cs.set_settings(self.root, {"HUB_URL": "ftp://x"})
+
+    def test_register_missing_settings(self):
+        r = cs.register_with_hub(self.root)
+        self.assertFalse(r["ok"])
+        self.assertIn("NODE_NAME", r["error"])
+
+    def test_register_posts_to_hub(self):
+        cs.set_settings(self.root, {
+            "NODE_NAME": "arm", "NODE_URL": "http://a:8420",
+            "HUB_URL": "http://hub:8420", "HUB_TOKEN": "secret",
+        })
+        captured = {}
+
+        def fake_urlopen(req, timeout=3.0):
+            captured["url"] = req.full_url
+            captured["token"] = req.headers.get("X-auth-token")
+            m = mock.MagicMock()
+            m.read.return_value = b'{"node":{"name":"arm","url":"http://a:8420"}}'
+            m.__enter__.return_value = m
+            m.__exit__.return_value = False
+            return m
+
+        with mock.patch("app.cluster_store.urllib.request.urlopen", side_effect=fake_urlopen):
+            r = cs.register_with_hub(self.root)
+        self.assertTrue(r["ok"])
+        self.assertEqual(captured["url"], "http://hub:8420/api/admin/cluster/nodes")
+        self.assertEqual(captured["token"], "secret")
+
+    def test_register_hub_http_error_degrades(self):
+        import urllib.error
+        cs.set_settings(self.root, {
+            "NODE_NAME": "arm", "NODE_URL": "http://a:8420",
+            "HUB_URL": "http://hub:8420", "HUB_TOKEN": "bad",
+        })
+        err = urllib.error.HTTPError("http://hub:8420", 403, "Forbidden", {}, None)
+        with mock.patch("app.cluster_store.urllib.request.urlopen", side_effect=err):
+            r = cs.register_with_hub(self.root)
+        self.assertFalse(r["ok"])
+        self.assertIn("403", r["error"])
+
+
 if __name__ == "__main__":
     unittest.main()
