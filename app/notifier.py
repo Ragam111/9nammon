@@ -116,3 +116,57 @@ def notify(project_root: Path, event: str, text: str,
         else:
             result[ch] = "error: unknown channel"
     return result
+
+
+# ---------- Adapter interface (ตระกูลเดียวกับ model_backend / storage_backend / auth_backend) ----------
+# ของ 3 ช่อง (discord/email) ด้านบนพิสูจน์แล้วว่าใช้ได้ — เราไม่รื้อ แค่ครอบ "เต้ารับมาตรฐาน"
+# ให้ผู้เรียกใช้ interface เดียว แล้วช่องใหม่ (LINE, Slack, webhook กลาง ฯลฯ) เสียบเองได้
+
+class Notifier:
+    """เต้ารับมาตรฐาน: ส่ง 1 เหตุการณ์ออกไป — คืน dict สรุปผลต่อช่อง"""
+    name = "base"
+
+    def send(self, event: str, text: str) -> dict:
+        raise NotImplementedError
+
+
+class MultiChannelNotifier(Notifier):
+    """ของที่พิสูจน์แล้ววันนี้ — ห่อ notify() เดิม (discord + email ตาม config)"""
+    name = "multichannel"
+
+    def __init__(self, project_root, channels=VALID_CHANNELS):
+        self.project_root = Path(project_root)
+        self.channels = tuple(channels)
+
+    def send(self, event: str, text: str) -> dict:
+        return notify(self.project_root, event, text, channels=self.channels)
+
+
+class NullNotifier(Notifier):
+    """ไม่ส่งออกจริง — บันทึกว่าถูกเรียก (พิสูจน์ขอบเขต + ปิดการแจ้งเตือน/เทส)"""
+    name = "null"
+
+    def __init__(self):
+        self.sent: list = []
+
+    def send(self, event: str, text: str) -> dict:
+        self.sent.append({"event": event, "text": text})
+        return {"null": "noop"}
+
+
+def get_notifier(project_root) -> Notifier:
+    """เลือก notifier จาก config (default multichannel) — อ่านจากที่คนตั้งเท่านั้น
+      NOTIFIER_BACKEND = multichannel | null   (default multichannel)
+      NOTIFIER_CHANNELS = 'discord,email'      (เมื่อ multichannel; ไม่ใส่ = ทั้งคู่)
+    """
+    project_root = Path(project_root)
+    sel = (config_manager.get_key(project_root, "NOTIFIER_BACKEND") or "multichannel").strip().lower()
+    if sel == "null":
+        return NullNotifier()
+    raw = config_manager.get_key(project_root, "NOTIFIER_CHANNELS")
+    if raw:
+        chans = tuple(c.strip() for c in raw.split(",") if c.strip() in VALID_CHANNELS)
+        chans = chans or VALID_CHANNELS
+    else:
+        chans = VALID_CHANNELS
+    return MultiChannelNotifier(project_root, channels=chans)
