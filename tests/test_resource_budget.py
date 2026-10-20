@@ -18,19 +18,26 @@ GB = rb.GB
 
 class PickModelTest(unittest.TestCase):
     def test_low_ram_picks_smallest(self):
-        # RAM ว่าง 1GB -> ใส่ไม่ได้แม้ 0.5b (0.6+1.5 headroom) -> เล็กสุด fits=False
+        # RAM ว่าง 1GB -> ใส่ไม่ได้แม้ 0.5b (0.6+1.2 headroom=1.8) -> เล็กสุด fits=False
         r = rb.pick_model(avail=1 * GB)
         self.assertEqual(r["model"], "qwen2.5-coder:0.5b")
         self.assertFalse(r["fits"])
 
-    def test_mid_ram_picks_0_5b(self):
-        # 2.3GB: 0.5b (0.6+1.5=2.1) ใส่ได้, 1.5b (1.2+1.5=2.7) ไม่ได้
-        r = rb.pick_model(avail=int(2.3 * GB))
+    def test_low_mid_ram_picks_0_5b(self):
+        # 2.0GB: 0.5b (0.6+1.2=1.8) ใส่ได้, 1.5b (1.0+1.2=2.2) ไม่ได้ -> 0.5b
+        r = rb.pick_model(avail=2 * GB)
         self.assertEqual(r["model"], "qwen2.5-coder:0.5b")
         self.assertTrue(r["fits"])
 
+    def test_netbook_ram_picks_1_5b(self):
+        # 2.6GB (เครื่อง netbook จริง): 1.5b (1.0+1.2=2.2) ใส่ได้แล้ว หลังจูน footprint
+        # ตามของจริง — เดิม (1.2+1.5=2.7) จะตก 0.5b ทั้งที่วัดแล้ว 1.5b รันไหว
+        r = rb.pick_model(avail=int(2.6 * GB))
+        self.assertEqual(r["model"], "qwen2.5-coder:1.5b")
+        self.assertTrue(r["fits"])
+
     def test_more_ram_picks_1_5b(self):
-        # 3GB: 1.5b (2.7) ใส่ได้, 7b (6.5) ไม่ได้ -> เลือก 1.5b (ใหญ่สุดที่ไหว)
+        # 3GB: 1.5b (2.2) ใส่ได้, 7b (6.2) ไม่ได้ -> เลือก 1.5b (ใหญ่สุดที่ไหว)
         r = rb.pick_model(avail=3 * GB)
         self.assertEqual(r["model"], "qwen2.5-coder:1.5b")
         self.assertTrue(r["fits"])
@@ -53,6 +60,26 @@ class PickModelTest(unittest.TestCase):
         # ขอ 7b แต่ RAM 3GB ไม่พอ -> ถอยไป 1.5b
         r = rb.pick_model(preferred="qwen2.5-coder:7b", avail=3 * GB)
         self.assertEqual(r["model"], "qwen2.5-coder:1.5b")
+
+    def test_quality_floor_prefers_1_5b_over_7b(self):
+        # "พื้นเชิงคุณภาพ": มี project_root + RAM เยอะ -> เล็ง 1.5b (ตัวที่แก้โค้ดได้จริง)
+        # ไม่กระโดดไป 7b แม้ใส่ได้ (1.5b คือ sweet spot ของ LCA)
+        with tempfile.TemporaryDirectory() as tmp:
+            r = rb.pick_model(project_root=Path(tmp), avail=8 * GB)
+        self.assertEqual(r["model"], "qwen2.5-coder:1.5b")
+
+    def test_quality_floor_falls_back_to_0_5b_under_pressure(self):
+        # RAM ตึง (2.0GB): 1.5b ไม่ไหว -> ถอยไป 0.5b เอง (floor ไม่ฝืน)
+        with tempfile.TemporaryDirectory() as tmp:
+            r = rb.pick_model(project_root=Path(tmp), avail=2 * GB)
+        self.assertEqual(r["model"], "qwen2.5-coder:0.5b")
+
+    def test_config_can_override_preferred_floor(self):
+        # ตั้ง PREFERRED_MODEL=0.5b ผ่าน config -> เคารพตามนั้น (ไม่ hardcode 1.5b)
+        with tempfile.TemporaryDirectory() as tmp:
+            config_manager.set_key(Path(tmp), "PREFERRED_MODEL", "qwen2.5-coder:0.5b")
+            r = rb.pick_model(project_root=Path(tmp), avail=8 * GB)
+        self.assertEqual(r["model"], "qwen2.5-coder:0.5b")
 
     def test_fits_helper(self):
         self.assertTrue(rb.fits("qwen2.5-coder:0.5b", int(2.2 * GB)))

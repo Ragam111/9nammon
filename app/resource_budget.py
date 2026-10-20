@@ -22,17 +22,25 @@ from app import config_manager
 GB = 1024 ** 3
 
 # กันไว้ให้ OS + เบราว์เซอร์ + web server (อย่ายัดโมเดลจน RAM หมดเกลี้ยง)
-HEADROOM = int(1.5 * GB)
+# 1.2GB — จูนจากของจริง: วัดแล้ว 1.5b (โมเดล 986MB) รันไหวที่ RAM ว่าง ~2.6GB
+# (BENCHMARK_RESULTS.md) headroom 1.5GB เดิม conservative เกิน ทำให้ 1.5b ถูกปฏิเสธ
+HEADROOM = int(1.2 * GB)
 
-# footprint โดยประมาณของโมเดล quantized (bytes) — จูนได้ตามจริง
+# footprint โดยประมาณของโมเดล quantized (bytes) — จูนจากที่ *วัดจริง* บนเครื่อง
+# 1.5b: 986MB จริง (+KV/ctx) ≈ 1.0GB — ไม่ใช่ 1.2GB ที่เดาไว้แต่แรก
 MODEL_FOOTPRINT = {
     "qwen2.5-coder:0.5b": int(0.6 * GB),
-    "qwen2.5-coder:1.5b": int(1.2 * GB),
+    "qwen2.5-coder:1.5b": int(1.0 * GB),
     "qwen2.5-coder:7b": int(5.0 * GB),
 }
 
 # เรียงเล็ก→ใหญ่ สำหรับไล่เลือก (เล็กสุดคือ fallback ที่ปลอดภัยสุด)
 MODELS_SMALL_TO_LARGE = ["qwen2.5-coder:0.5b", "qwen2.5-coder:1.5b", "qwen2.5-coder:7b"]
+
+# "พื้นเชิงคุณภาพ": 1.5b คือตัวเล็กสุดที่ทำงาน *แก้โค้ด* (SEARCH/REPLACE) ได้จริง
+# (วัด: 0.5b = 10/11 ตก edit, 1.5b = 11/11) — API จึงเลือก 1.5b ก่อนถ้า RAM ไหว
+# แล้วค่อยถอยไป 0.5b เฉพาะตอน RAM ตึง. เปลี่ยนได้ด้วย config PREFERRED_MODEL
+PREFERRED_MODEL_DEFAULT = "qwen2.5-coder:1.5b"
 
 
 def available_ram() -> int:
@@ -73,15 +81,24 @@ def fits(model: str, avail: Optional[int] = None) -> bool:
     return fp + HEADROOM <= avail
 
 
-def pick_model(preferred: Optional[str] = None, avail: Optional[int] = None) -> dict:
+def pick_model(preferred: Optional[str] = None, avail: Optional[int] = None,
+               project_root=None) -> dict:
     """เลือกโมเดลที่เหมาะกับ RAM ว่างตอนนี้
     - preferred ใส่ได้ → ใช้ preferred
+    - ไม่ได้ระบุ preferred แต่ให้ project_root มา → ใช้ "พื้นเชิงคุณภาพ" จาก config
+      PREFERRED_MODEL (default 1.5b ตัวที่แก้โค้ดได้จริง) ถ้า RAM ไหว
     - ไม่งั้นเลือก "ใหญ่สุดที่ยังใส่ได้"
     - ไม่มีตัวไหนใส่ได้ / ไม่ทราบ RAM → เล็กสุด (best effort)
     คืน {model, reason, available_ram, fits}
     """
     if avail is None:
         avail = available_ram()
+
+    # พื้นเชิงคุณภาพ: ถ้าผู้เรียก (เช่น API) ไม่ได้บังคับ model ให้เล็ง 1.5b ก่อน
+    # (อ่านจาก config เท่านั้น ไม่ hardcode เกิน default) — ถ้าไม่ไหวจะถอยเองด้านล่าง
+    if preferred is None and project_root is not None:
+        preferred = (config_manager.get_key(project_root, "PREFERRED_MODEL")
+                     or PREFERRED_MODEL_DEFAULT)
 
     smallest = MODELS_SMALL_TO_LARGE[0]
 
