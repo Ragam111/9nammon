@@ -65,6 +65,18 @@
       <div id="cluster-tiles" class="support-tiles"></div>
       <p id="cluster-err" class="err" style="display:none"></p>
       <div id="cluster-table"></div>
+      <details style="margin-top:14px">
+        <summary style="cursor:pointer;font-weight:600">ตั้งค่า ecosystem (ตัวตนเครื่องนี้ + เข้าร่วม hub)</summary>
+        <form id="eco-form" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">
+          <input id="eco-node-name" type="text" placeholder="NODE_NAME (ชื่อเครื่องนี้)">
+          <input id="eco-node-url" type="text" placeholder="NODE_URL (http://ip-เครื่องนี้:8420)">
+          <input id="eco-hub-url" type="text" placeholder="HUB_URL (http://ip-hub:8420)">
+          <input id="eco-hub-token" type="password" placeholder="HUB_TOKEN (ไม่โชว์ค่าเดิม)">
+          <button type="submit">บันทึกการตั้งค่า</button>
+          <button id="eco-join" type="button">เข้าร่วม hub เดี๋ยวนี้</button>
+        </form>
+        <p id="eco-msg" class="muted" style="margin-top:8px"></p>
+      </details>
     </section>
     <div id="content" class="grid"></div>
   </main>
@@ -270,6 +282,52 @@
       loadCluster();
     }
 
+    // ---------- Ecosystem settings (ตัวตน node นี้ + join hub) ----------
+    async function loadEcoSettings() {
+      try {
+        const res = await fetch('/api/admin/cluster/settings', { headers: authHeaders() });
+        const data = await res.json().catch(() => ({}));
+        const s = (data.settings || {});
+        $('eco-node-name').value = s.NODE_NAME || '';
+        $('eco-node-url').value = s.NODE_URL || '';
+        $('eco-hub-url').value = s.HUB_URL || '';
+        $('eco-hub-token').placeholder = s.hub_token_set ? 'HUB_TOKEN (ตั้งไว้แล้ว — เว้นว่างถ้าไม่เปลี่ยน)' : 'HUB_TOKEN';
+      } catch (err) { /* เงียบ — panel อื่นยังใช้ได้ */ }
+    }
+    async function saveEcoSettings() {
+      $('eco-msg').textContent = 'กำลังบันทึก...';
+      const body = {
+        NODE_NAME: $('eco-node-name').value.trim(),
+        NODE_URL: $('eco-node-url').value.trim(),
+        HUB_URL: $('eco-hub-url').value.trim(),
+      };
+      const tok = $('eco-hub-token').value;   // ส่งเฉพาะเมื่อกรอก (ไม่ทับค่าเดิมด้วยค่าว่าง)
+      if (tok) body.HUB_TOKEN = tok;
+      try {
+        const res = await fetch('/api/admin/cluster/settings', {
+          method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+          body: JSON.stringify(body),
+        });
+        const data = await res.json().catch(() => ({}));
+        $('eco-msg').textContent = res.ok ? 'บันทึกแล้ว ✓' : (data.error || ('error ' + res.status));
+        $('eco-hub-token').value = '';
+        if (res.ok) loadEcoSettings();
+      } catch (err) { $('eco-msg').textContent = 'ต่อ server ไม่ได้'; }
+    }
+    async function joinHub() {
+      $('eco-msg').textContent = 'กำลังเข้าร่วม hub...';
+      try {
+        const res = await fetch('/api/admin/cluster/join', {
+          method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+          body: '{}',
+        });
+        const data = await res.json().catch(() => ({}));
+        $('eco-msg').textContent = (res.ok && data.ok)
+          ? ('เข้าร่วม hub สำเร็จ ✓ (' + esc((data.hub || '')) + ')')
+          : ('เข้าร่วมไม่สำเร็จ: ' + esc(data.error || ('error ' + res.status)));
+      } catch (err) { $('eco-msg').textContent = 'ต่อ server ไม่ได้'; }
+    }
+
     function render(info) {
       const c = info.cpu || {};
       const cores = c.physical_cores ? `${c.physical_cores}P / ${c.logical_cores}L` : `${c.logical_cores}L`;
@@ -320,6 +378,7 @@
         loadSupport();   // + support dashboard (ใช้ token เดียวกัน, สิทธิ์ ADMIN)
         loadUsage();     // + usage/API-key monitor (ต่อ key: units/cost)
         loadCluster();   // + cluster monitor (health ของทุก node)
+        loadEcoSettings(); // + ecosystem settings (ตัวตนเครื่องนี้ + hub)
       } catch (err) {
         $('error').textContent = 'ต่อ server ไม่ได้: ' + err.message;
       } finally {
@@ -337,6 +396,8 @@
       addNode($('cluster-name').value.trim(), $('cluster-url').value.trim());
       $('cluster-name').value = ''; $('cluster-url').value = '';
     });
+    $('eco-form').addEventListener('submit', (e) => { e.preventDefault(); saveEcoSettings(); });
+    $('eco-join').addEventListener('click', joinHub);
     $('support-filter').addEventListener('change', loadSupport);
     // บันทึกสถานะ ticket — ใช้ event delegation (ปุ่มถูกสร้างใหม่ทุกครั้งที่ render)
     $('support-table').addEventListener('click', async (e) => {
