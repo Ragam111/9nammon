@@ -94,6 +94,13 @@ class ServerPagesTest(unittest.TestCase):
         self.assertIn(b"/api/admin/usage/summary", body)
         self.assertIn(b"usage-wrap", body)
 
+    def test_dev_page_has_cluster_monitor(self):
+        # มอนิเตอร์คลัสเตอร์: /dev ต้องมี panel ที่ดึง health ของทุก node + เพิ่ม node ได้
+        _, _, _, body = self._get("/dev")
+        self.assertIn(b"/api/admin/cluster/health", body)
+        self.assertIn(b"/api/admin/cluster/nodes", body)
+        self.assertIn(b"cluster-wrap", body)
+
     def test_unknown_route_404(self):
         st, _, _, _ = self._get("/does-not-exist")
         self.assertEqual(st, 404)

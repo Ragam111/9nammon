@@ -40,6 +40,7 @@ from app import dataset_store  # noqa: E402  (เก็บตัวอย่า�
 from app import config_manager  # noqa: E402  (อ่าน flag COLLECT_TRAINING_DATA จาก config.json)
 from app import resource_budget  # noqa: E402  (ก้านสมอง: เลือกโมเดล/backend ตาม RAM)
 from app import model_backend  # noqa: E402  (adapter: Ollama / OpenAI-compatible สลับด้วย config)
+from app import cluster_store  # noqa: E402  (ทะเบียน + มอนิเตอร์ health ของหลาย node)
 from sysmanager.monitor import collect as _collect, Analyzer as _Analyzer  # noqa: E402
 from sysmanager.monitor import lca_context as _lca_context  # noqa: E402  (Phase 2: บริบท Ollama)
 
@@ -157,6 +158,10 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._handle_dataset_list(parsed)
             elif parsed.path == "/api/admin/dataset/export":
                 self._handle_dataset_export(parsed)
+            elif parsed.path == "/api/admin/cluster/nodes":
+                self._handle_cluster_nodes_list()
+            elif parsed.path == "/api/admin/cluster/health":
+                self._handle_cluster_health()
             else:
                 self._send_json(404, {"error": "not found"})
 
@@ -265,6 +270,32 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._send_json(400, {"error": str(e)})
                 return
             self._send_json(200, {"tickets": tickets, "counts": support_store.counts_by_status(project_root)})
+
+        def _handle_cluster_nodes_list(self):
+            if self._require("ADMIN") is None:
+                return
+            self._send_json(200, {"nodes": cluster_store.list_nodes(project_root)})
+
+        def _handle_cluster_health(self):
+            # มอนิเตอร์คลัสเตอร์: ดึง /api/health จากทุก node มารวม (degrade ถ้า node ล่ม)
+            if self._require("ADMIN") is None:
+                return
+            self._send_json(200, cluster_store.cluster_health(project_root))
+
+        def _handle_cluster_node_add(self):
+            if self._require("ADMIN") is None:
+                return
+            data = self._read_json_body()
+            node = cluster_store.add_node(project_root, data.get("name"), data.get("url"))
+            self._send_json(200, {"node": node})
+
+        def _handle_cluster_node_remove(self):
+            if self._require("ADMIN") is None:
+                return
+            data = self._read_json_body()
+            ok = cluster_store.remove_node(project_root, data.get("name"))
+            self._send_json(200 if ok else 404,
+                            {"removed": ok} if ok else {"error": "ไม่พบ node ชื่อนี้"})
 
         def _serve_static(self, route: str):
             # เสิร์ฟหน้าเว็บ/asset ตาม STATIC_ROUTES ตัวเดียวจบ (html/css/js)
@@ -395,6 +426,10 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                     self._handle_dataset_add()
                 elif parsed.path == "/api/admin/dataset/delete":
                     self._handle_dataset_delete()
+                elif parsed.path == "/api/admin/cluster/nodes":
+                    self._handle_cluster_node_add()
+                elif parsed.path == "/api/admin/cluster/nodes/remove":
+                    self._handle_cluster_node_remove()
                 else:
                     self._send_json(404, {"error": "not found"})
             except (json.JSONDecodeError, KeyError) as e:
