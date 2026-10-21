@@ -132,3 +132,56 @@ def generate(project_root, model, messages, num_ctx: int = 8192,
              options: Optional[dict] = None) -> str:
     """สะดวก: เลือก backend ตาม config แล้ว generate — แอปเรียกตัวนี้ตัวเดียวจบ"""
     return get_backend(project_root).generate(model, messages, num_ctx, options)
+
+
+# ---------- Settings: ตั้งค่า/เสียบ cloud GPU ผ่าน OpenAI-compatible adapter ----------
+# ทำให้ "เสียบคลาวด์ GPU" ทำได้จากหน้า /dev ไม่ต้องแก้ config.json มือ
+#   MODEL_BACKEND   : ollama | openai   (default ollama)
+#   OPENAI_BASE_URL : http://host:port/v1 (vLLM / llama.cpp server / RunPod / cloud)
+#   OPENAI_API_KEY  : key ของ endpoint (ไม่ print เต็ม — แค่บอกว่าตั้งไว้ไหม, Rule 23)
+SETTINGS_KEYS = ("MODEL_BACKEND", "OPENAI_BASE_URL", "OPENAI_API_KEY")
+_VALID_BACKENDS = ("ollama", "openai")
+
+
+def get_backend_settings(project_root) -> dict:
+    """อ่านการตั้งค่า backend — ไม่คืน OPENAI_API_KEY เต็ม (แค่ bool ว่าตั้งไว้ไหม)"""
+    sel = (config_manager.get_key(project_root, "MODEL_BACKEND") or "ollama").strip().lower()
+    if sel in ("openai_compat", "openai-compat"):
+        sel = "openai"
+    return {
+        "MODEL_BACKEND": sel if sel in _VALID_BACKENDS else "ollama",
+        "OPENAI_BASE_URL": config_manager.get_key(project_root, "OPENAI_BASE_URL") or "",
+        "openai_api_key_set": bool(config_manager.get_key(project_root, "OPENAI_API_KEY")),
+    }
+
+
+def set_backend_settings(project_root, values: dict) -> dict:
+    """ตั้งค่า backend — validate ค่า, เขียนเฉพาะคีย์ที่รู้จัก. คืน get_backend_settings ใหม่
+    OPENAI_API_KEY ส่งมาเฉพาะตอนจะเปลี่ยน (ไม่ส่ง = ไม่ทับของเดิม)"""
+    if "MODEL_BACKEND" in values and values["MODEL_BACKEND"]:
+        sel = str(values["MODEL_BACKEND"]).strip().lower()
+        if sel in ("openai_compat", "openai-compat"):
+            sel = "openai"
+        if sel not in _VALID_BACKENDS:
+            raise ValueError(f"MODEL_BACKEND ต้องเป็น {list(_VALID_BACKENDS)} (ได้ {sel!r})")
+        config_manager.set_key(project_root, "MODEL_BACKEND", sel)
+    if values.get("OPENAI_BASE_URL"):
+        base = str(values["OPENAI_BASE_URL"]).strip().rstrip("/")
+        p = urllib.parse.urlparse(base)
+        if p.scheme not in ("http", "https") or not p.hostname:
+            raise ValueError(f"OPENAI_BASE_URL ไม่ถูกต้อง: {base!r} (ต้องเป็น http(s)://host:port/v1)")
+        config_manager.set_key(project_root, "OPENAI_BASE_URL", base)
+    if values.get("OPENAI_API_KEY"):
+        config_manager.set_key(project_root, "OPENAI_API_KEY", str(values["OPENAI_API_KEY"]).strip())
+    return get_backend_settings(project_root)
+
+
+def probe_backend(project_root) -> dict:
+    """เช็กว่า backend ที่ตั้งไว้ "ต่อติดไหม" (is_available) — ไว้กดทดสอบจากหน้า /dev
+    ไม่ generate จริง (ไม่กิน token/ไม่เสียเงิน) แค่เช็ก endpoint reachable"""
+    backend = get_backend(project_root)
+    try:
+        ok = backend.is_available()
+    except Exception as e:  # pragma: no cover - is_available ควร degrade อยู่แล้ว
+        return {"backend": backend.name, "available": False, "error": e.__class__.__name__}
+    return {"backend": backend.name, "available": bool(ok)}

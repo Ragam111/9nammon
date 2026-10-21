@@ -107,6 +107,12 @@ class ServerPagesTest(unittest.TestCase):
         self.assertIn(b"/api/admin/cluster/settings", body)
         self.assertIn(b"/api/admin/cluster/join", body)
 
+    def test_dev_page_has_model_backend_settings(self):
+        # เสียบ cloud GPU: /dev ต้องตั้งค่า + ทดสอบ model backend ได้
+        _, _, _, body = self._get("/dev")
+        self.assertIn(b"/api/admin/model-backend/settings", body)
+        self.assertIn(b"/api/admin/model-backend/test", body)
+
     def test_unknown_route_404(self):
         st, _, _, _ = self._get("/does-not-exist")
         self.assertEqual(st, 404)

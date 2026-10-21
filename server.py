@@ -164,6 +164,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._handle_cluster_health()
             elif parsed.path == "/api/admin/cluster/settings":
                 self._handle_cluster_settings_get()
+            elif parsed.path == "/api/admin/model-backend/settings":
+                self._handle_model_backend_settings_get()
             else:
                 self._send_json(404, {"error": "not found"})
 
@@ -319,6 +321,25 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             result = cluster_store.register_with_hub(project_root)
             self._send_json(200 if result.get("ok") else 400, result)
 
+        def _handle_model_backend_settings_get(self):
+            # ตั้งค่า model backend (เสียบ cloud GPU ผ่าน OpenAI-compatible) — ไม่เผย key เต็ม
+            if self._require("ADMIN") is None:
+                return
+            self._send_json(200, {"settings": model_backend.get_backend_settings(project_root)})
+
+        def _handle_model_backend_settings_set(self):
+            if self._require("ADMIN") is None:
+                return
+            data = self._read_json_body()
+            settings = model_backend.set_backend_settings(project_root, data)
+            self._send_json(200, {"settings": settings})
+
+        def _handle_model_backend_test(self):
+            # กดทดสอบว่า backend ที่ตั้งไว้ "ต่อติดไหม" (ไม่ generate จริง ไม่กิน token)
+            if self._require("ADMIN") is None:
+                return
+            self._send_json(200, model_backend.probe_backend(project_root))
+
         def _serve_static(self, route: str):
             # เสิร์ฟหน้าเว็บ/asset ตาม STATIC_ROUTES ตัวเดียวจบ (html/css/js)
             # อ่านเป็น bytes ตรงๆ — ไฟล์ทุกตัวเป็น utf-8 อยู่แล้ว ไม่ต้อง decode/encode วน
@@ -456,6 +477,10 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                     self._handle_cluster_settings_set()
                 elif parsed.path == "/api/admin/cluster/join":
                     self._handle_cluster_join()
+                elif parsed.path == "/api/admin/model-backend/settings":
+                    self._handle_model_backend_settings_set()
+                elif parsed.path == "/api/admin/model-backend/test":
+                    self._handle_model_backend_test()
                 else:
                     self._send_json(404, {"error": "not found"})
             except (json.JSONDecodeError, KeyError) as e:
