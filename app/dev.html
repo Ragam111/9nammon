@@ -77,6 +77,20 @@
         </form>
         <p id="eco-msg" class="muted" style="margin-top:8px"></p>
       </details>
+      <details style="margin-top:10px">
+        <summary style="cursor:pointer;font-weight:600">เสียบ cloud GPU (model backend)</summary>
+        <form id="mb-form" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">
+          <select id="mb-backend">
+            <option value="ollama">ollama (local CPU — default)</option>
+            <option value="openai">openai (cloud GPU / vLLM — OpenAI-compatible)</option>
+          </select>
+          <input id="mb-base-url" type="text" placeholder="OPENAI_BASE_URL (http://host:port/v1)">
+          <input id="mb-api-key" type="password" placeholder="OPENAI_API_KEY (ไม่โชว์ค่าเดิม)">
+          <button type="submit">บันทึก</button>
+          <button id="mb-test" type="button">ทดสอบการเชื่อมต่อ</button>
+        </form>
+        <p id="mb-msg" class="muted" style="margin-top:8px"></p>
+      </details>
     </section>
     <div id="content" class="grid"></div>
   </main>
@@ -328,6 +342,47 @@
       } catch (err) { $('eco-msg').textContent = 'ต่อ server ไม่ได้'; }
     }
 
+    // ---------- Model backend (เสียบ cloud GPU ผ่าน OpenAI-compatible) ----------
+    async function loadBackendSettings() {
+      try {
+        const res = await fetch('/api/admin/model-backend/settings', { headers: authHeaders() });
+        const data = await res.json().catch(() => ({}));
+        const s = (data.settings || {});
+        $('mb-backend').value = s.MODEL_BACKEND || 'ollama';
+        $('mb-base-url').value = s.OPENAI_BASE_URL || '';
+        $('mb-api-key').placeholder = s.openai_api_key_set ? 'OPENAI_API_KEY (ตั้งไว้แล้ว — เว้นว่างถ้าไม่เปลี่ยน)' : 'OPENAI_API_KEY';
+      } catch (err) { /* เงียบ */ }
+    }
+    async function saveBackendSettings() {
+      $('mb-msg').textContent = 'กำลังบันทึก...';
+      const body = { MODEL_BACKEND: $('mb-backend').value, OPENAI_BASE_URL: $('mb-base-url').value.trim() };
+      const k = $('mb-api-key').value;
+      if (k) body.OPENAI_API_KEY = k;
+      try {
+        const res = await fetch('/api/admin/model-backend/settings', {
+          method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+          body: JSON.stringify(body),
+        });
+        const data = await res.json().catch(() => ({}));
+        $('mb-msg').textContent = res.ok ? 'บันทึกแล้ว ✓' : (data.error || ('error ' + res.status));
+        $('mb-api-key').value = '';
+        if (res.ok) loadBackendSettings();
+      } catch (err) { $('mb-msg').textContent = 'ต่อ server ไม่ได้'; }
+    }
+    async function testBackend() {
+      $('mb-msg').textContent = 'กำลังทดสอบ...';
+      try {
+        const res = await fetch('/api/admin/model-backend/test', {
+          method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+          body: '{}',
+        });
+        const data = await res.json().catch(() => ({}));
+        $('mb-msg').textContent = data.available
+          ? ('เชื่อมต่อได้ ✓ (backend=' + esc(data.backend) + ')')
+          : ('ต่อไม่ติด: backend=' + esc(data.backend || '?') + (data.error ? ' (' + esc(data.error) + ')' : ''));
+      } catch (err) { $('mb-msg').textContent = 'ต่อ server ไม่ได้'; }
+    }
+
     function render(info) {
       const c = info.cpu || {};
       const cores = c.physical_cores ? `${c.physical_cores}P / ${c.logical_cores}L` : `${c.logical_cores}L`;
@@ -379,6 +434,7 @@
         loadUsage();     // + usage/API-key monitor (ต่อ key: units/cost)
         loadCluster();   // + cluster monitor (health ของทุก node)
         loadEcoSettings(); // + ecosystem settings (ตัวตนเครื่องนี้ + hub)
+        loadBackendSettings(); // + model backend (เสียบ cloud GPU)
       } catch (err) {
         $('error').textContent = 'ต่อ server ไม่ได้: ' + err.message;
       } finally {
@@ -398,6 +454,8 @@
     });
     $('eco-form').addEventListener('submit', (e) => { e.preventDefault(); saveEcoSettings(); });
     $('eco-join').addEventListener('click', joinHub);
+    $('mb-form').addEventListener('submit', (e) => { e.preventDefault(); saveBackendSettings(); });
+    $('mb-test').addEventListener('click', testBackend);
     $('support-filter').addEventListener('change', loadSupport);
     // บันทึกสถานะ ticket — ใช้ event delegation (ปุ่มถูกสร้างใหม่ทุกครั้งที่ render)
     $('support-table').addEventListener('click', async (e) => {

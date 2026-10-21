@@ -102,5 +102,54 @@ class GetBackendTest(unittest.TestCase):
             self.assertEqual(mb.generate(self.root, "m", [{"role": "user", "content": "x"}]), "OK")
 
 
+class BackendSettingsTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_defaults_ollama_key_hidden(self):
+        s = mb.get_backend_settings(self.root)
+        self.assertEqual(s["MODEL_BACKEND"], "ollama")
+        self.assertFalse(s["openai_api_key_set"])
+        self.assertNotIn("OPENAI_API_KEY", s)        # ไม่เผย key เต็ม
+
+    def test_set_openai_and_readback(self):
+        mb.set_backend_settings(self.root, {
+            "MODEL_BACKEND": "openai",
+            "OPENAI_BASE_URL": "http://gpu-cloud:8000/v1/",
+            "OPENAI_API_KEY": "sk-secret",
+        })
+        s = mb.get_backend_settings(self.root)
+        self.assertEqual(s["MODEL_BACKEND"], "openai")
+        self.assertEqual(s["OPENAI_BASE_URL"], "http://gpu-cloud:8000/v1")   # trailing slash ตัด
+        self.assertTrue(s["openai_api_key_set"])                             # ตั้งแล้ว ไม่คืนค่า
+        # เสียบจริง: get_backend ต้องได้ OpenAICompat ชี้ cloud
+        b = mb.get_backend(self.root)
+        self.assertIsInstance(b, mb.OpenAICompatBackend)
+        self.assertEqual(b.base_url, "http://gpu-cloud:8000/v1")
+
+    def test_set_rejects_bad_backend(self):
+        with self.assertRaises(ValueError):
+            mb.set_backend_settings(self.root, {"MODEL_BACKEND": "magic-gpu"})
+
+    def test_set_rejects_bad_url(self):
+        with self.assertRaises(ValueError):
+            mb.set_backend_settings(self.root, {"OPENAI_BASE_URL": "ftp://x"})
+
+    def test_empty_key_does_not_overwrite(self):
+        mb.set_backend_settings(self.root, {"OPENAI_API_KEY": "sk-keep"})
+        mb.set_backend_settings(self.root, {"MODEL_BACKEND": "openai"})   # ไม่ส่ง key
+        self.assertTrue(mb.get_backend_settings(self.root)["openai_api_key_set"])
+
+    def test_probe_reports_availability(self):
+        with mock.patch.object(mb.OllamaBackend, "is_available", lambda self, **k: True):
+            r = mb.probe_backend(self.root)
+        self.assertEqual(r["backend"], "ollama")
+        self.assertTrue(r["available"])
+
+
 if __name__ == "__main__":
     unittest.main()
