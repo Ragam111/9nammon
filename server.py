@@ -429,6 +429,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             try:
                 if parsed.path == "/api/chat":
                     self._handle_chat()
+                elif parsed.path == "/api/chat/stream":
+                    self._handle_chat_stream()
                 elif parsed.path == "/api/todos":
                     self._handle_todos_post()
                 elif parsed.path == "/api/todos/toggle":
@@ -766,16 +768,16 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             result = notifier.notify(project_root, event, text, channels=channels)
             self._send_json(200, {"result": result})
 
-        def _handle_chat(self):
-            ident = self._require("USER")
-            if ident is None:
-                return
+        def _chat_prepare(self, ident):
+            """auth/quota peek + อ่าน body + เลือก model + เติม system prompt
+            คืน (model, messages, num_ctx) ถ้าพร้อม, หรือ None (ตอบ error ให้แล้ว)
+            ใช้ร่วมกันทั้ง /api/chat (blocking) และ /api/chat/stream — logic เดียว ไม่ซ้ำ"""
             # peek โควตาก่อนลงมือ (ปฏิเสธเร็ว) — หักจริงหลังตอบสำเร็จเท่านั้น เพื่อไม่ให้
             # request ที่ body พังหรือ Ollama ล่มไปกินโควตาของผู้ใช้ฟรีทิ้งเปล่าๆ
             if ident.get("key_id") and not org_store.has_quota(project_root, ident["key_id"]):
                 self._send_json(429, {"error": "เกินโควตาการใช้งานรายวันของ API key นี้แล้ว "
                                                "(อัปเกรดเป็น tier paid เพื่อใช้ได้ไม่จำกัด)"})
-                return
+                return None
             data = self._read_json_body()
             # Auto-scale compute: ถ้า client ไม่ระบุ model (หรือขอ "auto") ให้เลือก
             # โมเดลใหญ่สุดที่ RAM ว่างตอนนี้รับไหว (resource_budget) — เครื่องอ่อนได้ 0.5b,
@@ -790,18 +792,15 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             lang = data.get("lang", "th")
             if not messages:
                 self._send_json(400, {"error": "ต้องมี messages"})
-                return
+                return None
             # ถ้า client ไม่ได้แนบ system prompt มา (เช่น index.html ที่ส่งแค่ user/assistant)
             # ให้ server แทรกให้เองตาม lang ที่เลือก
             if not messages or messages[0].get("role") != "system":
                 messages = [{"role": "system", "content": get_system_prompt(lang)}] + messages
-            # Model layer: เรียกผ่าน adapter (เลือก Ollama / OpenAI-compatible ตาม config)
-            # แอปไม่ผูกกับ runtime ตัวใดตัวหนึ่ง — สลับ backend ได้โดยไม่แก้ตรงนี้
-            try:
-                reply = model_backend.generate(project_root, model, messages, num_ctx)
-            except model_backend.BackendError as e:
-                self._send_json(502, {"error": str(e)})
-                return
+            return model, messages, num_ctx
+
+        def _chat_finalize(self, ident, model, messages, reply):
+            """หักโควตา + บันทึก usage + เก็บ dataset — หลังได้คำตอบเต็มแล้ว (blocking/stream ใช้ร่วม)"""
             # หักโควตาหลังได้คำตอบจริงเท่านั้น (master/local ไม่มี key_id = ไม่หัก)
             # แล้วบันทึก usage ลง SQLite ด้วย (metering ย้อนหลัง/คิดเงินต่อ tier)
             if ident.get("key_id"):
@@ -825,7 +824,62 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                                                  model=model, source="chat")
                     except (ValueError, OSError, sqlite3.Error) as e:
                         print(f"[dataset][warn] เก็บตัวอย่างไม่สำเร็จ: {e}")
+
+        def _handle_chat(self):
+            ident = self._require("USER")
+            if ident is None:
+                return
+            prepared = self._chat_prepare(ident)
+            if prepared is None:
+                return
+            model, messages, num_ctx = prepared
+            # Model layer: เรียกผ่าน adapter (เลือก Ollama / OpenAI-compatible ตาม config)
+            # แอปไม่ผูกกับ runtime ตัวใดตัวหนึ่ง — สลับ backend ได้โดยไม่แก้ตรงนี้
+            try:
+                reply = model_backend.generate(project_root, model, messages, num_ctx)
+            except model_backend.BackendError as e:
+                self._send_json(502, {"error": str(e)})
+                return
+            self._chat_finalize(ident, model, messages, reply)
             self._send_json(200, {"reply": reply})
+
+        def _handle_chat_stream(self):
+            """เหมือน /api/chat แต่ stream คำตอบทีละ chunk แบบ SSE (text/event-stream) —
+            ผู้ใช้เห็นคำตอบทยอยขึ้นทันที ไม่ต้องรอทั้งก้อน (สำคัญบนเครื่องช้า ~10 tok/s)
+            รูปแบบ: `data: {"delta": "..."}` ต่อ chunk, จบด้วย `data: {"done": true}`,
+            ถ้าพังกลางคัน `data: {"error": "..."}` (status เป็น 200 ไปแล้ว เปลี่ยนไม่ได้)"""
+            ident = self._require("USER")
+            if ident is None:
+                return
+            prepared = self._chat_prepare(ident)
+            if prepared is None:
+                return
+            model, messages, num_ctx = prepared
+            # เปิดสตรีม: HTTP/1.0 ไม่มี Content-Length → ปิด connection ที่ท้าย = client อ่านจบเอง
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("X-Accel-Buffering", "no")  # กัน reverse-proxy (nginx) buffer สตรีมไว้
+            self.end_headers()
+
+            def sse(obj):
+                self.wfile.write(f"data: {json.dumps(obj, ensure_ascii=False)}\n\n".encode("utf-8"))
+                self.wfile.flush()
+
+            parts = []
+            try:
+                for chunk in model_backend.generate_stream(project_root, model, messages, num_ctx):
+                    parts.append(chunk)
+                    sse({"delta": chunk})
+            except model_backend.BackendError as e:
+                sse({"error": str(e)})
+                return
+            except (BrokenPipeError, ConnectionResetError):
+                # client ปิดแท็บกลางคัน — ไม่ใช่ error ของเรา เงียบไว้ (ไม่หักโควตา)
+                return
+            # finalize หลังสตรีมจบครบ (หักโควตา/usage/dataset เหมือน blocking)
+            self._chat_finalize(ident, model, messages, "".join(parts))
+            sse({"done": True})
 
         def _handle_todos_get(self):
             # เดิม GET /api/todos เปิดสาธารณะ — ปิดให้ต้อง USER ขึ้นไป (สอดคล้องกับ
