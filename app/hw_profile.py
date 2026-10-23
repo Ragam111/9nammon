@@ -95,10 +95,14 @@ def recommend_config(tier_info: dict, project_root=None) -> dict:
     tier = tier_info["tier"]
     # ใช้ resource_budget เลือกโมเดลตาม RAM ว่างจริง (ไม่ hardcode เกินจำเป็น)
     pick = resource_budget.pick_model(project_root=project_root)
+    # MAX_CONCURRENT_GENERATIONS ตาม tier (ปิดวงกับ admission control):
+    # netbook รันทีละ 1 (กัน RAM thrash → HDD swap → ค้าง); เครื่องแรงรับพร้อมกันได้มากขึ้น
+    concurrency = {"netbook": 1, "workstation": 2, "server": 4}
     rec = {
         "PREFERRED_MODEL": pick["model"],
         "COMPUTE_BACKEND": "cpu",
         "COMPUTE_NGL": "0",
+        "MAX_CONCURRENT_GENERATIONS": str(concurrency.get(tier, 1)),
         "_model_reason": pick["reason"],
     }
     if tier == "server":
