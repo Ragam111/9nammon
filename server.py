@@ -43,6 +43,7 @@ from app import resource_budget  # noqa: E402  (ก้านสมอง: เล
 from app import model_backend  # noqa: E402  (adapter: Ollama / OpenAI-compatible สลับด้วย config)
 from app import cluster_store  # noqa: E402  (ทะเบียน + มอนิเตอร์ health ของหลาย node)
 from app import admission  # noqa: E402  (ยามคุมจำนวน generation พร้อมกัน กัน RAM thrash เครื่องสเปกต่ำ)
+from app import hw_profile  # noqa: E402  (โปรไฟล์ฮาร์ดแวร์: จัดระดับเครื่อง + แนะนำ config)
 from sysmanager.monitor import collect as _collect, Analyzer as _Analyzer  # noqa: E402
 from sysmanager.monitor import lca_context as _lca_context  # noqa: E402  (Phase 2: บริบท Ollama)
 
@@ -171,6 +172,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._handle_cluster_settings_get()
             elif parsed.path == "/api/admin/model-backend/settings":
                 self._handle_model_backend_settings_get()
+            elif parsed.path == "/api/admin/hw-profile":
+                self._handle_hw_profile(parsed)
             else:
                 self._send_json(404, {"error": "not found"})
 
@@ -331,6 +334,19 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             if self._require("ADMIN") is None:
                 return
             self._send_json(200, {"settings": model_backend.get_backend_settings(project_root)})
+
+        def _handle_hw_profile(self, parsed):
+            # โปรไฟล์ฮาร์ดแวร์ + คำแนะนำ config (ADMIN+) — ค่าเริ่มต้นไม่วัด disk (ตอบไว);
+            # ?disk=1 ให้วัด disk จริง (ช้าขึ้นแต่รู้ HDD/SSD)
+            if self._require("ADMIN") is None:
+                return
+            want_disk = parse_qs(parsed.query).get("disk", ["0"])[0] in ("1", "true", "yes")
+            try:
+                p = hw_profile.profile(project_root=project_root, measure_disk=want_disk)
+            except Exception as e:  # pragma: no cover - degrade แทนพังทั้งหน้า
+                self._send_json(500, {"error": f"อ่านโปรไฟล์เครื่องไม่สำเร็จ: {e.__class__.__name__}"})
+                return
+            self._send_json(200, {"profile": p})
 
         def _handle_model_backend_settings_set(self):
             if self._require("ADMIN") is None:
