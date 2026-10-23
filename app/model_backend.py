@@ -29,7 +29,7 @@ from typing import Optional
 # ให้ import local_coder (repo root) ได้ ไม่ว่าถูกเรียกจากไหน
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from local_coder import call_ollama  # noqa: E402
+from local_coder import call_ollama, get_tuning_options, OLLAMA_URL  # noqa: E402
 from app import config_manager  # noqa: E402
 
 DEFAULT_OPENAI_BASE = "http://127.0.0.1:8000/v1"
@@ -49,6 +49,15 @@ class Backend:
     def generate(self, model: str, messages: list, num_ctx: int = 8192,
                  options: Optional[dict] = None) -> str:
         raise NotImplementedError
+
+    def generate_stream(self, model: str, messages: list, num_ctx: int = 8192,
+                        options: Optional[dict] = None):
+        """yield คำตอบทีละ chunk (generator ของ str) — ลด latency ที่ผู้ใช้รู้สึก
+        (เห็นคำตอบทยอยขึ้นแทนรอทั้งก้อน สำคัญมากบนเครื่องช้าที่ tg แค่ ~10 tok/s)
+
+        default: backend ที่ยัง stream ไม่ได้ generate ทีเดียวแล้ว yield ก้อนเดียว —
+        ผู้เรียกจึงเขียนโค้ดทางเดียว (วนรับ chunk) ใช้ได้กับทุก backend"""
+        yield self.generate(model, messages, num_ctx, options)
 
 
 class OllamaBackend(Backend):
@@ -72,6 +81,36 @@ class OllamaBackend(Backend):
         except SystemExit as e:
             # call_ollama ออกแบบมา exit ตอน error (CLI) — ในฐานะ library ต้องไม่ฆ่าโปรเซส
             raise BackendError("เรียก Ollama ไม่สำเร็จ (ตรวจว่า `ollama serve` รันอยู่ไหม)") from e
+
+    def generate_stream(self, model, messages, num_ctx=8192, options=None):
+        # ขอ NDJSON แบบ stream จาก Ollama แล้ว yield content ทีละ chunk (ไม่ print เอง —
+        # แยกจาก call_ollama_stream ของ CLI ที่พิมพ์ลง terminal; ที่นี่คืน "ข้อมูล" ล้วน
+        # ให้ผู้เรียก (server เขียนลง HTTP, CLI พิมพ์) ตัดสินใจเอง = separation of concerns)
+        opts = get_tuning_options(num_ctx)
+        if options:
+            opts.update(options)
+        payload = {"model": model, "messages": messages, "stream": True, "options": opts}
+        req = urllib.request.Request(
+            OLLAMA_URL,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=300) as resp:
+                for raw_line in resp:
+                    line = raw_line.decode("utf-8").strip()
+                    if not line:
+                        continue
+                    try:
+                        chunk = json.loads(line)
+                    except json.JSONDecodeError:
+                        # บรรทัดเดียวพังไม่ควรล้มทั้งสตรีม — ข้ามแล้วไปต่อ
+                        continue
+                    content = chunk.get("message", {}).get("content", "")
+                    if content:
+                        yield content
+        except urllib.error.URLError as e:
+            raise BackendError(f"stream จาก Ollama ไม่สำเร็จ: {e}") from e
 
 
 class OpenAICompatBackend(Backend):
@@ -117,6 +156,42 @@ class OpenAICompatBackend(Backend):
         except (ValueError, KeyError, IndexError, TypeError) as e:
             raise BackendError(f"response จาก backend ผิดรูปแบบ: {e}") from e
 
+    def generate_stream(self, model, messages, num_ctx=8192, options=None):
+        # OpenAI streaming = Server-Sent Events: แต่ละบรรทัดขึ้นต้น "data: " ตามด้วย JSON
+        # chunk, เนื้อหาอยู่ที่ choices[0].delta.content, จบด้วย "data: [DONE]"
+        payload = {"model": model, "messages": messages, "stream": True}
+        if options:
+            for k in ("temperature", "top_p", "seed", "max_tokens"):
+                if k in options:
+                    payload[k] = options[k]
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        req = urllib.request.Request(
+            self.base_url + "/chat/completions",
+            data=json.dumps(payload).encode("utf-8"),
+            headers=headers,
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=300) as resp:
+                for raw_line in resp:
+                    line = raw_line.decode("utf-8").strip()
+                    if not line or not line.startswith("data:"):
+                        continue
+                    data = line[len("data:"):].strip()
+                    if data == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data)
+                        delta = chunk["choices"][0].get("delta", {}).get("content", "")
+                    except (ValueError, KeyError, IndexError, TypeError):
+                        # chunk เดียวพังไม่ล้มทั้งสตรีม — ข้าม
+                        continue
+                    if delta:
+                        yield delta
+        except urllib.error.URLError as e:
+            raise BackendError(f"stream จาก OpenAI-compatible backend ไม่ได้: {e}") from e
+
 
 def get_backend(project_root) -> Backend:
     """เลือก backend จาก config (default ollama) — ไม่สลับเองเงียบๆ อ่านจากที่คนตั้งเท่านั้น"""
@@ -132,6 +207,12 @@ def generate(project_root, model, messages, num_ctx: int = 8192,
              options: Optional[dict] = None) -> str:
     """สะดวก: เลือก backend ตาม config แล้ว generate — แอปเรียกตัวนี้ตัวเดียวจบ"""
     return get_backend(project_root).generate(model, messages, num_ctx, options)
+
+
+def generate_stream(project_root, model, messages, num_ctx: int = 8192,
+                    options: Optional[dict] = None):
+    """สะดวก: เลือก backend ตาม config แล้ว stream — yield คำตอบทีละ chunk"""
+    yield from get_backend(project_root).generate_stream(model, messages, num_ctx, options)
 
 
 # ---------- Settings: ตั้งค่า/เสียบ cloud GPU ผ่าน OpenAI-compatible adapter ----------

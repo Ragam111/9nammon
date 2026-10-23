@@ -113,6 +113,33 @@ class ServerPagesTest(unittest.TestCase):
         self.assertIn(b"/api/admin/model-backend/settings", body)
         self.assertIn(b"/api/admin/model-backend/test", body)
 
+    def test_chat_stream_emits_sse_deltas(self):
+        # /api/chat/stream ต้อง stream คำตอบทีละ chunk แบบ SSE แล้วปิดด้วย done
+        import json as _json
+        from unittest import mock
+        fake = ["def ", "foo", "()"]
+        with mock.patch.object(server.model_backend, "generate_stream",
+                               lambda *a, **k: iter(fake)):
+            conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+            conn.request("POST", "/api/chat/stream",
+                         body=_json.dumps({"messages": [{"role": "user", "content": "hi"}]}),
+                         headers={"Content-Type": "application/json"})
+            resp = conn.getresponse()
+            self.assertEqual(resp.status, 200)
+            self.assertIn("text/event-stream", resp.getheader("Content-Type"))
+            body = resp.read().decode("utf-8")
+            conn.close()
+        # รวม delta จากทุก event ต้องได้ข้อความเต็ม + มี event done ปิดท้าย
+        deltas = []
+        for block in body.split("\n\n"):
+            block = block.strip()
+            if block.startswith("data:"):
+                evt = _json.loads(block[5:].strip())
+                if "delta" in evt:
+                    deltas.append(evt["delta"])
+        self.assertEqual("".join(deltas), "def foo()")
+        self.assertIn('"done": true', body)
+
     def test_unknown_route_404(self):
         st, _, _, _ = self._get("/does-not-exist")
         self.assertEqual(st, 404)

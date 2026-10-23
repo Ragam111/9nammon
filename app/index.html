@@ -82,7 +82,7 @@ async function sendMessage() {
   thinking.classList.add('thinking');
 
   try {
-    const res = await fetch('/api/chat', {
+    const res = await fetch('/api/chat/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -92,14 +92,45 @@ async function sendMessage() {
         num_ctx: 8192,
       }),
     });
-    const data = await res.json();
-    thinking.remove();
-    if (data.error) {
-      addMessage('system-note', '[error] ' + data.error);
-    } else {
-      addMessage('assistant', data.reply);
-      history.push({ role: 'assistant', content: data.reply });
+    if (!res.ok || !res.body) {
+      // สตรีมเปิดไม่ได้ (เช่น 401/429/502) — body เป็น JSON error ก้อนเดียว
+      const data = await res.json().catch(() => ({ error: 'HTTP ' + res.status }));
+      thinking.remove();
+      addMessage('system-note', '[error] ' + (data.error || res.status));
+      return;
     }
+    // อ่านสตรีม SSE: แต่ละ event ขึ้นต้น "data: " ตามด้วย JSON, คั่น event ด้วย \n\n
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let bubble = null, full = '', buf = '';
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let sep;
+      while ((sep = buf.indexOf('\n\n')) !== -1) {
+        const line = buf.slice(0, sep).trim();
+        buf = buf.slice(sep + 2);
+        if (!line.startsWith('data:')) continue;
+        let evt;
+        try { evt = JSON.parse(line.slice(5).trim()); } catch { continue; }
+        if (evt.error) {
+          thinking.remove();
+          addMessage('system-note', '[error] ' + evt.error);
+          return;
+        }
+        if (evt.delta) {
+          if (!bubble) { thinking.remove(); bubble = addMessage('assistant', ''); }
+          full += evt.delta;
+          bubble.textContent = full;
+          chatEl.scrollTop = chatEl.scrollHeight;
+        }
+        // evt.done = จบสตรีม ไม่ต้องทำอะไรเพิ่ม
+      }
+    }
+    thinking.remove();
+    if (full) history.push({ role: 'assistant', content: full });
+    else addMessage('system-note', '[error] ไม่ได้รับคำตอบจากโมเดล');
   } catch (err) {
     thinking.remove();
     addMessage('system-note', '[error] ต่อ server ไม่ได้: ' + err.message);

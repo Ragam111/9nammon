@@ -10,6 +10,7 @@ import io
 import sys
 import tempfile
 import unittest
+import urllib.error
 from pathlib import Path
 from unittest import mock
 
@@ -41,6 +42,28 @@ class OllamaBackendTest(unittest.TestCase):
     def test_name(self):
         self.assertEqual(mb.OllamaBackend().name, "ollama")
 
+    def test_generate_stream_yields_chunks(self):
+        b = mb.OllamaBackend()
+        lines = [
+            '{"message":{"content":"def "}}\n',
+            '{"message":{"content":"foo"}}\n',
+            '\n',                                  # บรรทัดว่าง — ต้องข้าม ไม่ล้ม
+            'not-json\n',                          # บรรทัดพัง — ต้องข้าม ไม่ล้ม
+            '{"message":{"content":"():"}}\n',
+            '{"done":true}\n',                     # chunk จบ ไม่มี content
+        ]
+        with mock.patch("app.model_backend.urllib.request.urlopen",
+                        return_value=_fake_stream(lines)):
+            out = list(b.generate_stream("m", [{"role": "user", "content": "x"}]))
+        self.assertEqual(out, ["def ", "foo", "():"])
+
+    def test_generate_stream_urlerror_raises(self):
+        b = mb.OllamaBackend()
+        with mock.patch("app.model_backend.urllib.request.urlopen",
+                        side_effect=urllib.error.URLError("down")):
+            with self.assertRaises(mb.BackendError):
+                list(b.generate_stream("m", [{"role": "user", "content": "x"}]))
+
 
 def _fake_resp(body: str):
     """สร้าง object ที่ทำตัวเหมือน response ของ urlopen (มี read + context manager)"""
@@ -48,6 +71,15 @@ def _fake_resp(body: str):
     m.read.return_value = body.encode("utf-8")
     m.__enter__.return_value = m
     m.__exit__.return_value = False
+    return m
+
+
+def _fake_stream(lines):
+    """response แบบ stream: iterate ได้ทีละบรรทัด (bytes) + เป็น context manager"""
+    m = mock.MagicMock()
+    m.__enter__.return_value = m
+    m.__exit__.return_value = False
+    m.__iter__.return_value = iter([ln.encode("utf-8") for ln in lines])
     return m
 
 
@@ -76,6 +108,21 @@ class OpenAICompatBackendTest(unittest.TestCase):
     def test_name(self):
         self.assertEqual(mb.OpenAICompatBackend().name, "openai_compat")
 
+    def test_generate_stream_parses_sse(self):
+        b = mb.OpenAICompatBackend("http://127.0.0.1:8000/v1")
+        lines = [
+            'data: {"choices":[{"delta":{"content":"Hel"}}]}\n',
+            'data: {"choices":[{"delta":{"content":"lo"}}]}\n',
+            '\n',                                              # keep-alive ว่าง — ข้าม
+            'data: {"choices":[{"delta":{}}]}\n',              # delta ไม่มี content — ข้าม
+            'data: [DONE]\n',                                  # จบ — หยุด
+            'data: {"choices":[{"delta":{"content":"X"}}]}\n', # หลัง DONE — ไม่ควรถึง
+        ]
+        with mock.patch("app.model_backend.urllib.request.urlopen",
+                        return_value=_fake_stream(lines)):
+            out = list(b.generate_stream("m", [{"role": "user", "content": "x"}]))
+        self.assertEqual(out, ["Hel", "lo"])
+
 
 class GetBackendTest(unittest.TestCase):
     def setUp(self):
@@ -100,6 +147,22 @@ class GetBackendTest(unittest.TestCase):
         with mock.patch.object(mb, "call_ollama",
                                lambda model, messages, num_ctx=8192, options=None: "OK"):
             self.assertEqual(mb.generate(self.root, "m", [{"role": "user", "content": "x"}]), "OK")
+
+    def test_module_generate_stream_yields_from_backend(self):
+        # default ollama -> generate_stream() ไป stream จาก Ollama (mock NDJSON)
+        lines = ['{"message":{"content":"a"}}\n', '{"message":{"content":"b"}}\n']
+        with mock.patch("app.model_backend.urllib.request.urlopen",
+                        return_value=_fake_stream(lines)):
+            out = list(mb.generate_stream(self.root, "m", [{"role": "user", "content": "x"}]))
+        self.assertEqual(out, ["a", "b"])
+
+    def test_base_generate_stream_falls_back_to_generate(self):
+        # backend ที่ไม่ override generate_stream ต้อง yield ก้อนเดียวจาก generate()
+        class OneShot(mb.Backend):
+            def generate(self, model, messages, num_ctx=8192, options=None):
+                return "whole-answer"
+
+        self.assertEqual(list(OneShot().generate_stream("m", [])), ["whole-answer"])
 
 
 class BackendSettingsTest(unittest.TestCase):
