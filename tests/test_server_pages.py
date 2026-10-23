@@ -107,6 +107,22 @@ class ServerPagesTest(unittest.TestCase):
         self.assertIn(b"/api/admin/cluster/settings", body)
         self.assertIn(b"/api/admin/cluster/join", body)
 
+    def test_dev_page_has_hw_profile(self):
+        # hardware profile: /dev ต้องมี panel ที่ดึงโปรไฟล์เครื่อง + แนะนำ config
+        _, _, _, body = self._get("/dev")
+        self.assertIn(b"/api/admin/hw-profile", body)
+        self.assertIn(b"hwprofile-wrap", body)
+
+    def test_hw_profile_endpoint_returns_profile(self):
+        # GET /api/admin/hw-profile (no-disk) ต้องคืนโปรไฟล์ที่มี tier + recommended_config
+        import json as _json
+        st, ctype, _, body = self._get("/api/admin/hw-profile")
+        self.assertEqual(st, 200)
+        data = _json.loads(body)
+        self.assertIn("profile", data)
+        self.assertIn("tier", data["profile"])
+        self.assertIn("MAX_CONCURRENT_GENERATIONS", data["profile"]["recommended_config"])
+
     def test_dev_page_has_model_backend_settings(self):
         # เสียบ cloud GPU: /dev ต้องตั้งค่า + ทดสอบ model backend ได้
         _, _, _, body = self._get("/dev")

@@ -52,6 +52,13 @@
       <p id="usage-err" class="err" style="display:none"></p>
       <div id="usage-table"></div>
     </section>
+    <section id="hwprofile-wrap" class="card" style="margin-bottom:12px" hidden>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px">
+        <h2 style="margin:0">Hardware profile</h2>
+        <button id="refresh-hwprofile" type="button">ตรวจเครื่อง (วัด disk)</button>
+      </div>
+      <div id="hwprofile-body">กำลังอ่านโปรไฟล์เครื่อง...</div>
+    </section>
     <section id="cluster-wrap" class="card" style="margin-bottom:12px" hidden>
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px">
         <h2 style="margin:0">Cluster monitor</h2>
@@ -260,6 +267,31 @@
       document.querySelectorAll('.cluster-rm').forEach((b) =>
         b.addEventListener('click', () => removeNode(b.getAttribute('data-node'))));
     }
+    function renderHwProfile(p) {
+      const esc = (s) => String(s == null ? '' : s).replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+      const rec = p.recommended_config || {};
+      const recRows = Object.keys(rec).filter(k => !k.startsWith('_'))
+        .map(k => '<tr><td>' + esc(k) + '</td><td><code>' + esc(rec[k]) + '</code></td></tr>').join('');
+      $('hwprofile-body').innerHTML =
+        '<p><strong>ระดับเครื่อง:</strong> ' + esc((p.tier || '').toUpperCase()) +
+        ' &nbsp; <strong>CPU:</strong> ' + esc(p.cpu_model) + ' (' + esc(p.physical_cores) + ' core)' +
+        ' &nbsp; <strong>RAM:</strong> ' + esc(p.ram_gb) + ' GB' +
+        ' &nbsp; <strong>ดิสก์:</strong> ' + (p.is_hdd ? 'HDD (คอขวด I/O)' : 'SSD/เร็ว') + '</p>' +
+        '<p><strong>แนะนำ config:</strong></p><table>' + recRows + '</table>' +
+        '<p><strong>อัปเกรดคุ้มสุดถัดไป:</strong> ' + esc(p.next_upgrade) + '</p>';
+    }
+    async function loadHwProfile(disk) {
+      try {
+        const url = '/api/admin/hw-profile' + (disk ? '?disk=1' : '');
+        const res = await fetch(url, { headers: authHeaders() });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { $('hwprofile-body').textContent = data.error || ('error ' + res.status); }
+        else { renderHwProfile(data.profile || {}); }
+      } catch (err) {
+        $('hwprofile-body').textContent = 'ต่อ server ไม่ได้';
+      }
+      $('hwprofile-wrap').hidden = false;
+    }
     async function loadCluster() {
       $('cluster-err').style.display = 'none';
       try {
@@ -433,6 +465,7 @@
         loadSupport();   // + support dashboard (ใช้ token เดียวกัน, สิทธิ์ ADMIN)
         loadUsage();     // + usage/API-key monitor (ต่อ key: units/cost)
         loadCluster();   // + cluster monitor (health ของทุก node)
+        loadHwProfile(false); // + hardware profile (จัดระดับเครื่อง + แนะนำ config; ไม่วัด disk ตอนโหลด)
         loadEcoSettings(); // + ecosystem settings (ตัวตนเครื่องนี้ + hub)
         loadBackendSettings(); // + model backend (เสียบ cloud GPU)
       } catch (err) {
@@ -447,6 +480,7 @@
     $('refresh-support').addEventListener('click', loadSupport);
     $('refresh-usage').addEventListener('click', loadUsage);
     $('refresh-cluster').addEventListener('click', loadCluster);
+    $('refresh-hwprofile').addEventListener('click', () => loadHwProfile(true));
     $('cluster-add').addEventListener('submit', (e) => {
       e.preventDefault();
       addNode($('cluster-name').value.trim(), $('cluster-url').value.trim());
