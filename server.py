@@ -42,6 +42,7 @@ from app import config_manager  # noqa: E402  (อ่าน flag COLLECT_TRAININ
 from app import resource_budget  # noqa: E402  (ก้านสมอง: เลือกโมเดล/backend ตาม RAM)
 from app import model_backend  # noqa: E402  (adapter: Ollama / OpenAI-compatible สลับด้วย config)
 from app import cluster_store  # noqa: E402  (ทะเบียน + มอนิเตอร์ health ของหลาย node)
+from app import admission  # noqa: E402  (ยามคุมจำนวน generation พร้อมกัน กัน RAM thrash เครื่องสเปกต่ำ)
 from sysmanager.monitor import collect as _collect, Analyzer as _Analyzer  # noqa: E402
 from sysmanager.monitor import lca_context as _lca_context  # noqa: E402  (Phase 2: บริบท Ollama)
 
@@ -66,6 +67,9 @@ def make_handler(project_root: Path, auth_token: Optional[str],
     # limiter เดียวใช้ร่วมทุก thread ของ server นี้ (in-memory ต่อ process)
     # ค่าเริ่มต้น 300 req/60s ต่อ IP — กันยิงถล่มโดยไม่รบกวนการใช้งานปกติ
     api_rate_limiter = RateLimiter(rate_limit_max, rate_limit_window)
+    # ยามคุม generation พร้อมกัน (admission control) — เดียวต่อ process ใช้ร่วมทุก thread
+    # netbook default = 1 (กัน RAM thrash → HDD swap → ค้าง); ตั้งเพิ่มด้วย config
+    gen_gate = admission.gate_from_config(project_root)
 
     class LocalAssistantHandler(BaseHTTPRequestHandler):
         # ปิด log เริ่มต้นของ http.server ที่รก stdout — ใช้ log สั้นแทน
@@ -837,7 +841,12 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             # Model layer: เรียกผ่าน adapter (เลือก Ollama / OpenAI-compatible ตาม config)
             # แอปไม่ผูกกับ runtime ตัวใดตัวหนึ่ง — สลับ backend ได้โดยไม่แก้ตรงนี้
             try:
-                reply = model_backend.generate(project_root, model, messages, num_ctx)
+                # ยามคุม generation พร้อมกัน: เครื่องเต็ม/คิวยาว → 503 (กัน RAM thrash จนค้าง)
+                with gen_gate.slot():
+                    reply = model_backend.generate(project_root, model, messages, num_ctx)
+            except admission.Busy as e:
+                self._send_json(503, {"error": str(e)})
+                return
             except model_backend.BackendError as e:
                 self._send_json(502, {"error": str(e)})
                 return
@@ -856,31 +865,37 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             if prepared is None:
                 return
             model, messages, num_ctx = prepared
-            # เปิดสตรีม: HTTP/1.0 ไม่มี Content-Length → ปิด connection ที่ท้าย = client อ่านจบเอง
-            self.send_response(200)
-            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
-            self.send_header("Cache-Control", "no-cache")
-            self.send_header("X-Accel-Buffering", "no")  # กัน reverse-proxy (nginx) buffer สตรีมไว้
-            self.end_headers()
-
-            def sse(obj):
-                self.wfile.write(f"data: {json.dumps(obj, ensure_ascii=False)}\n\n".encode("utf-8"))
-                self.wfile.flush()
-
-            parts = []
+            # ยามคุม generation: ขอสล็อตก่อนส่ง 200 header — ถ้าเต็ม ยังตอบ 503 (JSON) ได้
+            # (กัน RAM thrash: สตรีมหลายตัวพร้อมกันบนเครื่องบางก็ทำให้ค้างเหมือนกัน)
             try:
-                for chunk in model_backend.generate_stream(project_root, model, messages, num_ctx):
-                    parts.append(chunk)
-                    sse({"delta": chunk})
-            except model_backend.BackendError as e:
-                sse({"error": str(e)})
-                return
-            except (BrokenPipeError, ConnectionResetError):
-                # client ปิดแท็บกลางคัน — ไม่ใช่ error ของเรา เงียบไว้ (ไม่หักโควตา)
-                return
-            # finalize หลังสตรีมจบครบ (หักโควตา/usage/dataset เหมือน blocking)
-            self._chat_finalize(ident, model, messages, "".join(parts))
-            sse({"done": True})
+                with gen_gate.slot():
+                    # เปิดสตรีม: HTTP/1.0 ไม่มี Content-Length → ปิด connection ที่ท้าย = client อ่านจบเอง
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+                    self.send_header("Cache-Control", "no-cache")
+                    self.send_header("X-Accel-Buffering", "no")  # กัน reverse-proxy (nginx) buffer สตรีมไว้
+                    self.end_headers()
+
+                    def sse(obj):
+                        self.wfile.write(f"data: {json.dumps(obj, ensure_ascii=False)}\n\n".encode("utf-8"))
+                        self.wfile.flush()
+
+                    parts = []
+                    try:
+                        for chunk in model_backend.generate_stream(project_root, model, messages, num_ctx):
+                            parts.append(chunk)
+                            sse({"delta": chunk})
+                    except model_backend.BackendError as e:
+                        sse({"error": str(e)})
+                        return
+                    except (BrokenPipeError, ConnectionResetError):
+                        # client ปิดแท็บกลางคัน — ไม่ใช่ error ของเรา เงียบไว้ (ไม่หักโควตา)
+                        return
+                    # finalize หลังสตรีมจบครบ (หักโควตา/usage/dataset เหมือน blocking)
+                    self._chat_finalize(ident, model, messages, "".join(parts))
+                    sse({"done": True})
+            except admission.Busy as e:
+                self._send_json(503, {"error": str(e)})
 
         def _handle_todos_get(self):
             # เดิม GET /api/todos เปิดสาธารณะ — ปิดให้ต้อง USER ขึ้นไป (สอดคล้องกับ
