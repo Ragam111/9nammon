@@ -26,6 +26,7 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -136,18 +137,45 @@ def fetch_node_health(url: str, timeout: float = 2.0) -> dict:
         return {"reachable": False, "error": e.__class__.__name__}
 
 
-def cluster_health(project_root: Path, timeout: float = 2.0) -> dict:
-    """ดึง health จากทุก node — คืน {nodes:[...], summary:{total, up, down}}
-    (ดึงแบบลำดับ: node น้อย + timeout สั้น พอสำหรับ netbook; ขนานเป็น optimize ทีหลัง)"""
+# จำกัดเพดาน worker: node เยอะ ≠ thread เยอะ (netbook 2C/4T จะหายใจไม่ออก)
+# 32 คือจุดที่ "ปิดคลัสเตอร์ 100 node ภายใน timeout เดียว" ได้ แต่ไม่เผาเครื่อง
+_MAX_WORKERS = 32
+
+
+def cluster_health(project_root: Path, timeout: float = 2.0,
+                   max_workers: int | None = None) -> dict:
+    """ดึง health จากทุก node แบบขนาน — คืน {nodes:[...], summary:{total, up, down}}
+
+    ก่อน (sequential): n node × timeout = รอ n × timeout ตอนทุกตัวล่ม
+    หลัง (parallel):   รอแค่ ~timeout ตัวเดียว (I/O-bound → ThreadPoolExecutor พอ ไม่ต้อง process)
+
+    ลำดับใน `nodes` ของผลลัพธ์เหมือนลำดับใน cluster.json เสมอ (ไม่ขึ้นกับใครเสร็จก่อน)
+    — หน้าจอรวมจะได้เรียง node เหมือนที่ CEO ตั้งไว้ ไม่สลับทุกครั้ง
+
+    max_workers=None → auto (จำนวน node ไม่เกิน _MAX_WORKERS)
+    max_workers=1    → sequential (ไว้เทสต์/debug)
+    """
     nodes = _load(project_root)
-    results = []
-    up = 0
-    for n in nodes:
+    if not nodes:
+        return {"nodes": [], "summary": {"total": 0, "up": 0, "down": 0}}
+
+    if max_workers is None:
+        max_workers = min(len(nodes), _MAX_WORKERS)
+    max_workers = max(1, max_workers)
+
+    def _one(n: dict) -> dict:
         res = fetch_node_health(n.get("url", ""), timeout=timeout)
-        entry = {"name": n.get("name"), "url": n.get("url"), **res}
-        if res.get("reachable"):
-            up += 1
-        results.append(entry)
+        return {"name": n.get("name"), "url": n.get("url"), **res}
+
+    if max_workers == 1:
+        results = [_one(n) for n in nodes]
+    else:
+        # executor.map รักษาลำดับ input → ผลลัพธ์เรียงตาม nodes เสมอ
+        with ThreadPoolExecutor(max_workers=max_workers,
+                                thread_name_prefix="lca-cluster") as ex:
+            results = list(ex.map(_one, nodes))
+
+    up = sum(1 for r in results if r.get("reachable"))
     return {
         "nodes": results,
         "summary": {"total": len(nodes), "up": up, "down": len(nodes) - up},
