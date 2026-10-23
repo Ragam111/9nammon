@@ -16,6 +16,7 @@ View       : app/index.html (หน้าเว็บ) + JSON response (สำ�
 
 import argparse
 import json
+import os
 import socket
 import sqlite3
 import sys
@@ -925,14 +926,50 @@ def make_handler(project_root: Path, auth_token: Optional[str],
     return LocalAssistantHandler
 
 
+def resolve_server_config(args, env=None):
+    """รวม args + environment variable เป็น config สุดท้าย (host, port, token)
+    — แยกออกมาให้เทสได้ และให้ deploy บน cloud ได้โดยไม่ต้องแก้ไฟล์
+
+    ลำดับความสำคัญ: args (--flag) > env > default
+      PORT        : cloud host (Render/Fly/HF/Cloud Run) ฉีด $PORT มาเอง ต้องอ่าน
+      LCA_HOST    : cloud ต้อง bind 0.0.0.0 (รับ traffic จากข้างนอก container)
+      LCA_TOKEN   : auth token — บังคับเมื่อ bind ออกนอก 127.0.0.1 (Rule 12)
+
+    กฎความปลอดภัยเดิมคงอยู่: bind ออกนอก localhost โดยไม่มี token = ValueError
+    (cloud จึง *ต้อง* ตั้ง LCA_TOKEN — กันคนทั้งอินเทอร์เน็ตสั่งแก้ไฟล์)
+    คืน dict {host, port, token}
+    """
+    env = env if env is not None else os.environ
+    # host: --host ถ้าผู้ใช้ตั้ง (ไม่ใช่ default), ไม่งั้น env LCA_HOST, ไม่งั้น default
+    host = args.host
+    if host == "127.0.0.1" and env.get("LCA_HOST"):
+        host = env["LCA_HOST"].strip()
+    # port: --port ถ้าตั้ง (ไม่ใช่ default), ไม่งั้น $PORT (cloud), ไม่งั้น default
+    port = args.port
+    if port == 8420 and env.get("PORT"):
+        try:
+            port = int(env["PORT"])
+        except (TypeError, ValueError):
+            raise ValueError(f"$PORT ไม่ใช่ตัวเลข: {env['PORT']!r}")
+    token = args.token or env.get("LCA_TOKEN") or None
+    if host != "127.0.0.1" and not token:
+        raise ValueError(
+            "ห้าม bind ออกนอก 127.0.0.1 โดยไม่ตั้ง token (กันคนอื่นสั่งแก้ไฟล์เครื่องนี้ "
+            "โดยไม่ยืนยันตัวตน) — ตั้ง --token หรือ env LCA_TOKEN. ดู Rule ข้อ 12 ใน SKILL.md")
+    return {"host": host, "port": port, "token": token}
+
+
 def main():
     parser = argparse.ArgumentParser(description="Backend server สำหรับ Local Code Assistant web UI")
     parser.add_argument("project_dir", type=str, help="โฟลเดอร์โปรเจกต์ (ใช้กับ todo)")
     parser.add_argument("--host", type=str, default="127.0.0.1",
-                         help="bind address — ใช้ 127.0.0.1 เท่านั้นถ้าไม่ต้องการเปิดให้เครื่องอื่นเข้าถึง")
-    parser.add_argument("--port", type=int, default=8420)
+                         help="bind address — ใช้ 127.0.0.1 เท่านั้นถ้าไม่ต้องการเปิดให้เครื่องอื่นเข้าถึง "
+                              "(cloud: ตั้ง env LCA_HOST=0.0.0.0)")
+    parser.add_argument("--port", type=int, default=8420,
+                         help="พอร์ต (cloud: อ่าน $PORT ให้อัตโนมัติถ้าไม่ระบุ)")
     parser.add_argument("--token", type=str, default=None,
-                         help="auth token — บังคับใส่ถ้า --host ไม่ใช่ 127.0.0.1 (ตาม Rule ข้อ 12)")
+                         help="auth token — บังคับใส่ถ้า bind ไม่ใช่ 127.0.0.1 (ตาม Rule ข้อ 12); "
+                              "cloud ตั้ง env LCA_TOKEN ได้")
     args = parser.parse_args()
 
     project_root = Path(args.project_dir).resolve()
@@ -940,17 +977,18 @@ def main():
         print(f"ไม่พบโฟลเดอร์: {project_root}")
         sys.exit(1)
 
-    if args.host != "127.0.0.1" and not args.token:
-        print("[ปฏิเสธ] ห้าม bind ออกนอก 127.0.0.1 โดยไม่ตั้ง --token "
-              "(กันคนอื่นใน LAN สั่งแก้ไฟล์เครื่องนี้โดยไม่ยืนยันตัวตน) — ดู Rule ข้อ 12 ใน SKILL.md")
+    try:
+        cfg = resolve_server_config(args)
+    except ValueError as e:
+        print(f"[ปฏิเสธ] {e}")
         sys.exit(1)
 
-    handler_cls = make_handler(project_root, args.token, bind_host=args.host)
-    httpd = ThreadingHTTPServer((args.host, args.port), handler_cls)
+    handler_cls = make_handler(project_root, cfg["token"], bind_host=cfg["host"])
+    httpd = ThreadingHTTPServer((cfg["host"], cfg["port"]), handler_cls)
     print(f"=== Local Assistant Server ===")
     print(f"โปรเจกต์: {project_root}")
-    print(f"เปิดเบราว์เซอร์ที่: http://{args.host}:{args.port}")
-    if args.token:
+    print(f"เปิดเบราว์เซอร์ที่: http://{cfg['host']}:{cfg['port']}")
+    if cfg["token"]:
         print("[auth] ต้องใส่ header X-Auth-Token เพื่อเรียก API")
     try:
         httpd.serve_forever()
