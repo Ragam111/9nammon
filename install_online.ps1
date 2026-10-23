@@ -4,22 +4,17 @@
 # ============================================================================
 #
 # วิธีใช้ (ผู้ใช้ปลายทางแปะบรรทัดเดียวใน PowerShell):
-#   powershell -ExecutionPolicy Bypass -Command "iwr -useb <URL_ของไฟล์นี้> | iex"
-#
-# ⚠️ ก่อนแจกจ่าย one-liner นี้ให้ใครใช้ ต้องแก้ $DownloadUrl ด้านล่างนี้ก่อนเสมอ ⚠️
+#   powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercontent.com/Ragam111/9nammon/main/install_online.ps1 | iex"
 # ============================================================================
 
 $ErrorActionPreference = "Stop"
 
 # ─────────────────────────────────────────────────────────────────────────
-# แก้ตรงนี้: ใส่ URL ของไฟล์ .zip จริงที่ host ไว้ (เช่น GitHub Releases asset)
-#    ดูวิธีสร้าง GitHub Release + เอา URL มาใส่ตรงนี้ได้ใน ONLINE_INSTALL_GUIDE.md
+# ดาวน์โหลดซอร์สล่าสุดจาก GitHub โดยตรง (codeload zip ของ branch main) —
+# repo เป็น public จึงโหลดได้เลยไม่ต้องสร้าง GitHub Release ก่อน. ไฟล์ที่แตกออกมา
+# จะอยู่ในโฟลเดอร์ 9nammon-main/ ซึ่งมี install.ps1 อยู่ (ขั้นตอน 4 หาแบบ recursive)
 # ─────────────────────────────────────────────────────────────────────────
-$DownloadUrl = "https://github.com/YOUR_USER/YOUR_REPO/releases/latest/download/LocalCodeAssistant.zip"
-
-# หมายเหตุความซื่อสัตย์ (Rule 21 / 9arm ข้อ 1 — ไม่แต่งเติม): ค่าด้านบนยังเป็น
-# placeholder ที่ไม่มีไฟล์จริงอยู่ปลายทาง — สคริปต์นี้จะปฏิเสธทำงานทันทีถ้ายังไม่แก้
-# (fail ดัง ไม่ fail เงียบ) เพื่อไม่ให้ผู้ใช้งงว่าทำไมดาวน์โหลดไม่ได้
+$DownloadUrl = "https://github.com/Ragam111/9nammon/archive/refs/heads/main.zip"
 
 $TempZipPath = Join-Path $env:TEMP "LocalCodeAssistant-download.zip"
 $TempExtractPath = Join-Path $env:TEMP "LocalCodeAssistant-extract"
@@ -27,11 +22,9 @@ $InstallTargetDir = Join-Path $env:LOCALAPPDATA "LocalCodeAssistant"
 
 Write-Host "=== Local Code Assistant — ตัวติดตั้งออนไลน์ ===" -ForegroundColor Cyan
 
-# ---------- Guard: เช็คว่า URL ถูกตั้งค่าแล้วจริงหรือยัง ----------
+# ---------- Guard: เช็คว่า URL ยังไม่ใช่ placeholder เดิม ----------
 if ($DownloadUrl -like "*YOUR_USER/YOUR_REPO*") {
-    Write-Host "[error] ยังไม่ได้ตั้งค่า `$DownloadUrl ให้ชี้ไปไฟล์จริง" -ForegroundColor Red
-    Write-Host "        ผู้ดูแลโปรเจกต์ต้อง host ไฟล์ .zip บน GitHub Releases ก่อน" -ForegroundColor Red
-    Write-Host "        แล้วแก้บรรทัด `$DownloadUrl ในสคริปต์นี้ (ดู ONLINE_INSTALL_GUIDE.md)" -ForegroundColor Red
+    Write-Host "[error] `$DownloadUrl ยังเป็น placeholder — แก้ให้ชี้ repo จริงก่อน" -ForegroundColor Red
     exit 1
 }
 
@@ -111,3 +104,13 @@ Write-Host "[ok] ลบไฟล์ชั่วคราวใน %TEMP% เร�
 
 Write-Host ""
 Write-Host "=== ติดตั้งออนไลน์เสร็จสมบูรณ์ ===" -ForegroundColor Green
+Write-Host ""
+Write-Host "--- เริ่มใช้งาน ---" -ForegroundColor Cyan
+Write-Host "ผู้ใช้ทั่วไป (บนเครื่องตัวเอง): เปิด server แล้วเข้า http://127.0.0.1:8420"
+Write-Host "    python server.py . "
+Write-Host ""
+Write-Host "แอดมิน/เจ้าของ (เข้าด้วยรหัสไททัน = master token):" -ForegroundColor Yellow
+Write-Host "    1) ตั้งรหัสไททันตอนเปิด server:"
+Write-Host "       `$env:LCA_TOKEN='<รหัสลับยาวๆ>'; python server.py . --host 0.0.0.0 --port 8420"
+Write-Host "    2) เปิดหน้า /login แล้ววางรหัสไททันในช่อง token -> ได้สิทธิ์ CEO (แอดมินเต็ม)"
+Write-Host "    (โหมด local 127.0.0.1 ไม่ตั้ง token = เป็น CEO อยู่แล้ว ไม่ต้องใส่รหัส)"
