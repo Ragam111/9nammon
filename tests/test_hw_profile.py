@@ -75,6 +75,29 @@ class NextUpgradeTest(unittest.TestCase):
         self.assertTrue("GPU" in msg or "cloud" in msg)
 
 
+class RecommendConcurrencyTest(unittest.TestCase):
+    def _rec(self, cores, ram_gb, disk, gpu=False):
+        t = hp.classify_tier(cores, ram_gb * GB, disk, gpu)
+        return hp.recommend_config(t)
+
+    def test_netbook_one_concurrent(self):
+        rec = self._rec(2, 8, 80.0)                      # i3/8GB/HDD
+        self.assertEqual(rec["MAX_CONCURRENT_GENERATIONS"], "1")
+
+    def test_workstation_two_concurrent(self):
+        rec = self._rec(4, 16, 800.0)                    # 4C/16GB/SSD
+        self.assertEqual(rec["MAX_CONCURRENT_GENERATIONS"], "2")
+
+    def test_server_four_concurrent(self):
+        rec = self._rec(16, 64, 1000.0)
+        self.assertEqual(rec["MAX_CONCURRENT_GENERATIONS"], "4")
+
+    def test_value_is_string(self):
+        # เขียนลง config เป็น string — admission.gate_from_config อ่าน int() เองได้
+        rec = self._rec(2, 8, 80.0)
+        self.assertIsInstance(rec["MAX_CONCURRENT_GENERATIONS"], str)
+
+
 class ProfileTest(unittest.TestCase):
     def test_profile_netbook_injected(self):
         with tempfile.TemporaryDirectory() as d:
