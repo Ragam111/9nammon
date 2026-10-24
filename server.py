@@ -49,6 +49,7 @@ from app import space_store  # noqa: E402  (พื้นที่ส่วนต
 from app import cluster_router  # noqa: E402  (สมองจัดคิวงานของคลัสเตอร์ — route งานไป node ที่พร้อม)
 from app import cluster_forward  # noqa: E402  (แขนคลัสเตอร์: forward งาน chat ไปทำที่ node ที่ router เลือกจริง)
 from app import watchdog  # noqa: E402  (เฝ้าระบบ 24/7 + เตือนเมื่อผิดปกติ — observe/alert เท่านั้น)
+from app import feature_flags  # noqa: E402  (ศูนย์กลางเปิด/ปิดฟีเจอร์ server + มอนิเตอร์)
 from sysmanager.monitor import collect as _collect, Analyzer as _Analyzer  # noqa: E402
 from sysmanager.monitor import lca_context as _lca_context  # noqa: E402  (Phase 2: บริบท Ollama)
 
@@ -205,6 +206,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._handle_cluster_route(parsed)
             elif parsed.path == "/api/admin/watchdog":
                 self._handle_watchdog()
+            elif parsed.path == "/api/admin/features":
+                self._handle_features_get()
             elif parsed.path == "/api/admin/cluster/settings":
                 self._handle_cluster_settings_get()
             elif parsed.path == "/api/admin/model-backend/settings":
@@ -345,6 +348,24 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 "enabled": watchdog.is_enabled(project_root),
                 "findings": _watchdog_check(),
             })
+
+        def _handle_features_get(self):
+            # มอนิเตอร์ฟีเจอร์: เปิด/ปิดอะไรอยู่บ้าง — ADMIN+
+            if self._require("ADMIN") is None:
+                return
+            self._send_json(200, {"features": feature_flags.status(project_root)})
+
+        def _handle_features_set(self):
+            # เปิด/ปิดฟีเจอร์ — CEO เท่านั้น (เปลี่ยนพฤติกรรม server ทั้งระบบ)
+            ident = self._require("CEO")
+            if ident is None:
+                return
+            data = self._read_json_body()
+            key = data.get("key", "")
+            enabled = bool(data.get("enabled", False))
+            # set_flag โยน ValueError ถ้า key ไม่รู้จัก -> 400 ใน do_POST
+            res = feature_flags.set_flag(project_root, key, enabled)
+            self._send_json(200, {"updated": res})
 
         def _handle_cluster_route(self, parsed):
             # preview: งานใหม่จะถูก route ไป node ไหน (ตาม health ปัจจุบัน) — ADMIN+
@@ -687,6 +708,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                     self._handle_space_item_add()
                 elif parsed.path == "/api/spaces/members":
                     self._handle_space_member_add()
+                elif parsed.path == "/api/admin/features":
+                    self._handle_features_set()
                 else:
                     self._send_json(404, {"error": "not found"})
             except (json.JSONDecodeError, KeyError) as e:

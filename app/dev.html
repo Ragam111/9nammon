@@ -68,6 +68,14 @@
       </div>
       <div id="hwprofile-body">กำลังอ่านโปรไฟล์เครื่อง...</div>
     </section>
+    <section id="features-wrap" class="card" style="margin-bottom:12px" hidden>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px">
+        <h2 style="margin:0">Server features (เปิด/ปิด)</h2>
+        <button id="refresh-features" type="button">รีเฟรช</button>
+      </div>
+      <p id="features-err" class="err" style="display:none"></p>
+      <div id="features-list"></div>
+    </section>
     <section id="cluster-wrap" class="card" style="margin-bottom:12px" hidden>
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px">
         <h2 style="margin:0">Cluster monitor</h2>
@@ -347,6 +355,42 @@
       }
       $('hwprofile-wrap').hidden = false;
     }
+    // ---------- Server features (เปิด/ปิด + มอนิเตอร์) ----------
+    function escapeHtml(s) { return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+    function renderFeatures(list) {
+      $('features-list').innerHTML = (list || []).map(f => {
+        const on = f.enabled;
+        return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #2a2e37">
+          <div><strong>${escapeHtml(f.name)}</strong> <span style="color:${on?'#4ade80':'#9aa0ac'}">${on?'● เปิด':'○ ปิด'}</span>
+          <div style="color:#9aa0ac;font-size:13px">${escapeHtml(f.desc)}</div></div>
+          <button type="button" data-feat="${escapeHtml(f.key)}" data-next="${on?'0':'1'}">${on?'ปิด':'เปิด'}</button>
+        </div>`;
+      }).join('') || '(ไม่มีฟีเจอร์)';
+      $('features-list').querySelectorAll('button[data-feat]').forEach(b =>
+        b.addEventListener('click', () => toggleFeature(b.dataset.feat, b.dataset.next === '1')));
+    }
+    async function loadFeatures() {
+      $('features-err').style.display = 'none';
+      try {
+        const res = await fetch('/api/admin/features', { headers: authHeaders() });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { $('features-err').textContent = data.error || ('error ' + res.status); $('features-err').style.display = ''; }
+        else { renderFeatures(data.features); }
+      } catch (err) { $('features-err').textContent = 'ต่อ server ไม่ได้'; $('features-err').style.display = ''; }
+      $('features-wrap').hidden = false;
+    }
+    async function toggleFeature(key, enabled) {
+      $('features-err').style.display = 'none';
+      try {
+        const res = await fetch('/api/admin/features', {
+          method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+          body: JSON.stringify({ key, enabled }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { $('features-err').textContent = data.error || ('error ' + res.status); $('features-err').style.display = ''; }
+      } catch (err) { $('features-err').textContent = 'ต่อ server ไม่ได้'; $('features-err').style.display = ''; }
+      loadFeatures();
+    }
     async function loadCluster() {
       $('cluster-err').style.display = 'none';
       try {
@@ -522,6 +566,7 @@
         loadCluster();   // + cluster monitor (health ของทุก node)
         loadHwProfile(false); // + hardware profile (จัดระดับเครื่อง + แนะนำ config; ไม่วัด disk ตอนโหลด)
         loadCfgVersions(); // + config versions (snapshot/rollback กัน incident)
+        loadFeatures();  // + server features (เปิด/ปิดฟีเจอร์ + มอนิเตอร์)
         loadEcoSettings(); // + ecosystem settings (ตัวตนเครื่องนี้ + hub)
         loadBackendSettings(); // + model backend (เสียบ cloud GPU)
       } catch (err) {
@@ -535,6 +580,7 @@
     $('refresh-metrics').addEventListener('click', loadMetrics);
     $('refresh-support').addEventListener('click', loadSupport);
     $('refresh-usage').addEventListener('click', loadUsage);
+    $('refresh-features').addEventListener('click', loadFeatures);
     $('refresh-cluster').addEventListener('click', loadCluster);
     $('refresh-hwprofile').addEventListener('click', () => loadHwProfile(true));
     $('cfg-snapshot').addEventListener('click', snapshotConfig);

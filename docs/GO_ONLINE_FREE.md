@@ -36,6 +36,34 @@ cloudflared tunnel --url http://localhost:8420
 
 ---
 
+## เส้นทาง A+ — รันเป็น server บน WSL (Ubuntu ใน Windows) จากโน้ตบุ๊กตัวเอง
+
+ไม่ต้องมี cloud เลย — Windows Terminal มี Ubuntu (WSL) อยู่แล้ว ใช้เครื่อง (เช่น HP Notebook)
+เป็น "server" ได้เลย แล้วเปิด public ด้วย Cloudflare Tunnel (เส้นทาง A)
+
+```bash
+# ใน Windows Terminal → เปิดแท็บ Ubuntu (WSL). ถ้ายังไม่มี: เปิด PowerShell แล้ว  wsl --install
+sudo apt update && sudo apt install -y python3 python3-pip git
+curl -fsSL https://ollama.com/install.sh | sh
+ollama pull qwen2.5-coder:1.5b
+
+git clone https://github.com/Ragam111/9nammon.git && cd 9nammon
+bash install.sh          # ก๊อป app/ + sysmanager/ ครบ สร้างคำสั่ง lca / lca-web
+
+# รันเป็น server (ตั้ง token เสมอเมื่อเปิดออกนอกเครื่อง)
+export LCA_HOST=0.0.0.0 LCA_TOKEN="รหัสลับยาว ๆ"
+python3 server.py . --port 8420
+```
+- เปิดจาก Windows: `http://localhost:8420` (WSL2 forward ให้อัตโนมัติ)
+- เปิดให้คนอื่น: อีกแท็บรัน `cloudflared tunnel --url http://localhost:8420`
+- **มอนิเตอร์ + เปิด/ปิดฟีเจอร์**: ไปหน้า `/dev` → panel **"Server features"** toggle cluster/watchdog/agent ได้
+- อยากรันค้างแม้ปิดแท็บ: `tmux` หรือทำ systemd service (ขอไฟล์ service ได้)
+
+> ข้อดี: ใช้เครื่องที่มีอยู่เป็น server ฟรี, RAM เท่าโน้ตบุ๊กจริง (มากกว่าโฮสต์ฟรีจิ๋ว)
+> ข้อจำกัด: เครื่องต้องเปิดค้าง + เน็ตบ้าน (ถ้าอยาก 24 ชม. จริงจังค่อยไปเส้นทาง B)
+
+---
+
 ## เส้นทาง B — Oracle Cloud Always Free (ออนไลน์ 24 ชม. ฟรีถาวร รัน Ollama ได้จริง)
 
 Oracle แจก VM ฟรีถาวร **ARM Ampere 4-core / 24GB RAM** (แรงกว่าฟรีเจ้าอื่นมาก รัน LLM เองได้)
