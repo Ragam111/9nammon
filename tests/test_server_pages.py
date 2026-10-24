@@ -156,6 +156,13 @@ class ServerPagesTest(unittest.TestCase):
         self.assertEqual("".join(deltas), "def foo()")
         self.assertIn('"done": true', body)
 
+    def test_dev_page_has_config_versions(self):
+        # config rollback: /dev ต้องมี panel ที่ snapshot/list/rollback ได้
+        _, _, _, body = self._get("/dev")
+        self.assertIn(b"cfgver-wrap", body)
+        self.assertIn(b"/api/admin/config/snapshot", body)
+        self.assertIn(b"/api/admin/config/rollback", body)
+
     def test_config_version_snapshot_list_rollback(self):
         # local mode = CEO → snapshot + list + rollback ใช้ได้ครบ (flow กัน incident)
         import json as _json
