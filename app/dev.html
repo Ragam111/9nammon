@@ -52,6 +52,15 @@
       <p id="usage-err" class="err" style="display:none"></p>
       <div id="usage-table"></div>
     </section>
+    <section id="cfgver-wrap" class="card" style="margin-bottom:12px" hidden>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px">
+        <h2 style="margin:0">Config versions (rollback)</h2>
+        <button id="cfg-snapshot" type="button">เก็บ snapshot ตอนนี้</button>
+      </div>
+      <input id="cfg-label" type="text" placeholder="label (เช่น ก่อนปล่อย v1.2)" style="margin-bottom:10px;width:100%">
+      <div id="cfgver-err" style="display:none;color:#e5534b;margin-bottom:8px"></div>
+      <div id="cfgver-table">กำลังโหลด...</div>
+    </section>
     <section id="hwprofile-wrap" class="card" style="margin-bottom:12px" hidden>
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px">
         <h2 style="margin:0">Hardware profile</h2>
@@ -267,6 +276,52 @@
       document.querySelectorAll('.cluster-rm').forEach((b) =>
         b.addEventListener('click', () => removeNode(b.getAttribute('data-node'))));
     }
+    function renderCfgVersions(versions) {
+      const esc = (s) => String(s == null ? '' : s).replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+      if (!versions.length) { $('cfgver-table').textContent = 'ยังไม่มี snapshot — กด "เก็บ snapshot ตอนนี้" ก่อนปล่อยของ'; return; }
+      const rows = versions.map(v => {
+        const t = new Date((v.ts || 0) * 1000).toLocaleString();
+        return '<tr><td><code>' + esc(v.id) + '</code></td><td>' + esc(t) + '</td><td>' +
+          esc(v.label) + '</td><td>' + esc(v.keys) + ' key</td>' +
+          '<td><button type="button" class="cfg-rollback" data-id="' + esc(v.id) + '">rollback</button></td></tr>';
+      }).join('');
+      $('cfgver-table').innerHTML = '<table><tr><th>id</th><th>เวลา</th><th>label</th><th>ขนาด</th><th></th></tr>' + rows + '</table>';
+      document.querySelectorAll('.cfg-rollback').forEach(b =>
+        b.addEventListener('click', () => rollbackConfig(b.getAttribute('data-id'))));
+    }
+    async function loadCfgVersions() {
+      $('cfgver-err').style.display = 'none';
+      try {
+        const res = await fetch('/api/admin/config/versions', { headers: authHeaders() });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { $('cfgver-err').textContent = data.error || ('error ' + res.status); $('cfgver-err').style.display = ''; }
+        else { renderCfgVersions(data.versions || []); }
+      } catch (err) { $('cfgver-err').textContent = 'ต่อ server ไม่ได้'; $('cfgver-err').style.display = ''; }
+      $('cfgver-wrap').hidden = false;
+    }
+    async function snapshotConfig() {
+      try {
+        const res = await fetch('/api/admin/config/snapshot', {
+          method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+          body: JSON.stringify({ label: $('cfg-label').value.trim() }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { $('cfgver-err').textContent = data.error || ('error ' + res.status); $('cfgver-err').style.display = ''; return; }
+        $('cfg-label').value = ''; loadCfgVersions();
+      } catch (err) { $('cfgver-err').textContent = 'ต่อ server ไม่ได้'; $('cfgver-err').style.display = ''; }
+    }
+    async function rollbackConfig(id) {
+      if (!confirm('ย้อน config กลับเวอร์ชัน ' + id + ' ?\n(ของปัจจุบันจะถูก snapshot ไว้ก่อน ย้อนกลับได้อีก)')) return;
+      try {
+        const res = await fetch('/api/admin/config/rollback', {
+          method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+          body: JSON.stringify({ id }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { $('cfgver-err').textContent = data.error || ('error ' + res.status); $('cfgver-err').style.display = ''; return; }
+        loadCfgVersions();
+      } catch (err) { $('cfgver-err').textContent = 'ต่อ server ไม่ได้'; $('cfgver-err').style.display = ''; }
+    }
     function renderHwProfile(p) {
       const esc = (s) => String(s == null ? '' : s).replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
       const rec = p.recommended_config || {};
@@ -466,6 +521,7 @@
         loadUsage();     // + usage/API-key monitor (ต่อ key: units/cost)
         loadCluster();   // + cluster monitor (health ของทุก node)
         loadHwProfile(false); // + hardware profile (จัดระดับเครื่อง + แนะนำ config; ไม่วัด disk ตอนโหลด)
+        loadCfgVersions(); // + config versions (snapshot/rollback กัน incident)
         loadEcoSettings(); // + ecosystem settings (ตัวตนเครื่องนี้ + hub)
         loadBackendSettings(); // + model backend (เสียบ cloud GPU)
       } catch (err) {
@@ -481,6 +537,7 @@
     $('refresh-usage').addEventListener('click', loadUsage);
     $('refresh-cluster').addEventListener('click', loadCluster);
     $('refresh-hwprofile').addEventListener('click', () => loadHwProfile(true));
+    $('cfg-snapshot').addEventListener('click', snapshotConfig);
     $('cluster-add').addEventListener('submit', (e) => {
       e.preventDefault();
       addNode($('cluster-name').value.trim(), $('cluster-url').value.trim());
