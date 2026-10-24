@@ -44,6 +44,7 @@ from app import model_backend  # noqa: E402  (adapter: Ollama / OpenAI-compatibl
 from app import cluster_store  # noqa: E402  (ทะเบียน + มอนิเตอร์ health ของหลาย node)
 from app import admission  # noqa: E402  (ยามคุมจำนวน generation พร้อมกัน กัน RAM thrash เครื่องสเปกต่ำ)
 from app import hw_profile  # noqa: E402  (โปรไฟล์ฮาร์ดแวร์: จัดระดับเครื่อง + แนะนำ config)
+from app import config_versions  # noqa: E402  (เวอร์ชัน + rollback ของ config — กัน incident)
 from sysmanager.monitor import collect as _collect, Analyzer as _Analyzer  # noqa: E402
 from sysmanager.monitor import lca_context as _lca_context  # noqa: E402  (Phase 2: บริบท Ollama)
 
@@ -174,6 +175,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._handle_model_backend_settings_get()
             elif parsed.path == "/api/admin/hw-profile":
                 self._handle_hw_profile(parsed)
+            elif parsed.path == "/api/admin/config/versions":
+                self._handle_config_versions_list()
             else:
                 self._send_json(404, {"error": "not found"})
 
@@ -348,6 +351,36 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 return
             self._send_json(200, {"profile": p})
 
+        def _handle_config_versions_list(self):
+            # รายการเวอร์ชัน config (metadata เท่านั้น — ไม่เผย secret) — ADMIN+
+            if self._require("ADMIN") is None:
+                return
+            self._send_json(200, {"versions": config_versions.list_versions(project_root)})
+
+        def _handle_config_snapshot(self):
+            # เก็บ snapshot ของ config ปัจจุบัน (เช่น ก่อนปล่อยของ) — ADMIN+
+            if self._require("ADMIN") is None:
+                return
+            data = self._read_json_body()
+            meta = config_versions.snapshot(project_root, label=data.get("label", ""))
+            self._send_json(200, {"snapshot": meta})
+
+        def _handle_config_rollback(self):
+            # ย้อน config กลับเวอร์ชันก่อน (powerful: เปลี่ยน backend/key ได้) — CEO เท่านั้น
+            if self._require("CEO") is None:
+                return
+            data = self._read_json_body()
+            version_id = (data.get("id") or "").strip()
+            if not version_id:
+                self._send_json(400, {"error": "ต้องระบุ id ของเวอร์ชัน"})
+                return
+            try:
+                result = config_versions.rollback(project_root, version_id)
+            except ValueError as e:
+                self._send_json(404, {"error": str(e)})
+                return
+            self._send_json(200, {"rolledback": result})
+
         def _handle_model_backend_settings_set(self):
             if self._require("ADMIN") is None:
                 return
@@ -504,6 +537,10 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                     self._handle_model_backend_settings_set()
                 elif parsed.path == "/api/admin/model-backend/test":
                     self._handle_model_backend_test()
+                elif parsed.path == "/api/admin/config/snapshot":
+                    self._handle_config_snapshot()
+                elif parsed.path == "/api/admin/config/rollback":
+                    self._handle_config_rollback()
                 else:
                     self._send_json(404, {"error": "not found"})
             except (json.JSONDecodeError, KeyError) as e:

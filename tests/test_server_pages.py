@@ -156,6 +156,31 @@ class ServerPagesTest(unittest.TestCase):
         self.assertEqual("".join(deltas), "def foo()")
         self.assertIn('"done": true', body)
 
+    def test_config_version_snapshot_list_rollback(self):
+        # local mode = CEO → snapshot + list + rollback ใช้ได้ครบ (flow กัน incident)
+        import json as _json
+        def _post(path, body):
+            conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+            conn.request("POST", path, body=_json.dumps(body),
+                         headers={"Content-Type": "application/json"})
+            r = conn.getresponse(); data = r.read(); conn.close()
+            return r.status, _json.loads(data or b"{}")
+        # snapshot 1 อัน
+        st, data = _post("/api/admin/config/snapshot", {"label": "ก่อนปล่อย"})
+        self.assertEqual(st, 200)
+        vid = data["snapshot"]["id"]
+        # list ต้องเห็นเวอร์ชันนั้น
+        st, _, _, body = self._get("/api/admin/config/versions")
+        self.assertEqual(st, 200)
+        self.assertIn(vid.encode(), body)
+        # rollback กลับเวอร์ชันนั้น (ต้องสำเร็จ)
+        st, data = _post("/api/admin/config/rollback", {"id": vid})
+        self.assertEqual(st, 200)
+        self.assertEqual(data["rolledback"]["restored"], vid)
+        # rollback id มั่ว → 404
+        st, _ = _post("/api/admin/config/rollback", {"id": "v-nope"})
+        self.assertEqual(st, 404)
+
     def test_unknown_route_404(self):
         st, _, _, _ = self._get("/does-not-exist")
         self.assertEqual(st, 404)
