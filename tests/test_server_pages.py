@@ -240,6 +240,39 @@ class ServerPagesTest(unittest.TestCase):
         self.assertFalse(data["enabled"])           # ปิดเป็นค่าเริ่มต้น
         self.assertIn("findings", data)             # list (อาจมี ollama ล่ม ใน CI)
 
+    def test_dev_page_has_features_panel(self):
+        # server features: /dev ต้องมี panel เปิด/ปิดฟีเจอร์
+        _, _, _, body = self._get("/dev")
+        self.assertIn(b"features-wrap", body)
+        self.assertIn(b"/api/admin/features", body)
+
+    def test_features_get_and_toggle(self):
+        # local mode = CEO → ดูสถานะ + เปิด/ปิดฟีเจอร์ได้
+        import json as _json
+        st, _, _, body = self._get("/api/admin/features")
+        self.assertEqual(st, 200)
+        feats = _json.loads(body)["features"]
+        wd = next(f for f in feats if f["key"] == "watchdog")
+        self.assertFalse(wd["enabled"])     # default ปิด
+        # เปิด watchdog
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("POST", "/api/admin/features",
+                     body=_json.dumps({"key": "watchdog", "enabled": True}),
+                     headers={"Content-Type": "application/json"})
+        r = conn.getresponse(); r.read(); conn.close()
+        self.assertEqual(r.status, 200)
+        # อ่านกลับ = เปิดแล้ว
+        st, _, _, body = self._get("/api/admin/features")
+        feats = _json.loads(body)["features"]
+        self.assertTrue(next(f for f in feats if f["key"] == "watchdog")["enabled"])
+        # key มั่ว → 400
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("POST", "/api/admin/features",
+                     body=_json.dumps({"key": "nope", "enabled": True}),
+                     headers={"Content-Type": "application/json"})
+        r = conn.getresponse(); r.read(); conn.close()
+        self.assertEqual(r.status, 400)
+
     def test_unknown_route_404(self):
         st, _, _, _ = self._get("/does-not-exist")
         self.assertEqual(st, 404)
