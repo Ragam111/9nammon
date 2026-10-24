@@ -188,6 +188,12 @@ class ServerPagesTest(unittest.TestCase):
         st, _ = _post("/api/admin/config/rollback", {"id": "v-nope"})
         self.assertEqual(st, 404)
 
+    def test_spaces_page_served(self):
+        st, ctype, _, body = self._get("/spaces")
+        self.assertEqual(st, 200)
+        self.assertIn("text/html", ctype)
+        self.assertIn(b"/api/spaces", body)
+
     def test_spaces_create_list_items(self):
         # local mode = CEO → สร้างพื้นที่ + ลงข้อความ + list ได้ (private/shared)
         import json as _json
