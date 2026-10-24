@@ -32,3 +32,6 @@ CHANGELOG_local.md
 .local_coder_backup/
 *.db          # SQLite stores (jobs.db ฯลฯ) — runtime data, ไม่ commit
 *.sqlite3
+agent_jobs.json       # คิวงาน agent (รันไทม์ ไม่ commit)
+agent_jobs.json.tmp
+agent_queue.txt       # คิวงาน agent แบบไฟล์ (CLI worker)

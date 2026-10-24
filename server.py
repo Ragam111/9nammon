@@ -50,6 +50,7 @@ from app import cluster_router  # noqa: E402  (สมองจัดคิวง
 from app import cluster_forward  # noqa: E402  (แขนคลัสเตอร์: forward งาน chat ไปทำที่ node ที่ router เลือกจริง)
 from app import watchdog  # noqa: E402  (เฝ้าระบบ 24/7 + เตือนเมื่อผิดปกติ — observe/alert เท่านั้น)
 from app import feature_flags  # noqa: E402  (ศูนย์กลางเปิด/ปิดฟีเจอร์ server + มอนิเตอร์)
+from app.agent import jobs as agent_jobs  # noqa: E402  (คิวงาน agent — ให้ n8n/automation ป้อนงาน)
 from sysmanager.monitor import collect as _collect, Analyzer as _Analyzer  # noqa: E402
 from sysmanager.monitor import lca_context as _lca_context  # noqa: E402  (Phase 2: บริบท Ollama)
 
@@ -208,6 +209,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._handle_watchdog()
             elif parsed.path == "/api/admin/features":
                 self._handle_features_get()
+            elif parsed.path == "/api/agent/jobs":
+                self._handle_agent_jobs_get(parsed)
             elif parsed.path == "/api/admin/cluster/settings":
                 self._handle_cluster_settings_get()
             elif parsed.path == "/api/admin/model-backend/settings":
@@ -366,6 +369,38 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             # set_flag โยน ValueError ถ้า key ไม่รู้จัก -> 400 ใน do_POST
             res = feature_flags.set_flag(project_root, key, enabled)
             self._send_json(200, {"updated": res})
+
+        def _handle_agent_jobs_post(self):
+            # n8n/automation ป้อนงานเข้าคิว agent — USER+ และฟีเจอร์ agent ต้องเปิด
+            ident = self._require("USER")
+            if ident is None:
+                return
+            if not feature_flags.is_on(project_root, "agent"):
+                self._send_json(403, {"error": "ฟีเจอร์ agent ปิดอยู่ — เปิดที่ /dev (Server features) ก่อน"})
+                return
+            data = self._read_json_body()
+            task = data.get("task", "")
+            workspace = data.get("workspace", ".")
+            # enqueue โยน ValueError ถ้า task ว่าง -> 400 ใน do_POST
+            job = agent_jobs.enqueue(project_root, task, workspace, source=data.get("source", "api"))
+            self._send_json(200, {"job": job})
+
+        def _handle_agent_jobs_get(self, parsed):
+            # เช็กสถานะงาน (n8n poll) — ?id=<job> ดูงานเดียว, ไม่ใส่ = สรุป+ล่าสุด. USER+
+            ident = self._require("USER")
+            if ident is None:
+                return
+            qs = parse_qs(parsed.query)
+            job_id = (qs.get("id") or [""])[0].strip()
+            if job_id:
+                job = agent_jobs.get(project_root, job_id)
+                if job is None:
+                    self._send_json(404, {"error": "ไม่พบงานนี้"})
+                    return
+                self._send_json(200, {"job": job})
+                return
+            self._send_json(200, {"stats": agent_jobs.stats(project_root),
+                                  "recent": agent_jobs.list_jobs(project_root, limit=20)})
 
         def _handle_cluster_route(self, parsed):
             # preview: งานใหม่จะถูก route ไป node ไหน (ตาม health ปัจจุบัน) — ADMIN+
@@ -710,6 +745,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                     self._handle_space_member_add()
                 elif parsed.path == "/api/admin/features":
                     self._handle_features_set()
+                elif parsed.path == "/api/agent/jobs":
+                    self._handle_agent_jobs_post()
                 else:
                     self._send_json(404, {"error": "not found"})
             except (json.JSONDecodeError, KeyError) as e:

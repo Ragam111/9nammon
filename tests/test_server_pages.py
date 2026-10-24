@@ -273,6 +273,39 @@ class ServerPagesTest(unittest.TestCase):
         r = conn.getresponse(); r.read(); conn.close()
         self.assertEqual(r.status, 400)
 
+    def test_agent_jobs_gated_by_feature_flag(self):
+        # ฟีเจอร์ agent ปิด default → POST /api/agent/jobs ต้อง 403
+        import json as _json
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("POST", "/api/agent/jobs", body=_json.dumps({"task": "ดู server.py"}),
+                     headers={"Content-Type": "application/json"})
+        r = conn.getresponse(); r.read(); conn.close()
+        self.assertEqual(r.status, 403)
+
+    def test_agent_jobs_enqueue_and_poll(self):
+        # เปิดฟีเจอร์ agent ก่อน (local = CEO) → n8n enqueue + poll ได้
+        import json as _json
+        def _post(path, body):
+            conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+            conn.request("POST", path, body=_json.dumps(body), headers={"Content-Type": "application/json"})
+            r = conn.getresponse(); data = r.read(); conn.close()
+            return r.status, _json.loads(data or b"{}")
+        self.assertEqual(_post("/api/admin/features", {"key": "agent", "enabled": True})[0], 200)
+        st, data = _post("/api/agent/jobs", {"task": "วิเคราะห์โค้ด", "source": "n8n"})
+        self.assertEqual(st, 200)
+        jid = data["job"]["id"]
+        self.assertEqual(data["job"]["status"], "queued")
+        # poll งานเดียว
+        st, _, _, body = self._get("/api/agent/jobs?id=" + jid)
+        self.assertEqual(st, 200)
+        self.assertEqual(_json.loads(body)["job"]["id"], jid)
+        # สรุปคิว
+        st, _, _, body = self._get("/api/agent/jobs")
+        self.assertIn(b"stats", body)
+        # id มั่ว → 404
+        st, _, _, _ = self._get("/api/agent/jobs?id=job-nope")
+        self.assertEqual(st, 404)
+
     def test_unknown_route_404(self):
         st, _, _, _ = self._get("/does-not-exist")
         self.assertEqual(st, 404)
