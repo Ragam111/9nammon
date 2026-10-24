@@ -1,8 +1,29 @@
-# Local Code Assistant — Windows Package
+# Local Code Assistant (LCA) — Windows Package
 
 ตัวติดตั้ง AI Coding Assistant แบบฟรี รันด้วย Ollama บนเครื่อง (Windows 10/11, AMD64)
 
-## ติดตั้ง
+## ⚡ ติดตั้งออนไลน์ บรรทัดเดียว (แนะนำสำหรับผู้ใช้ทั่วไป)
+
+เปิด **PowerShell** แล้วแปะบรรทัดนี้ (ดาวน์โหลด + แตกไฟล์ + ติดตั้งให้อัตโนมัติ ไม่ต้องโหลด zip เอง):
+
+```powershell
+powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercontent.com/Ragam111/9nammon/main/install_online.ps1 | iex"
+```
+
+จากนั้นดึงโมเดล (ครั้งเดียว) ตามที่สคริปต์แนะนำ เช่น `ollama pull qwen2.5-coder:1.5b` แล้วเปิดใช้งานได้เลย
+
+## มีอะไรให้ใช้บ้าง
+- **แชตช่วยเขียนโค้ด** — CLI (`lca`) หรือหน้าเว็บ Chat UI (`lca-web` → `http://127.0.0.1:8420`), ตอบแบบสตรีมทีละคำ
+- **ผู้ใช้หลายคน + สิทธิ์ (RBAC)** — ลูกน้อง login ได้, แอดมินเข้าผ่าน "รหัสไททัน" (master token) = CEO
+- **พื้นที่ส่วนตัว/บริษัท (spaces)** — แยกข้อมูลต่อคน/ทีม ไม่ปนกัน
+- **คลัสเตอร์หลายเครื่อง** — รวม health ที่เดียว + ส่งงานไปทำที่เครื่องที่พร้อม (cluster forward)
+- **AI agent สายเทค (สภาที่ปรึกษา)** — `python -m app.agent council "โจทย์"` หลายมุม (ceo/elon/jobs/…) แล้วสังเคราะห์
+- **เฝ้าระบบ 24/7 + rollback config** — เตือนเมื่อผิดปกติ, ย้อนเวอร์ชันได้เมื่อ incident
+- **เสียบ cloud GPU ได้** — สลับ backend เป็น OpenAI-compatible endpoint จากหน้า `/dev`
+
+> เอกสารเพิ่มเติม: `docs/CLUSTER_FORWARD.md`, `docs/AGENT_TECH_PLAN.md`, `docs/learn/` (ความรู้พื้นฐาน)
+
+## ติดตั้ง (แบบดาวน์โหลดแพ็กเกจเอง)
 
 **วิธีง่ายที่สุด**: ดับเบิลคลิก `install.bat`
 

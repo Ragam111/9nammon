@@ -47,6 +47,7 @@ from app import hw_profile  # noqa: E402  (โปรไฟล์ฮาร์ด�
 from app import config_versions  # noqa: E402  (เวอร์ชัน + rollback ของ config — กัน incident)
 from app import space_store  # noqa: E402  (พื้นที่ส่วนตัว/บริษัท + ข้อความ — RBAC)
 from app import cluster_router  # noqa: E402  (สมองจัดคิวงานของคลัสเตอร์ — route งานไป node ที่พร้อม)
+from app import cluster_forward  # noqa: E402  (แขนคลัสเตอร์: forward งาน chat ไปทำที่ node ที่ router เลือกจริง)
 from app import watchdog  # noqa: E402  (เฝ้าระบบ 24/7 + เตือนเมื่อผิดปกติ — observe/alert เท่านั้น)
 from sysmanager.monitor import collect as _collect, Analyzer as _Analyzer  # noqa: E402
 from sysmanager.monitor import lca_context as _lca_context  # noqa: E402  (Phase 2: บริบท Ollama)
@@ -354,7 +355,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             health = cluster_store.cluster_health(project_root)
             preview = cluster_router.route_preview(health, strategy=strategy, rr_index=_rr_state[0])
             _rr_state[0] = preview["rr_index"]   # เลื่อน round-robin จริง
-            self._send_json(200, {"route": preview, "summary": health.get("summary")})
+            self._send_json(200, {"route": preview, "summary": health.get("summary"),
+                                  "forward_enabled": cluster_forward.is_enabled(project_root)})
 
         def _handle_cluster_node_add(self):
             if self._require("ADMIN") is None:
@@ -1027,6 +1029,19 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                     except (ValueError, OSError, sqlite3.Error) as e:
                         print(f"[dataset][warn] เก็บตัวอย่างไม่สำเร็จ: {e}")
 
+        def _forward_target(self, payload):
+            """ถ้าเปิด cluster forward + มี node พร้อม → คืน node ปลายทาง (dict) ไม่งั้น None (ทำ local).
+            เลื่อน round-robin จริงด้วย _rr_state (ใช้ตัวชี้เดียวกับ /api/admin/cluster/route)"""
+            if not cluster_forward.is_enabled(project_root):
+                return None
+            token = cluster_forward._token(project_root)
+            if not token:
+                print("[forward][warn] เปิด CLUSTER_FORWARD_ENABLED แต่ไม่ได้ตั้ง CLUSTER_FORWARD_TOKEN — ทำ local")
+                return None
+            res = cluster_forward.pick_target(project_root, rr_index=_rr_state[0])
+            _rr_state[0] = res["rr_index"]
+            return res["node"]   # None = ไม่มี node พร้อม → local
+
         def _handle_chat(self):
             ident = self._require("USER")
             if ident is None:
@@ -1035,6 +1050,21 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             if prepared is None:
                 return
             model, messages, num_ctx = prepared
+            payload = {"model": model, "messages": messages, "num_ctx": num_ctx}
+            # HPC ขั้น 3+: ลองยื่นงานไป node อื่นที่พร้อม (ถ้าเปิด forward) — งาน generate
+            # ไปกินแรงที่ node ปลายทาง ไม่ใช่เครื่องนี้ (จึงไม่ถือ gen_gate ของ local)
+            node = self._forward_target(payload)
+            if node is not None:
+                try:
+                    reply = cluster_forward.forward_chat(
+                        node["url"], cluster_forward._token(project_root), payload,
+                        timeout=cluster_forward._timeout(project_root))
+                    self._chat_finalize(ident, model, messages, reply)
+                    self._send_json(200, {"reply": reply, "served_by": node.get("name")})
+                    return
+                except cluster_forward.ForwardError as e:
+                    # node ปลายทางมีปัญหา → ไม่ทิ้งงานผู้ใช้ ทำ local แทน (degrade graceful)
+                    print(f"[forward][warn] ส่งไป {node.get('name')} ไม่สำเร็จ ({e}) — ทำ local แทน")
             # Model layer: เรียกผ่าน adapter (เลือก Ollama / OpenAI-compatible ตาม config)
             # แอปไม่ผูกกับ runtime ตัวใดตัวหนึ่ง — สลับ backend ได้โดยไม่แก้ตรงนี้
             try:
@@ -1062,6 +1092,11 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             if prepared is None:
                 return
             model, messages, num_ctx = prepared
+            # HPC ขั้น 3+: ลอง relay สตรีมจาก node อื่นก่อน (ถ้าเปิด forward + มี node พร้อม)
+            payload = {"model": model, "messages": messages, "num_ctx": num_ctx}
+            node = self._forward_target(payload)
+            if node is not None and self._stream_from_node(ident, model, messages, node, payload):
+                return   # forward สำเร็จ (relay สตรีมจาก node ปลายทางแล้ว)
             # ยามคุม generation: ขอสล็อตก่อนส่ง 200 header — ถ้าเต็ม ยังตอบ 503 (JSON) ได้
             # (กัน RAM thrash: สตรีมหลายตัวพร้อมกันบนเครื่องบางก็ทำให้ค้างเหมือนกัน)
             try:
@@ -1093,6 +1128,48 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                     sse({"done": True})
             except admission.Busy as e:
                 self._send_json(503, {"error": str(e)})
+
+        def _stream_from_node(self, ident, model, messages, node, payload):
+            """relay สตรีมจาก node ปลายทางมาหาผู้ใช้. คืน True = รับงานแล้ว (ส่ง 200 ไปแล้ว),
+            False = ยังต่อ node ไม่ติดตั้งแต่ chunk แรก → ผู้เรียกทำ local แทนได้ (ยังไม่ส่ง header)"""
+            token = cluster_forward._token(project_root)
+            timeout = cluster_forward._timeout(project_root)
+            gen = cluster_forward.forward_chat_stream(node["url"], token, payload, timeout=timeout)
+            # prime chunk แรก: ถ้าต่อไม่ติด/node พังตั้งแต่ต้น → ForwardError ตรงนี้ ยัง fallback local ได้
+            try:
+                first = next(gen)
+            except cluster_forward.ForwardError as e:
+                print(f"[forward][warn] relay สตรีมจาก {node.get('name')} ไม่สำเร็จ ({e}) — ทำ local แทน")
+                return False
+            except StopIteration:
+                first = None   # node ไม่ส่งอะไรเลย (คำตอบว่าง) — ถือว่ารับงานแล้ว ปิดด้วย done
+            # commit: ส่ง 200 + header แล้ว (หลังจุดนี้ fallback ไม่ได้ — คำตอบเริ่มออกไปแล้ว)
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("X-Accel-Buffering", "no")
+            self.end_headers()
+
+            def sse(obj):
+                self.wfile.write(f"data: {json.dumps(obj, ensure_ascii=False)}\n\n".encode("utf-8"))
+                self.wfile.flush()
+
+            parts = []
+            try:
+                if first is not None:
+                    parts.append(first)
+                    sse({"delta": first})
+                for chunk in gen:
+                    parts.append(chunk)
+                    sse({"delta": chunk})
+            except cluster_forward.ForwardError as e:
+                sse({"error": str(e)})   # node พังกลางสตรีม — header ส่งแล้ว เปลี่ยนเป็น local ไม่ได้
+                return True
+            except (BrokenPipeError, ConnectionResetError):
+                return True   # ผู้ใช้ปิดแท็บ
+            self._chat_finalize(ident, model, messages, "".join(parts))
+            sse({"done": True, "served_by": node.get("name")})
+            return True
 
         def _handle_todos_get(self):
             # เดิม GET /api/todos เปิดสาธารณะ — ปิดให้ต้อง USER ขึ้นไป (สอดคล้องกับ
