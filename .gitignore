@@ -24,6 +24,7 @@ Thumbs.db
 
 # LCA runtime / secrets (Rule 23 — ห้าม commit secret เด็ดขาด)
 config.json          # API keys ของ search provider ฯลฯ
+config_versions.json # snapshot ของ config (มี secret เต็ม — ห้าม commit, Rule 23)
 org.json             # user/role/api-key store (มี hash — ถือเป็น secret)
 todos.json
 CHANGELOG_local.md
