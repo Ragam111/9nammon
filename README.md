@@ -22,6 +22,8 @@ powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercon
 - **เสียบ cloud GPU ได้** — สลับ backend เป็น OpenAI-compatible endpoint จากหน้า `/dev`
 
 > เอกสารเพิ่มเติม: `docs/CLUSTER_FORWARD.md`, `docs/AGENT_TECH_PLAN.md`, `docs/learn/` (ความรู้พื้นฐาน)
+>
+> **อยากเปิดให้คนอื่นเข้าผ่านเน็ต (โดเมน + server ฟรี)?** ทำตามทีละขั้นที่ `docs/GO_ONLINE_FREE.md`
 
 ## ติดตั้ง (แบบดาวน์โหลดแพ็กเกจเอง)
 
