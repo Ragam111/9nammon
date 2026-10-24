@@ -17,7 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from app import model_backend  # noqa: E402
-from app.agent import harness, personas  # noqa: E402
+from app.agent import core, harness, personas  # noqa: E402
 
 
 def main(argv=None):
@@ -32,6 +32,11 @@ def main(argv=None):
     c.add_argument("--personas", default="", help="คั่นด้วย comma (ว่าง=ชุดเริ่มต้น)")
     c.add_argument("--chair", default=None)
     c.add_argument("--model", default=harness.DEFAULT_MODEL)
+    r = sub.add_parser("run", help="agent ลงมือทำงานจริงด้วย tools (ใน sandbox)")
+    r.add_argument("task")
+    r.add_argument("--workspace", default=".", help="โฟลเดอร์ที่ agent ทำงานได้ (default: ปัจจุบัน)")
+    r.add_argument("--max-steps", type=int, default=core.DEFAULT_MAX_STEPS)
+    r.add_argument("--model", default=core.DEFAULT_MODEL)
     args = ap.parse_args(argv)
 
     root = Path.cwd()
@@ -50,6 +55,17 @@ def main(argv=None):
             for o in res["opinions"]:
                 print(f"--- {o['name']} ---\n{o['reply']}\n")
             print(f"=== ข้อสรุป (ประธาน: {res['chair']}) ===\n{res['synthesis']}")
+        elif args.cmd == "run":
+            res = core.run(root, args.task, workspace=args.workspace,
+                           model=args.model, max_steps=args.max_steps)
+            for i, s in enumerate(res["steps"], 1):
+                if "final" in s:
+                    continue
+                if "error" in s:
+                    print(f"[{i}] (parse error) ลองใหม่")
+                else:
+                    print(f"[{i}] {s.get('thought','')} → {s['tool']}({s['args']})\n    {s['observation'][:200]}")
+            print(f"\n=== ผลสรุป ({res['stopped_reason']}) ===\n{res['final'] or '(ไม่จบใน max_steps)'}")
     except ValueError as e:
         print(f"[error] {e}"); return 2
     except model_backend.BackendError as e:
