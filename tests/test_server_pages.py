@@ -230,6 +230,16 @@ class ServerPagesTest(unittest.TestCase):
         self.assertIsNone(data["route"]["target"])
         self.assertEqual(data["route"]["candidates"], 0)
 
+    def test_watchdog_status_endpoint(self):
+        # watchdog status: enabled (default false) + findings จาก manual check
+        import json as _json
+        st, _, _, body = self._get("/api/admin/watchdog")
+        self.assertEqual(st, 200)
+        data = _json.loads(body)
+        self.assertIn("enabled", data)
+        self.assertFalse(data["enabled"])           # ปิดเป็นค่าเริ่มต้น
+        self.assertIn("findings", data)             # list (อาจมี ollama ล่ม ใน CI)
+
     def test_unknown_route_404(self):
         st, _, _, _ = self._get("/does-not-exist")
         self.assertEqual(st, 404)

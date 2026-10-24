@@ -47,6 +47,7 @@ from app import hw_profile  # noqa: E402  (โปรไฟล์ฮาร์ด�
 from app import config_versions  # noqa: E402  (เวอร์ชัน + rollback ของ config — กัน incident)
 from app import space_store  # noqa: E402  (พื้นที่ส่วนตัว/บริษัท + ข้อความ — RBAC)
 from app import cluster_router  # noqa: E402  (สมองจัดคิวงานของคลัสเตอร์ — route งานไป node ที่พร้อม)
+from app import watchdog  # noqa: E402  (เฝ้าระบบ 24/7 + เตือนเมื่อผิดปกติ — observe/alert เท่านั้น)
 from sysmanager.monitor import collect as _collect, Analyzer as _Analyzer  # noqa: E402
 from sysmanager.monitor import lca_context as _lca_context  # noqa: E402  (Phase 2: บริบท Ollama)
 
@@ -77,6 +78,31 @@ def make_handler(project_root: Path, auth_token: Optional[str],
     gen_gate = admission.gate_from_config(project_root)
     # ตัวชี้ round-robin ของ cluster router (mutable เพื่อให้ preview วนเวียนได้จริง)
     _rr_state = [0]
+
+    # watchdog เฝ้าระบบ 24/7 — สร้างไว้ (ยังไม่ start); main() จะ start ถ้า config เปิด
+    def _ollama_reachable():
+        try:
+            with socket.create_connection(("127.0.0.1", 11434), timeout=0.3):
+                return True
+        except OSError:
+            return False
+
+    def _watchdog_check():
+        down = cluster_store.cluster_health(project_root).get("summary", {}).get("down", 0)
+        return watchdog.evaluate(ollama_up=_ollama_reachable(),
+                                 ram_pressure=resource_budget.ram_pressure(),
+                                 cluster_down=down)
+
+    def _watchdog_notify(level, msg):
+        try:
+            notifier.get_notifier(project_root).send(f"watchdog:{level}", msg)
+        except Exception:  # pragma: no cover - การเตือนล้มต้องไม่ล้ม watchdog
+            pass
+
+    sys_watchdog = watchdog.Watchdog(_watchdog_check, _watchdog_notify)
+    if watchdog.is_enabled(project_root):
+        sys_watchdog.start()   # daemon thread — เฝ้า 24/7 (ปิดเป็นค่าเริ่มต้น; เปิดด้วย WATCHDOG_ENABLED)
+        print("[watchdog] เปิดการเฝ้าระบบ 24/7 (RAM/Ollama/cluster) — แจ้งเตือนเมื่อผิดปกติ")
 
     class LocalAssistantHandler(BaseHTTPRequestHandler):
         # ปิด log เริ่มต้นของ http.server ที่รก stdout — ใช้ log สั้นแทน
@@ -176,6 +202,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._handle_cluster_health()
             elif parsed.path == "/api/admin/cluster/route":
                 self._handle_cluster_route(parsed)
+            elif parsed.path == "/api/admin/watchdog":
+                self._handle_watchdog()
             elif parsed.path == "/api/admin/cluster/settings":
                 self._handle_cluster_settings_get()
             elif parsed.path == "/api/admin/model-backend/settings":
@@ -307,6 +335,15 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             if self._require("ADMIN") is None:
                 return
             self._send_json(200, cluster_store.cluster_health(project_root))
+
+        def _handle_watchdog(self):
+            # สถานะ watchdog: เปิดอยู่ไหม + ผลตรวจสด (manual check, ไม่ส่งเตือน) — ADMIN+
+            if self._require("ADMIN") is None:
+                return
+            self._send_json(200, {
+                "enabled": watchdog.is_enabled(project_root),
+                "findings": _watchdog_check(),
+            })
 
         def _handle_cluster_route(self, parsed):
             # preview: งานใหม่จะถูก route ไป node ไหน (ตาม health ปัจจุบัน) — ADMIN+
