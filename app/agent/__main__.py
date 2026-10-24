@@ -17,7 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from app import model_backend  # noqa: E402
-from app.agent import core, harness, personas  # noqa: E402
+from app.agent import core, harness, personas, worker as worker_mod  # noqa: E402
 
 
 def main(argv=None):
@@ -37,6 +37,12 @@ def main(argv=None):
     r.add_argument("--workspace", default=".", help="โฟลเดอร์ที่ agent ทำงานได้ (default: ปัจจุบัน)")
     r.add_argument("--max-steps", type=int, default=core.DEFAULT_MAX_STEPS)
     r.add_argument("--model", default=core.DEFAULT_MODEL)
+    w = sub.add_parser("worker", help="รัน agent 24/7 หยิบงานจากไฟล์คิว (1 task ต่อบรรทัด)")
+    w.add_argument("--queue", default="agent_queue.txt", help="ไฟล์คิว: 1 บรรทัด = 1 โจทย์ (ลบบรรทัดเมื่อทำเสร็จ)")
+    w.add_argument("--workspace", default=".")
+    w.add_argument("--model", default=core.DEFAULT_MODEL)
+    w.add_argument("--interval", type=float, default=5.0)
+    w.add_argument("--once", action="store_true", help="ทำงานในคิวให้หมดแล้วออก (ไม่วน 24/7)")
     args = ap.parse_args(argv)
 
     root = Path.cwd()
@@ -66,6 +72,37 @@ def main(argv=None):
                 else:
                     print(f"[{i}] {s.get('thought','')} → {s['tool']}({s['args']})\n    {s['observation'][:200]}")
             print(f"\n=== ผลสรุป ({res['stopped_reason']}) ===\n{res['final'] or '(ไม่จบใน max_steps)'}")
+        elif args.cmd == "worker":
+            import time
+            qpath = Path(args.queue)
+            def claim():
+                # หยิบบรรทัดแรกของไฟล์คิวมาเป็นงาน แล้วลบออก (atomic พอสำหรับ worker เดียว)
+                try:
+                    lines = qpath.read_text(encoding="utf-8").splitlines()
+                except OSError:
+                    return None
+                tasks = [l.strip() for l in lines if l.strip()]
+                if not tasks:
+                    return None
+                qpath.write_text("\n".join(tasks[1:]) + ("\n" if tasks[1:] else ""), encoding="utf-8")
+                return {"task": tasks[0], "workspace": args.workspace}
+            def done(rec):
+                print(f"[{'ok' if rec['ok'] else 'fail'}] {rec['duration_s']}s {rec['steps']} step — {rec['task'][:60]}")
+            wk = worker_mod.Worker(claim_fn=claim, done_fn=done, project_root=root,
+                                   model=args.model, interval=args.interval)
+            if args.once:
+                while wk.tick() is not None:
+                    pass
+            else:
+                print(f"[worker] 24/7 เริ่มทำงาน — คิว: {args.queue} (Ctrl+C เพื่อหยุด)")
+                wk.start()
+                try:
+                    while True:
+                        time.sleep(30)
+                        print(f"[stats] {wk.stats.summary()}")
+                except KeyboardInterrupt:
+                    wk.stop(); print("\n[worker] หยุดแล้ว")
+            print(f"=== สรุปผล ===\n{wk.stats.summary()}")
     except ValueError as e:
         print(f"[error] {e}"); return 2
     except model_backend.BackendError as e:
