@@ -46,6 +46,7 @@ from app import admission  # noqa: E402  (ยามคุมจำนวน gene
 from app import hw_profile  # noqa: E402  (โปรไฟล์ฮาร์ดแวร์: จัดระดับเครื่อง + แนะนำ config)
 from app import config_versions  # noqa: E402  (เวอร์ชัน + rollback ของ config — กัน incident)
 from app import space_store  # noqa: E402  (พื้นที่ส่วนตัว/บริษัท + ข้อความ — RBAC)
+from app import cluster_router  # noqa: E402  (สมองจัดคิวงานของคลัสเตอร์ — route งานไป node ที่พร้อม)
 from sysmanager.monitor import collect as _collect, Analyzer as _Analyzer  # noqa: E402
 from sysmanager.monitor import lca_context as _lca_context  # noqa: E402  (Phase 2: บริบท Ollama)
 
@@ -74,6 +75,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
     # ยามคุม generation พร้อมกัน (admission control) — เดียวต่อ process ใช้ร่วมทุก thread
     # netbook default = 1 (กัน RAM thrash → HDD swap → ค้าง); ตั้งเพิ่มด้วย config
     gen_gate = admission.gate_from_config(project_root)
+    # ตัวชี้ round-robin ของ cluster router (mutable เพื่อให้ preview วนเวียนได้จริง)
+    _rr_state = [0]
 
     class LocalAssistantHandler(BaseHTTPRequestHandler):
         # ปิด log เริ่มต้นของ http.server ที่รก stdout — ใช้ log สั้นแทน
@@ -171,6 +174,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._handle_cluster_nodes_list()
             elif parsed.path == "/api/admin/cluster/health":
                 self._handle_cluster_health()
+            elif parsed.path == "/api/admin/cluster/route":
+                self._handle_cluster_route(parsed)
             elif parsed.path == "/api/admin/cluster/settings":
                 self._handle_cluster_settings_get()
             elif parsed.path == "/api/admin/model-backend/settings":
@@ -302,6 +307,17 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             if self._require("ADMIN") is None:
                 return
             self._send_json(200, cluster_store.cluster_health(project_root))
+
+        def _handle_cluster_route(self, parsed):
+            # preview: งานใหม่จะถูก route ไป node ไหน (ตาม health ปัจจุบัน) — ADMIN+
+            # ?strategy=prefer_free|round_robin (default prefer_free)
+            if self._require("ADMIN") is None:
+                return
+            strategy = (parse_qs(parsed.query).get("strategy", ["prefer_free"])[0]).strip()
+            health = cluster_store.cluster_health(project_root)
+            preview = cluster_router.route_preview(health, strategy=strategy, rr_index=_rr_state[0])
+            _rr_state[0] = preview["rr_index"]   # เลื่อน round-robin จริง
+            self._send_json(200, {"route": preview, "summary": health.get("summary")})
 
         def _handle_cluster_node_add(self):
             if self._require("ADMIN") is None:
