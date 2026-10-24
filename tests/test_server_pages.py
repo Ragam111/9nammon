@@ -220,6 +220,16 @@ class ServerPagesTest(unittest.TestCase):
         st, _, _, _ = self._get("/api/spaces/items?space=sp-nope")
         self.assertEqual(st, 404)
 
+    def test_cluster_route_preview(self):
+        # ไม่มี node → route target = null (ทำที่เครื่องนี้เอง), candidates = 0
+        import json as _json
+        st, _, _, body = self._get("/api/admin/cluster/route")
+        self.assertEqual(st, 200)
+        data = _json.loads(body)
+        self.assertIn("route", data)
+        self.assertIsNone(data["route"]["target"])
+        self.assertEqual(data["route"]["candidates"], 0)
+
     def test_unknown_route_404(self):
         st, _, _, _ = self._get("/does-not-exist")
         self.assertEqual(st, 404)
