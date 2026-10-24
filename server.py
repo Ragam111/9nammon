@@ -45,6 +45,7 @@ from app import cluster_store  # noqa: E402  (ทะเบียน + มอน�
 from app import admission  # noqa: E402  (ยามคุมจำนวน generation พร้อมกัน กัน RAM thrash เครื่องสเปกต่ำ)
 from app import hw_profile  # noqa: E402  (โปรไฟล์ฮาร์ดแวร์: จัดระดับเครื่อง + แนะนำ config)
 from app import config_versions  # noqa: E402  (เวอร์ชัน + rollback ของ config — กัน incident)
+from app import space_store  # noqa: E402  (พื้นที่ส่วนตัว/บริษัท + ข้อความ — RBAC)
 from sysmanager.monitor import collect as _collect, Analyzer as _Analyzer  # noqa: E402
 from sysmanager.monitor import lca_context as _lca_context  # noqa: E402  (Phase 2: บริบท Ollama)
 
@@ -177,6 +178,10 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._handle_hw_profile(parsed)
             elif parsed.path == "/api/admin/config/versions":
                 self._handle_config_versions_list()
+            elif parsed.path == "/api/spaces":
+                self._handle_spaces_list()
+            elif parsed.path == "/api/spaces/items":
+                self._handle_space_items_list(parsed)
             else:
                 self._send_json(404, {"error": "not found"})
 
@@ -350,6 +355,85 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._send_json(500, {"error": f"อ่านโปรไฟล์เครื่องไม่สำเร็จ: {e.__class__.__name__}"})
                 return
             self._send_json(200, {"profile": p})
+
+        # ---------- Spaces: พื้นที่ส่วนตัว/บริษัท (USER ขึ้นไป) ----------
+        def _handle_spaces_list(self):
+            ident = self._require("USER")
+            if ident is None:
+                return
+            spaces = space_store.list_spaces(project_root, ident["username"], ident["role"])
+            self._send_json(200, {"spaces": spaces})
+
+        def _handle_space_create(self):
+            ident = self._require("USER")
+            if ident is None:
+                return
+            data = self._read_json_body()
+            try:
+                space = space_store.create_space(
+                    project_root, data.get("name", ""), owner=ident["username"],
+                    visibility=data.get("visibility", "private"))
+            except ValueError as e:
+                self._send_json(400, {"error": str(e)})
+                return
+            self._send_json(200, {"space": space})
+
+        def _space_or_403(self, ident, space_id):
+            """คืน space ถ้าเข้าถึงได้, ไม่งั้นตอบ error แล้วคืน None"""
+            space = space_store.get_space(project_root, space_id)
+            if space is None:
+                self._send_json(404, {"error": "ไม่พบพื้นที่"})
+                return None
+            if not space_store.can_access(space, ident["username"], ident["role"]):
+                self._send_json(403, {"error": "ไม่มีสิทธิ์เข้าพื้นที่นี้"})
+                return None
+            return space
+
+        def _handle_space_items_list(self, parsed):
+            ident = self._require("USER")
+            if ident is None:
+                return
+            space_id = (parse_qs(parsed.query).get("space", [""])[0]).strip()
+            if self._space_or_403(ident, space_id) is None:
+                return
+            self._send_json(200, {"items": space_store.list_items(project_root, space_id)})
+
+        def _handle_space_item_add(self):
+            ident = self._require("USER")
+            if ident is None:
+                return
+            data = self._read_json_body()
+            space_id = (data.get("space") or "").strip()
+            if self._space_or_403(ident, space_id) is None:
+                return
+            try:
+                item = space_store.add_item(project_root, space_id, ident["username"],
+                                            data.get("text", ""))
+            except ValueError as e:
+                self._send_json(400, {"error": str(e)})
+                return
+            self._send_json(200, {"item": item})
+
+        def _handle_space_member_add(self):
+            ident = self._require("USER")
+            if ident is None:
+                return
+            data = self._read_json_body()
+            space_id = (data.get("space") or "").strip()
+            space = space_store.get_space(project_root, space_id)
+            if space is None:
+                self._send_json(404, {"error": "ไม่พบพื้นที่"})
+                return
+            # เชิญสมาชิกได้เฉพาะเจ้าของ หรือ ADMIN ขึ้นไป
+            if ident["username"] != space.get("owner") and not org_store.role_at_least(ident["role"], "ADMIN"):
+                self._send_json(403, {"error": "เฉพาะเจ้าของพื้นที่หรือแอดมินเชิญสมาชิกได้"})
+                return
+            try:
+                updated = space_store.add_member(project_root, space_id, (data.get("member") or "").strip())
+            except ValueError as e:
+                self._send_json(400, {"error": str(e)})
+                return
+            self._send_json(200, {"space": updated})
 
         def _handle_config_versions_list(self):
             # รายการเวอร์ชัน config (metadata เท่านั้น — ไม่เผย secret) — ADMIN+
@@ -541,6 +625,12 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                     self._handle_config_snapshot()
                 elif parsed.path == "/api/admin/config/rollback":
                     self._handle_config_rollback()
+                elif parsed.path == "/api/spaces":
+                    self._handle_space_create()
+                elif parsed.path == "/api/spaces/items":
+                    self._handle_space_item_add()
+                elif parsed.path == "/api/spaces/members":
+                    self._handle_space_member_add()
                 else:
                     self._send_json(404, {"error": "not found"})
             except (json.JSONDecodeError, KeyError) as e:

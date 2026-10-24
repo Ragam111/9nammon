@@ -188,6 +188,32 @@ class ServerPagesTest(unittest.TestCase):
         st, _ = _post("/api/admin/config/rollback", {"id": "v-nope"})
         self.assertEqual(st, 404)
 
+    def test_spaces_create_list_items(self):
+        # local mode = CEO → สร้างพื้นที่ + ลงข้อความ + list ได้ (private/shared)
+        import json as _json
+        def _post(path, body):
+            conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+            conn.request("POST", path, body=_json.dumps(body),
+                         headers={"Content-Type": "application/json"})
+            r = conn.getresponse(); data = r.read(); conn.close()
+            return r.status, _json.loads(data or b"{}")
+        st, data = _post("/api/spaces", {"name": "ห้องบริษัท", "visibility": "shared"})
+        self.assertEqual(st, 200)
+        sid = data["space"]["id"]
+        # ลงข้อความในพื้นที่
+        st, _ = _post("/api/spaces/items", {"space": sid, "text": "ประชุม 10 โมง"})
+        self.assertEqual(st, 200)
+        # list items กลับมาเห็นข้อความ
+        st, _, _, body = self._get("/api/spaces/items?space=" + sid)
+        self.assertEqual(st, 200)
+        self.assertIn("ประชุม 10 โมง", body.decode("utf-8"))
+        # list spaces เห็นพื้นที่ที่สร้าง
+        st, _, _, body = self._get("/api/spaces")
+        self.assertIn(sid.encode(), body)
+        # เข้าพื้นที่ที่ไม่มีจริง → 404
+        st, _, _, _ = self._get("/api/spaces/items?space=sp-nope")
+        self.assertEqual(st, 404)
+
     def test_unknown_route_404(self):
         st, _, _, _ = self._get("/does-not-exist")
         self.assertEqual(st, 404)

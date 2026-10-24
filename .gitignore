@@ -26,6 +26,7 @@ Thumbs.db
 config.json          # API keys ของ search provider ฯลฯ
 config_versions.json # snapshot ของ config (มี secret เต็ม — ห้าม commit, Rule 23)
 org.json             # user/role/api-key store (มี hash — ถือเป็น secret)
+spaces.json          # พื้นที่ส่วนตัว/บริษัท + ข้อความ (เนื้อหาส่วนตัว ไม่ commit)
 todos.json
 CHANGELOG_local.md
 .local_coder_backup/
