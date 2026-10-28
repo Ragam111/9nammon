@@ -51,6 +51,7 @@ from app import cluster_forward  # noqa: E402  (แขนคลัสเตอ�
 from app import watchdog  # noqa: E402  (เฝ้าระบบ 24/7 + เตือนเมื่อผิดปกติ — observe/alert เท่านั้น)
 from app import feature_flags  # noqa: E402  (ศูนย์กลางเปิด/ปิดฟีเจอร์ server + มอนิเตอร์)
 from app.agent import jobs as agent_jobs  # noqa: E402  (คิวงาน agent — ให้ n8n/automation ป้อนงาน)
+from app.agent import approvals as agent_approvals  # noqa: E402  (P6: ด่านอนุมัติก่อนทำสิ่งย้อนไม่ได้)
 from sysmanager.monitor import collect as _collect, Analyzer as _Analyzer  # noqa: E402
 from sysmanager.monitor import lca_context as _lca_context  # noqa: E402  (Phase 2: บริบท Ollama)
 
@@ -212,6 +213,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._handle_features_get()
             elif parsed.path == "/api/agent/jobs":
                 self._handle_agent_jobs_get(parsed)
+            elif parsed.path == "/api/agent/approvals":
+                self._handle_agent_approvals_get()
             elif parsed.path == "/api/admin/cluster/settings":
                 self._handle_cluster_settings_get()
             elif parsed.path == "/api/admin/model-backend/settings":
@@ -402,6 +405,30 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 return
             self._send_json(200, {"stats": agent_jobs.stats(project_root),
                                   "recent": agent_jobs.list_jobs(project_root, limit=20)})
+
+        def _handle_agent_approvals_get(self):
+            # P6: ดูคำขออนุมัติที่ agent เสนอ (เขียนไฟล์/รันคำสั่งที่ย้อนไม่ได้) — ADMIN+
+            if self._require("ADMIN") is None:
+                return
+            self._send_json(200, {"pending": agent_approvals.list_pending(project_root),
+                                  "recent": agent_approvals.list_all(project_root, limit=20),
+                                  "stats": agent_approvals.stats(project_root)})
+
+        def _handle_agent_approvals_decide(self):
+            # P6: คนตัดสิน (approve→ลงมือจริง / reject→ทิ้ง) — CEO เท่านั้น (ทำสิ่งย้อนไม่ได้)
+            ident = self._require("CEO")
+            if ident is None:
+                return
+            data = self._read_json_body()
+            approval_id = data.get("id", "")
+            decision = data.get("decision", "")
+            # decide โยน ValueError ถ้า decision ผิด -> 400 ใน do_POST
+            res = agent_approvals.decide(project_root, approval_id, decision,
+                                         by=ident.get("username") or "ceo")
+            if res.get("error"):
+                self._send_json(404, res)
+                return
+            self._send_json(200, {"decided": res})
 
         def _handle_cluster_route(self, parsed):
             # preview: งานใหม่จะถูก route ไป node ไหน (ตาม health ปัจจุบัน) — ADMIN+
@@ -748,6 +775,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                     self._handle_features_set()
                 elif parsed.path == "/api/agent/jobs":
                     self._handle_agent_jobs_post()
+                elif parsed.path == "/api/agent/approvals/decide":
+                    self._handle_agent_approvals_decide()
                 else:
                     self._send_json(404, {"error": "not found"})
             except (json.JSONDecodeError, KeyError) as e:
@@ -1276,6 +1305,24 @@ def make_handler(project_root: Path, auth_token: Optional[str],
     return LocalAssistantHandler
 
 
+def find_free_port(preferred: int, host: str = "127.0.0.1", tries: int = 20) -> int:
+    """คืนพอร์ตที่ว่างจริง — ลอง preferred ก่อน ถ้าชนไล่ขึ้นทีละ 1 (preferred+1, +2, ...)
+    กันปัญหา 'พอร์ต 8420 ถูกใช้อยู่แล้ว server เปิดไม่ขึ้น' — หาที่ว่างให้อัตโนมัติ
+    หา tries พอร์ตไม่เจอ → สุดท้ายให้ OS เลือกพอร์ตว่างเอง (port 0)"""
+    for p in range(preferred, preferred + tries):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                s.bind((host, p))
+                return p
+            except OSError:
+                continue   # พอร์ตนี้ถูกใช้อยู่ ลองตัวถัดไป
+    # หาไม่เจอในช่วงที่ลอง → ให้ OS เลือกพอร์ตว่างใด ๆ
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind((host, 0))
+        return s.getsockname()[1]
+
+
 def resolve_server_config(args, env=None):
     """รวม args + environment variable เป็น config สุดท้าย (host, port, token)
     — แยกออกมาให้เทสได้ และให้ deploy บน cloud ได้โดยไม่ต้องแก้ไฟล์
@@ -1334,7 +1381,17 @@ def main():
         sys.exit(1)
 
     handler_cls = make_handler(project_root, cfg["token"], bind_host=cfg["host"])
-    httpd = ThreadingHTTPServer((cfg["host"], cfg["port"]), handler_cls)
+    try:
+        httpd = ThreadingHTTPServer((cfg["host"], cfg["port"]), handler_cls)
+    except OSError:
+        # พอร์ตถูกใช้อยู่ — ถ้าเป็นเครื่อง local (ไม่ใช่ cloud ที่ฉีด $PORT มา) หาพอร์ตว่างให้อัตโนมัติ
+        if os.environ.get("PORT"):
+            print(f"[ปฏิเสธ] พอร์ต {cfg['port']} ($PORT) ถูกใช้อยู่ — cloud ต้องปล่อยพอร์ตนี้ให้ว่าง")
+            sys.exit(1)
+        new_port = find_free_port(cfg["port"] + 1, cfg["host"])
+        print(f"[info] พอร์ต {cfg['port']} ถูกใช้อยู่ — เปลี่ยนไปใช้พอร์ตว่าง {new_port} แทน")
+        cfg["port"] = new_port
+        httpd = ThreadingHTTPServer((cfg["host"], cfg["port"]), handler_cls)
     print(f"=== Local Assistant Server ===")
     print(f"โปรเจกต์: {project_root}")
     print(f"เปิดเบราว์เซอร์ที่: http://{cfg['host']}:{cfg['port']}")

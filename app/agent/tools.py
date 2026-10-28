@@ -86,6 +86,18 @@ class Sandbox:
         out = out[:MAX_OUTPUT_CHARS]
         return f"(exit {proc.returncode})\n{out}".strip()
 
+    def write_file(self, path: str, content: str) -> str:
+        """เขียนไฟล์ใน workspace (confine ใต้ root). *irreversible* — ใช้ผ่าน approval เท่านั้น"""
+        p = self._safe_path(path)
+        if p == self.root:
+            raise ToolError("เขียนทับ root ไม่ได้")
+        try:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(content if content is not None else "", encoding="utf-8")
+        except OSError as e:
+            raise ToolError(f"เขียนไฟล์ไม่ได้: {e.__class__.__name__}")
+        return f"เขียนไฟล์แล้ว: {path} ({len(content or '')} ตัวอักษร)"
+
 
 # schema ของ tool (ให้ agent รู้ว่ามีอะไร เรียกยังไง) — ใช้ประกอบ system prompt
 TOOL_SCHEMAS = [
@@ -95,10 +107,33 @@ TOOL_SCHEMAS = [
 ]
 
 
-def build_registry(sandbox: Sandbox) -> dict:
-    """คืน map ชื่อ tool -> ฟังก์ชันที่รับ args dict แล้วคืน str (เรียกจาก agent loop)"""
-    return {
+# tool "เสนอ" (P6) — ไม่ลงมือเอง สร้างคำขออนุมัติให้คนกด (ปรากฏเฉพาะเมื่อเปิด approvals)
+PROPOSE_SCHEMAS = [
+    {"name": "propose_write_file", "args": {"path": "str", "content": "str"},
+     "desc": "เสนอเขียนไฟล์ (ต้องรอคนอนุมัติก่อน ไม่เขียนทันที)"},
+    {"name": "propose_command", "args": {"command": "str"},
+     "desc": "เสนอรันคำสั่งที่เปลี่ยนแปลงระบบ (ต้องรอคนอนุมัติก่อน)"},
+]
+
+
+def build_registry(sandbox: Sandbox, approvals_root=None) -> dict:
+    """คืน map ชื่อ tool -> ฟังก์ชัน(args)->str. ถ้าให้ approvals_root จะเปิด tool 'เสนอ' (P6)
+    ที่สร้างคำขออนุมัติแทนการลงมือเอง — ของจริงเกิดตอนคนกดอนุมัติที่ /dev เท่านั้น"""
+    reg = {
         "read_file": lambda a: sandbox.read_file(a.get("path", "")),
         "list_dir": lambda a: sandbox.list_dir(a.get("path", ".")),
         "run_command": lambda a: sandbox.run_command(a.get("command", "")),
     }
+    if approvals_root is not None:
+        from app.agent import approvals   # lazy — กัน circular import
+        ws = str(sandbox.root)
+
+        def _propose(kind, detail):
+            rec = approvals.request(approvals_root, kind, ws, detail)
+            return f"⏳ เสนอแล้ว รออนุมัติที่ /dev (id: {rec['id']}) — ยังไม่ลงมือจนกว่าคนจะกดอนุมัติ"
+
+        reg["propose_write_file"] = lambda a: _propose(
+            approvals.KIND_WRITE, {"path": a.get("path", ""), "content": a.get("content", "")})
+        reg["propose_command"] = lambda a: _propose(
+            approvals.KIND_COMMAND, {"command": a.get("command", "")})
+    return reg

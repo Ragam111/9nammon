@@ -49,19 +49,23 @@ def _parse(reply: str) -> dict:
 
 
 def run(project_root, task: str, workspace, model: str = DEFAULT_MODEL,
-        max_steps: int = DEFAULT_MAX_STEPS, allowed_commands=None) -> dict:
+        max_steps: int = DEFAULT_MAX_STEPS, allowed_commands=None, approvals_root=None) -> dict:
     """รัน agent 1 งาน — คืน {final, steps:[...], stopped_reason}
     - workspace: โฟลเดอร์ที่ agent ทำงานได้ (sandbox confine ไว้)
+    - approvals_root: ถ้าให้มา → เปิด tool 'เสนอ' (P6) เขียนไฟล์/รันคำสั่งที่ต้องรอคนอนุมัติ
     - steps: log ทุกขั้น (thought/tool/args/observation หรือ final) ไว้ตรวจย้อน
     """
     task = (task or "").strip()
     if not task:
         raise ValueError("ต้องระบุ task")
     sb = tools_mod.Sandbox(workspace, allowed_commands or tools_mod.DEFAULT_ALLOWED_COMMANDS)
-    registry = tools_mod.build_registry(sb)
+    registry = tools_mod.build_registry(sb, approvals_root=approvals_root)
+    schemas = list(tools_mod.TOOL_SCHEMAS)
+    if approvals_root is not None:
+        schemas = schemas + tools_mod.PROPOSE_SCHEMAS
 
     messages = [
-        {"role": "system", "content": _system_prompt(tools_mod.TOOL_SCHEMAS)},
+        {"role": "system", "content": _system_prompt(schemas)},
         {"role": "user", "content": f"งาน: {task}"},
     ]
     steps = []

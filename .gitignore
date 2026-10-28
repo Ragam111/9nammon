@@ -35,3 +35,5 @@ CHANGELOG_local.md
 agent_jobs.json       # คิวงาน agent (รันไทม์ ไม่ commit)
 agent_jobs.json.tmp
 agent_queue.txt       # คิวงาน agent แบบไฟล์ (CLI worker)
+agent_approvals.json
+agent_approvals.json.tmp
