@@ -174,7 +174,21 @@ pause
 "@
 Set-Content -Path $StartLauncherPath -Value $StartLauncherContent -Encoding UTF8
 
-Write-Host "[ok] สร้าง launcher แล้ว: lca.bat (CLI), lca-web.bat (หน้าเว็บ), start-lca.bat (ดับเบิลคลิกเปิดใช้งาน)"
+# โหมด Desktop app: เปิดเป็นหน้าต่างแอป (app-mode) เหมือน Claude/OpenAI/Gemini Desktop
+$DesktopLauncherPath = Join-Path $InstallDir "lca-desktop.bat"
+$DesktopLauncherContent = @"
+@echo off
+chcp 65001 >nul
+title LCA Desktop
+set "URL=http://127.0.0.1:8420/"
+start "LCA server" /min cmd /c $pythonCmd "$InstallDir\server.py" "%USERPROFILE%" --port 8420
+timeout /t 3 >nul
+start "" msedge --app=%URL% 2>nul || start "" chrome --app=%URL% 2>nul || start "" "%URL%"
+echo เปิด LCA Desktop แล้ว — ปิดหน้าต่าง "LCA server" เพื่อหยุดใช้งาน
+"@
+Set-Content -Path $DesktopLauncherPath -Value $DesktopLauncherContent -Encoding UTF8
+
+Write-Host "[ok] สร้าง launcher แล้ว: lca.bat (CLI), lca-web.bat, start-lca.bat, lca-desktop.bat (โหมดแอป)"
 
 # ---------- ขั้นตอน 6: เพิ่ม InstallDir เข้า PATH ผู้ใช้ (ถ้ายังไม่มี) ----------
 $currentPath = [Environment]::GetEnvironmentVariable("Path", "User")

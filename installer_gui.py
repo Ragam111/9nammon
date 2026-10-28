@@ -29,7 +29,7 @@ APP_NAME = "Local Code Assistant"
 # ของที่ต้องคัดลอกจากซอร์สที่แตกออกมาไปยังโฟลเดอร์ติดตั้ง
 COPY_DIRS = ("app", "sysmanager")
 COPY_FILES = ("server.py", "local_coder.py", "lca.bat", "lca-web.bat", "start-lca.bat",
-              "install.ps1", "requirements.txt", "README.md")
+              "lca-desktop.bat", "install.ps1", "requirements.txt", "README.md")
 
 
 def default_install_dir() -> str:
@@ -91,12 +91,15 @@ def _ensure_start_launcher(install_path: Path) -> None:
 
 
 def _make_desktop_icon(install_path: Path) -> None:
-    """สร้างทางลัดบน Desktop (stdlib: วางไฟล์ .bat บน Desktop ที่เรียก start-lca.bat)"""
+    """สร้างทางลัดบน Desktop — เปิดโหมดแอป (lca-desktop.bat) ถ้ามี ไม่งั้น start-lca.bat"""
     desktop = Path(os.environ.get("USERPROFILE", str(Path.home()))) / "Desktop"
     if not desktop.exists():
         return
+    target = install_path / "lca-desktop.bat"
+    if not target.exists():
+        target = install_path / "start-lca.bat"
     (desktop / "เปิด Local Code Assistant.bat").write_text(
-        f'@echo off\r\ncall "{install_path / "start-lca.bat"}"\r\n', encoding="utf-8")
+        f'@echo off\r\ncall "{target}"\r\n', encoding="utf-8")
 
 
 # ---------- GUI ----------
