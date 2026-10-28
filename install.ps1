@@ -155,7 +155,26 @@ $pythonCmd "$InstallDir\server.py" %*
 "@
 Set-Content -Path $WebLauncherPath -Value $WebLauncherContent -Encoding ASCII
 
-Write-Host "[ok] สร้าง launcher แล้ว: lca.bat (CLI), lca-web.bat (หน้าเว็บ)"
+# ตัวดับเบิลคลิก: เปิดเซิร์ฟเวอร์ + เด้งเบราว์เซอร์ให้อัตโนมัติ (ผู้ใช้ไม่ต้องพิมพ์อะไร)
+$StartLauncherPath = Join-Path $InstallDir "start-lca.bat"
+$StartLauncherContent = @"
+@echo off
+chcp 65001 >nul
+title Local Code Assistant
+echo ============================================
+echo   Local Code Assistant
+echo   กำลังเปิด... http://127.0.0.1:8420
+echo   (ปิดหน้าต่างนี้เพื่อหยุดใช้งาน)
+echo ============================================
+start "" cmd /c "timeout /t 3 >nul & start http://127.0.0.1:8420/"
+$pythonCmd "$InstallDir\server.py" "%USERPROFILE%" --port 8420
+echo.
+echo เซิร์ฟเวอร์ปิดแล้ว
+pause
+"@
+Set-Content -Path $StartLauncherPath -Value $StartLauncherContent -Encoding UTF8
+
+Write-Host "[ok] สร้าง launcher แล้ว: lca.bat (CLI), lca-web.bat (หน้าเว็บ), start-lca.bat (ดับเบิลคลิกเปิดใช้งาน)"
 
 # ---------- ขั้นตอน 6: เพิ่ม InstallDir เข้า PATH ผู้ใช้ (ถ้ายังไม่มี) ----------
 $currentPath = [Environment]::GetEnvironmentVariable("Path", "User")
@@ -175,5 +194,8 @@ if ($hasOllama) {
 } else {
     Write-Host "2. ติดตั้ง Ollama ก่อน แล้วรัน: ollama pull $modelChoice"
 }
-Write-Host "3. ใช้งาน: lca C:\path\to\your\project"
-Write-Host "   หรือเปิดหน้าเว็บ: lca-web C:\path\to\your\project"
+Write-Host "3. วิธีง่ายสุด: ดับเบิลคลิก start-lca.bat ที่ $InstallDir" -ForegroundColor Green
+Write-Host "   (เปิดเซิร์ฟเวอร์ + เด้งเบราว์เซอร์หน้าแชทให้อัตโนมัติ)"
+Write-Host "   หรือใช้ terminal: lca C:\path\to\project  /  lca-web C:\path\to\project"
+# เปิดโฟลเดอร์ติดตั้งให้ผู้ใช้เห็น start-lca.bat ได้ทันที
+try { Start-Process explorer.exe $InstallDir } catch {}
