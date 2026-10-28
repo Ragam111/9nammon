@@ -43,6 +43,8 @@ def main(argv=None):
     w.add_argument("--model", default=core.DEFAULT_MODEL)
     w.add_argument("--interval", type=float, default=5.0)
     w.add_argument("--once", action="store_true", help="ทำงานในคิวให้หมดแล้วออก (ไม่วน 24/7)")
+    w.add_argument("--store", action="store_true",
+                   help="หยิบงานจาก job queue (agent_jobs.json) ที่ n8n/API ป้อนเข้า แทนไฟล์ข้อความ")
     args = ap.parse_args(argv)
 
     root = Path.cwd()
@@ -74,6 +76,35 @@ def main(argv=None):
             print(f"\n=== ผลสรุป ({res['stopped_reason']}) ===\n{res['final'] or '(ไม่จบใน max_steps)'}")
         elif args.cmd == "worker":
             import time
+            if args.store:
+                # โหมด store: n8n/API enqueue เข้า agent_jobs.json แล้ว worker หยิบ+บันทึกผลกลับ
+                from app.agent import jobs as _jobs
+                _claimed = {"id": None}
+                def claim():
+                    job = _jobs.claim(root)
+                    if job:
+                        _claimed["id"] = job["id"]
+                        return {"task": job["task"], "workspace": job.get("workspace", ".")}
+                    return None
+                def done(rec):
+                    if _claimed["id"]:
+                        _jobs.complete(root, _claimed["id"], rec)
+                    print(f"[{'ok' if rec['ok'] else 'fail'}] {rec['duration_s']}s — {rec['task'][:60]}")
+                wk = worker_mod.Worker(claim_fn=claim, done_fn=done, project_root=root,
+                                       model=args.model, interval=args.interval)
+                if args.once:
+                    while wk.tick() is not None:
+                        pass
+                else:
+                    print(f"[worker] 24/7 (store) เริ่มทำงาน — คิว: agent_jobs.json (Ctrl+C หยุด)")
+                    wk.start()
+                    try:
+                        while True:
+                            time.sleep(30); print(f"[stats] {wk.stats.summary()}")
+                    except KeyboardInterrupt:
+                        wk.stop(); print("\n[worker] หยุดแล้ว")
+                print(f"=== สรุปผล ===\n{wk.stats.summary()}")
+                return 0
             qpath = Path(args.queue)
             def claim():
                 # หยิบบรรทัดแรกของไฟล์คิวมาเป็นงาน แล้วลบออก (atomic พอสำหรับ worker เดียว)
