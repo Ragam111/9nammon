@@ -306,6 +306,14 @@ class ServerPagesTest(unittest.TestCase):
         st, _, _, _ = self._get("/api/agent/jobs?id=job-nope")
         self.assertEqual(st, 404)
 
+    def test_install_page_served_public(self):
+        # หน้า /install = landing ดาวน์โหลด/ติดตั้งบนเว็บ (public, ไม่ต้องล็อกอิน)
+        st, ctype, _, body = self._get("/install")
+        self.assertEqual(st, 200)
+        self.assertIn("text/html", ctype)
+        self.assertIn(b"install_online.ps1", body)   # มีคำสั่งติดตั้งออนไลน์
+        self.assertIn(b"archive/refs/heads/main.zip", body)   # มีปุ่มดาวน์โหลด zip
+
     def test_unknown_route_404(self):
         st, _, _, _ = self._get("/does-not-exist")
         self.assertEqual(st, 404)

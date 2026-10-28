@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ติดตั้ง LCA — ผู้ช่วยเขียนโค้ด AI ฟรี</title>
+<style>
+  :root { color-scheme: dark; --bg:#0f1115; --card:#171a21; --line:#2a2e37; --fg:#e8eaed;
+          --muted:#9aa0ac; --accent:#2563eb; --ok:#4ade80; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); line-height:1.6;
+         font-family: system-ui,-apple-system,"Segoe UI",sans-serif; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 16px; }
+  header { text-align:center; padding: 48px 0 24px; }
+  header h1 { font-size: 2rem; margin: 0 0 8px; }
+  header p { color: var(--muted); margin: 0; font-size: 1.05rem; }
+  .badge { display:inline-block; background:#1e2430; border:1px solid var(--line);
+           color:var(--muted); font-size:12px; padding:4px 10px; border-radius:999px; margin-top:12px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px;
+          padding:20px; margin:14px 0; }
+  .card h2 { margin:0 0 12px; font-size:1.15rem; }
+  .step { color:var(--accent); font-weight:700; margin-right:6px; }
+  code, pre { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; }
+  .cmd { position:relative; background:#0b0d12; border:1px solid var(--line); border-radius:10px;
+         padding:14px 48px 14px 14px; overflow-x:auto; font-size:13px; white-space:pre; }
+  .copy { position:absolute; top:8px; right:8px; background:#222836; border:1px solid var(--line);
+          color:var(--fg); border-radius:8px; padding:5px 10px; font-size:12px; cursor:pointer; }
+  .copy:hover { background:#2b3242; }
+  .btn { display:inline-block; background:var(--accent); color:#fff; text-decoration:none;
+         font-weight:700; padding:12px 20px; border-radius:10px; }
+  .btn.ghost { background:transparent; border:1px solid var(--line); color:var(--fg); }
+  .row { display:flex; flex-wrap:wrap; gap:10px; }
+  ul.feat { list-style:none; padding:0; margin:0; display:grid; gap:10px;
+            grid-template-columns: repeat(auto-fit, minmax(240px,1fr)); }
+  ul.feat li { background:#0b0d12; border:1px solid var(--line); border-radius:10px; padding:12px 14px; }
+  ul.feat b { display:block; margin-bottom:2px; }
+  .muted { color:var(--muted); }
+  .tab-row { display:flex; gap:6px; margin-bottom:10px; flex-wrap:wrap; }
+  .tab { background:#0b0d12; border:1px solid var(--line); color:var(--muted);
+         border-radius:8px; padding:6px 12px; cursor:pointer; font-size:13px; }
+  .tab.active { color:var(--fg); border-color:var(--accent); }
+  footer { text-align:center; color:var(--muted); padding:28px 0; font-size:13px; }
+  a { color:#7aa2ff; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Local Code Assistant (LCA)</h1>
+    <p>ผู้ช่วยเขียนโค้ด AI รันบนเครื่องคุณเอง ฟรี · ข้อมูลอยู่กับคุณ</p>
+    <div class="badge">Python stdlib ล้วน · ไม่มี dependency นอก (ยกเว้น psutil) · Windows / Linux / WSL / macOS</div>
+  </header>
+
+  <div class="card">
+    <h2><span class="step">1</span>ติดตั้ง (เลือกระบบของคุณ)</h2>
+    <div class="tab-row">
+      <div class="tab active" data-os="win">Windows (PowerShell)</div>
+      <div class="tab" data-os="nix">Linux / macOS / WSL</div>
+    </div>
+    <div id="cmd-win">
+      <div class="cmd" id="c1">powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercontent.com/Ragam111/9nammon/main/install_online.ps1 | iex"<button class="copy" data-target="c1">คัดลอก</button></div>
+      <p class="muted">แปะบรรทัดเดียวใน PowerShell — ดาวน์โหลด + แตกไฟล์ + ติดตั้งให้อัตโนมัติ</p>
+    </div>
+    <div id="cmd-nix" hidden>
+      <div class="cmd" id="c2">git clone https://github.com/Ragam111/9nammon.git && cd 9nammon && bash install.sh<button class="copy" data-target="c2">คัดลอก</button></div>
+      <p class="muted">หรือดาวน์โหลด zip ด้านล่างแล้วรัน <code>bash install.sh</code></p>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <a class="btn" href="https://github.com/Ragam111/9nammon/archive/refs/heads/main.zip">⬇ ดาวน์โหลด .zip</a>
+      <a class="btn ghost" href="https://github.com/Ragam111/9nammon" target="_blank" rel="noopener">ดูซอร์สบน GitHub</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span class="step">2</span>ดึงโมเดล (ครั้งเดียว)</h2>
+    <div class="cmd" id="c3">ollama pull qwen2.5-coder:1.5b<button class="copy" data-target="c3">คัดลอก</button></div>
+    <p class="muted">ยังไม่มี Ollama? โหลดที่ <a href="https://ollama.com/download" target="_blank" rel="noopener">ollama.com/download</a>
+      · ตัวติดตั้งจะแนะนำขนาดโมเดลที่เหมาะกับ RAM เครื่องคุณอัตโนมัติ</p>
+  </div>
+
+  <div class="card">
+    <h2><span class="step">3</span>เปิดใช้งาน</h2>
+    <div class="cmd" id="c4">lca-web C:\path\to\project     # หรือ:  python server.py . --port 8420<button class="copy" data-target="c4">คัดลอก</button></div>
+    <p class="muted">แล้วเปิดเบราว์เซอร์ที่ <code>http://127.0.0.1:8420</code> — เริ่มแชทได้เลย</p>
+  </div>
+
+  <div class="card">
+    <h2>มีอะไรให้ใช้</h2>
+    <ul class="feat">
+      <li><b>แชทช่วยโค้ด</b><span class="muted">ตอบไหลทีละคำ (สตรีม) ทั้ง CLI และหน้าเว็บ</span></li>
+      <li><b>ล็อกอิน + ข้อมูลส่วนตัว</b><span class="muted">ใช้ฟรี แต่ข้อมูลแต่ละคนแยกกัน ล็อกอินแล้วบันทึกไว้</span></li>
+      <li><b>พื้นที่ส่วนตัว/ทีม</b><span class="muted">spaces แยก private / บริษัท ไม่ปนกัน</span></li>
+      <li><b>AI agent ทำงานเอง</b><span class="muted">รับงาน 24/7 (ต่อ n8n/automation ได้)</span></li>
+      <li><b>หลายเครื่องช่วยกัน</b><span class="muted">cluster ส่งงานไป node ที่พร้อม</span></li>
+      <li><b>เสียบ cloud GPU ได้</b><span class="muted">สลับ backend เป็น OpenAI-compatible</span></li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>ความเป็นส่วนตัว</h2>
+    <p>LCA รันบนเครื่องคุณ — โค้ดและบทสนทนาไม่ออกไปไหนโดยไม่ได้ตั้งใจ. เมื่อเปิดให้คนอื่นใช้
+       ระบบ <b>แยกข้อมูลตามผู้ใช้ที่ล็อกอิน</b> (อ่าน/ลบได้เฉพาะของตัวเอง) และปฏิเสธการเปิดออกนอกเครื่อง
+       โดยไม่มี token (ความปลอดภัยเป็นค่าเริ่มต้น).</p>
+    <div class="row">
+      <a class="btn ghost" href="/login">เข้าสู่ระบบ</a>
+      <a class="btn ghost" href="/">ไปหน้าแชท</a>
+    </div>
+  </div>
+
+  <footer>
+    สร้างด้วย Python stdlib + HTML/CSS/JS ล้วน ·
+    อยากเข้าใจทั้งระบบ อ่าน <code>docs/APP_WALKTHROUGH.md</code> ·
+    เปิดให้คนอื่นใช้ผ่านเน็ต ดู <code>docs/GO_ONLINE_FREE.md</code>
+  </footer>
+</div>
+
+<script>
+  // สลับคำสั่งตามระบบปฏิบัติการ
+  document.querySelectorAll('.tab').forEach(function (t) {
+    t.addEventListener('click', function () {
+      document.querySelectorAll('.tab').forEach(function (x) { x.classList.remove('active'); });
+      t.classList.add('active');
+      var win = t.dataset.os === 'win';
+      document.getElementById('cmd-win').hidden = !win;
+      document.getElementById('cmd-nix').hidden = win;
+    });
+  });
+  // ปุ่มคัดลอกคำสั่ง
+  document.querySelectorAll('.copy').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var el = document.getElementById(b.dataset.target);
+      var text = el.childNodes[0].nodeValue.trim();   // เอาเฉพาะคำสั่ง ไม่รวมปุ่ม
+      navigator.clipboard.writeText(text).then(function () {
+        var old = b.textContent; b.textContent = 'คัดลอกแล้ว ✓';
+        setTimeout(function () { b.textContent = old; }, 1500);
+      }).catch(function () { b.textContent = 'คัดลอกไม่ได้'; });
+    });
+  });
+</script>
+</body>
+</html>
