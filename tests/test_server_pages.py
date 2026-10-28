@@ -314,6 +314,28 @@ class ServerPagesTest(unittest.TestCase):
         self.assertIn(b"install_online.ps1", body)   # มีคำสั่งติดตั้งออนไลน์
         self.assertIn(b"archive/refs/heads/main.zip", body)   # มีปุ่มดาวน์โหลด zip
 
+    def test_dev_page_has_approvals_panel(self):
+        # P6: /dev ต้องมี panel คำขออนุมัติ + เรียก endpoint อนุมัติ
+        _, _, _, body = self._get("/dev")
+        self.assertIn(b"approvals-wrap", body)
+        self.assertIn(b"/api/agent/approvals", body)
+        self.assertIn(b"/api/agent/approvals/decide", body)
+
+    def test_approvals_endpoint_gated_and_empty(self):
+        # local = CEO → ดูคำขอได้ (เริ่มต้นว่าง), decision มั่ว → 400
+        import json as _json
+        st, _, _, body = self._get("/api/agent/approvals")
+        self.assertEqual(st, 200)
+        data = _json.loads(body)
+        self.assertIn("pending", data)
+        self.assertEqual(data["pending"], [])
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("POST", "/api/agent/approvals/decide",
+                     body=_json.dumps({"id": "x", "decision": "maybe"}),
+                     headers={"Content-Type": "application/json"})
+        r = conn.getresponse(); r.read(); conn.close()
+        self.assertEqual(r.status, 400)
+
     def test_unknown_route_404(self):
         st, _, _, _ = self._get("/does-not-exist")
         self.assertEqual(st, 404)

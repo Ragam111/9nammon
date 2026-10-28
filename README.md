@@ -36,6 +36,7 @@ powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercon
 2. **คลิกขวา → Extract All** แตกไฟล์ (ได้โฟลเดอร์ `9nammon-main`)
 3. เข้าโฟลเดอร์ แล้ว **ดับเบิลคลิก `install.bat`** → ติดตั้งให้อัตโนมัติ (เสร็จแล้วเปิดโฟลเดอร์ติดตั้งให้)
 4. **ดับเบิลคลิก `start-lca.bat`** → เปิดเซิร์ฟเวอร์ + เด้งเบราว์เซอร์หน้าแชทให้เอง (ไม่ต้องพิมพ์คำสั่ง)
+   · หรือ **`lca-desktop.bat`** → เปิดเป็น **หน้าต่างแอป** (app-mode เหมือน Claude/OpenAI/Gemini Desktop)
 
 > ต้องมี **Python** และ **Ollama** ก่อน (ตัวติดตั้งจะบอกลิงก์ถ้ายังไม่มี) แล้วดึงโมเดลครั้งเดียว
 > ตามที่แนะนำ เช่น `ollama pull qwen2.5-coder:1.5b`

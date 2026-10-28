@@ -76,6 +76,16 @@
       <p id="features-err" class="err" style="display:none"></p>
       <div id="features-list"></div>
     </section>
+    <section id="approvals-wrap" class="card" style="margin-bottom:12px" hidden>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px">
+        <h2 style="margin:0">คำขออนุมัติจาก Agent (P6)</h2>
+        <button id="refresh-approvals" type="button">รีเฟรช</button>
+      </div>
+      <p style="color:#9aa0ac;font-size:13px;margin:0 0 8px">
+        agent เสนอเขียนไฟล์/รันคำสั่งที่ย้อนไม่ได้ — จะไม่ลงมือจนกว่าจะกดอนุมัติที่นี่</p>
+      <p id="approvals-err" class="err" style="display:none"></p>
+      <div id="approvals-list"></div>
+    </section>
     <section id="cluster-wrap" class="card" style="margin-bottom:12px" hidden>
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px">
         <h2 style="margin:0">Cluster monitor</h2>
@@ -379,6 +389,46 @@
       } catch (err) { $('features-err').textContent = 'ต่อ server ไม่ได้'; $('features-err').style.display = ''; }
       $('features-wrap').hidden = false;
     }
+    // ---------- Agent approvals (P6) ----------
+    function renderApprovals(pending) {
+      if (!pending || !pending.length) { $('approvals-list').innerHTML = '<p style="color:#9aa0ac">ไม่มีคำขอรออนุมัติ</p>'; return; }
+      $('approvals-list').innerHTML = pending.map(a => {
+        const d = a.detail || {};
+        const what = a.kind === 'run_command'
+          ? ('รันคำสั่ง: ' + escapeHtml(d.command || ''))
+          : ('เขียนไฟล์: ' + escapeHtml(d.path || '') + ' (' + ((d.content || '').length) + ' ตัวอักษร)');
+        return `<div style="border:1px solid #2a2e37;border-radius:10px;padding:10px 12px;margin-bottom:8px">
+          <div style="font-size:13px;color:#9aa0ac">id: ${escapeHtml(a.id)} · workspace: ${escapeHtml(a.workspace || '')}</div>
+          <div style="margin:4px 0"><strong>${what}</strong></div>
+          <button type="button" data-apr="${escapeHtml(a.id)}" data-dec="approve" style="background:#16a34a;color:#fff">อนุมัติ (ลงมือจริง)</button>
+          <button type="button" data-apr="${escapeHtml(a.id)}" data-dec="reject">ปฏิเสธ</button>
+        </div>`;
+      }).join('');
+      $('approvals-list').querySelectorAll('button[data-apr]').forEach(b =>
+        b.addEventListener('click', () => decideApproval(b.dataset.apr, b.dataset.dec)));
+    }
+    async function loadApprovals() {
+      $('approvals-err').style.display = 'none';
+      try {
+        const res = await fetch('/api/agent/approvals', { headers: authHeaders() });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { $('approvals-err').textContent = data.error || ('error ' + res.status); $('approvals-err').style.display = ''; }
+        else { renderApprovals(data.pending); }
+      } catch (err) { $('approvals-err').textContent = 'ต่อ server ไม่ได้'; $('approvals-err').style.display = ''; }
+      $('approvals-wrap').hidden = false;
+    }
+    async function decideApproval(id, decision) {
+      $('approvals-err').style.display = 'none';
+      try {
+        const res = await fetch('/api/agent/approvals/decide', {
+          method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+          body: JSON.stringify({ id, decision }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { $('approvals-err').textContent = data.error || ('error ' + res.status); $('approvals-err').style.display = ''; }
+      } catch (err) { $('approvals-err').textContent = 'ต่อ server ไม่ได้'; $('approvals-err').style.display = ''; }
+      loadApprovals();
+    }
     async function toggleFeature(key, enabled) {
       $('features-err').style.display = 'none';
       try {
@@ -567,6 +617,7 @@
         loadHwProfile(false); // + hardware profile (จัดระดับเครื่อง + แนะนำ config; ไม่วัด disk ตอนโหลด)
         loadCfgVersions(); // + config versions (snapshot/rollback กัน incident)
         loadFeatures();  // + server features (เปิด/ปิดฟีเจอร์ + มอนิเตอร์)
+        loadApprovals(); // + คำขออนุมัติจาก agent (P6)
         loadEcoSettings(); // + ecosystem settings (ตัวตนเครื่องนี้ + hub)
         loadBackendSettings(); // + model backend (เสียบ cloud GPU)
       } catch (err) {
@@ -581,6 +632,7 @@
     $('refresh-support').addEventListener('click', loadSupport);
     $('refresh-usage').addEventListener('click', loadUsage);
     $('refresh-features').addEventListener('click', loadFeatures);
+    $('refresh-approvals').addEventListener('click', loadApprovals);
     $('refresh-cluster').addEventListener('click', loadCluster);
     $('refresh-hwprofile').addEventListener('click', () => loadHwProfile(true));
     $('cfg-snapshot').addEventListener('click', snapshotConfig);
