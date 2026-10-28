@@ -24,6 +24,8 @@ powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercon
 > เอกสารเพิ่มเติม: `docs/CLUSTER_FORWARD.md`, `docs/AGENT_TECH_PLAN.md`, `docs/learn/` (ความรู้พื้นฐาน)
 >
 > **อยากเปิดให้คนอื่นเข้าผ่านเน็ต (โดเมน + server ฟรี)?** ทำตามทีละขั้นที่ `docs/GO_ONLINE_FREE.md`
+>
+> **อยากเข้าใจทั้งระบบแบบคอร์ส (ไฟล์ไหนทำอะไร, frontend↔backend, สร้างใหม่ทีละขั้น)?** อ่าน `docs/APP_WALKTHROUGH.md`
 
 ## ติดตั้ง (แบบดาวน์โหลดแพ็กเกจเอง)
 
