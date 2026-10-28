@@ -12,6 +12,9 @@ powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercon
 
 จากนั้นดึงโมเดล (ครั้งเดียว) ตามที่สคริปต์แนะนำ เช่น `ollama pull qwen2.5-coder:1.5b` แล้วเปิดใช้งานได้เลย
 
+> **หน้าติดตั้งบนเว็บ (ดาวน์โหลด/ติดตั้งแบบคลิก):** เมื่อรัน server แล้วเปิด `/install` — landing page
+> ที่มีปุ่มดาวน์โหลด .zip + คำสั่งติดตั้งทั้ง Windows/Linux/WSL (ปุ่มคัดลอก) + สรุปฟีเจอร์ (ส่งลิงก์นี้ให้ผู้ใช้ใหม่ได้เลย)
+
 ## มีอะไรให้ใช้บ้าง
 - **แชตช่วยเขียนโค้ด** — CLI (`lca`) หรือหน้าเว็บ Chat UI (`lca-web` → `http://127.0.0.1:8420`), ตอบแบบสตรีมทีละคำ
 - **ผู้ใช้หลายคน + สิทธิ์ (RBAC)** — ลูกน้อง login ได้, แอดมินเข้าผ่าน "รหัสไททัน" (master token) = CEO
@@ -24,6 +27,8 @@ powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercon
 > เอกสารเพิ่มเติม: `docs/CLUSTER_FORWARD.md`, `docs/AGENT_TECH_PLAN.md`, `docs/learn/` (ความรู้พื้นฐาน)
 >
 > **อยากเปิดให้คนอื่นเข้าผ่านเน็ต (โดเมน + server ฟรี)?** ทำตามทีละขั้นที่ `docs/GO_ONLINE_FREE.md`
+>
+> **อยากเข้าใจทั้งระบบแบบคอร์ส (ไฟล์ไหนทำอะไร, frontend↔backend, สร้างใหม่ทีละขั้น)?** อ่าน `docs/APP_WALKTHROUGH.md`
 
 ## ติดตั้ง (แบบดาวน์โหลดแพ็กเกจเอง)
 

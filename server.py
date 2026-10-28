@@ -65,6 +65,7 @@ STATIC_ROUTES = {
     "/login":   ("login.html",   "text/html; charset=utf-8",              False),
     "/support": ("support.html", "text/html; charset=utf-8",              False),
     "/spaces":  ("spaces.html",  "text/html; charset=utf-8",              False),
+    "/install": ("install.html", "text/html; charset=utf-8",              False),
     "/app.css": ("app.css",      "text/css; charset=utf-8",               True),
     "/app.js":  ("app.js",       "application/javascript; charset=utf-8",  True),
 }
