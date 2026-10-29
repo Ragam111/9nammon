@@ -20,7 +20,14 @@ $TempZipPath = Join-Path $env:TEMP "LocalCodeAssistant-download.zip"
 $TempExtractPath = Join-Path $env:TEMP "LocalCodeAssistant-extract"
 $InstallTargetDir = Join-Path $env:LOCALAPPDATA "LocalCodeAssistant"
 
-Write-Host "=== Local Code Assistant — ตัวติดตั้งออนไลน์ ===" -ForegroundColor Cyan
+Write-Host "=== Local Code Assistant v0.1.0 — ตัวติดตั้งออนไลน์ ===" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "** แนะนำ: มี .exe ไฟล์เดียวใน Release แล้ว **" -ForegroundColor Yellow
+Write-Host "   https://github.com/Ragam111/9nammon/releases/latest" -ForegroundColor Yellow
+Write-Host "   (ดับเบิลคลิก TokenLCAlimit.exe → เสร็จ ไม่ต้องรันสคริปต์)" -ForegroundColor DarkGray
+Write-Host ""
+Write-Host "สคริปต์นี้จะดาวน์โหลด zip + ติดตั้งแทน (ถ้าไม่โหลด .exe)" -ForegroundColor DarkGray
+Write-Host ""
 
 # ---------- Guard: เช็คว่า URL ยังไม่ใช่ placeholder เดิม ----------
 if ($DownloadUrl -like "*YOUR_USER/YOUR_REPO*") {

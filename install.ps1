@@ -7,7 +7,12 @@ $ErrorActionPreference = "Stop"
 $ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $CurrentVersion = "0.1.0"
 
-Write-Host "=== Local Code Assistant — ตัวติดตั้ง (Windows) ===" -ForegroundColor Cyan
+Write-Host "=== Local Code Assistant v$CurrentVersion — ตัวติดตั้ง (Windows) ===" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "** แนะนำที่สุด: มี .exe ไฟล์เดียวแล้ว **" -ForegroundColor Yellow
+Write-Host "   https://github.com/Ragam111/9nammon/releases/latest" -ForegroundColor Yellow
+Write-Host "   (ดับเบิลคลิก TokenLCAlimit.exe → GUI → เสร็จ ไม่ต้องแตก zip)" -ForegroundColor DarkGray
+Write-Host ""
 
 # ---------- ขั้นตอน 0: เลือกไดรฟ์ติดตั้ง (ถามเสมอ ไม่ fallback เงียบๆ) ----------
 # ค่าเริ่มต้นคือ %LOCALAPPDATA% (มักอยู่บน C:) แต่ถ้าผู้ใช้อยากติดตั้งบนไดรฟ์อื่น
