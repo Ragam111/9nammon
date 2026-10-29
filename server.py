@@ -59,7 +59,15 @@ from app import bots  # noqa: E402  (Bot: skill + run endpoint ให้ automat
 from sysmanager.monitor import collect as _collect, Analyzer as _Analyzer  # noqa: E402
 from sysmanager.monitor import lca_context as _lca_context  # noqa: E402  (Phase 2: บริบท Ollama)
 
-APP_DIR = Path(__file__).parent / "app"
+def _resource_root() -> Path:
+    """โฟลเดอร์รากของไฟล์โปรแกรม — รองรับตอนถูกแพ็กเป็น .exe ด้วย pyinstaller
+    (ตอน frozen ไฟล์ถูกแตกไว้ที่ sys._MEIPASS ไม่ใช่ข้าง __file__)"""
+    if getattr(sys, "frozen", False):
+        return Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
+    return Path(__file__).parent
+
+
+APP_DIR = _resource_root() / "app"
 
 # ตารางหน้าเว็บ (web) ทั้งหมดในระบบ — route -> (ไฟล์ใน app/, content-type, cache?)
 # เพิ่มหน้าใหม่ = เพิ่ม 1 บรรทัดที่นี่ + วางไฟล์ใน app/ (ไม่ต้องเขียน method serve ใหม่ทุกหน้า)
