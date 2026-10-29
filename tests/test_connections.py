@@ -27,6 +27,11 @@ class _FakeBackend:
         self.last = {"model": model, "messages": messages, "options": options}
         return self._reply
 
+    def generate_stream(self, model, messages, num_ctx=8192, options=None):
+        self.last = {"model": model, "messages": messages, "options": options}
+        for word in self._reply.split(" "):
+            yield word + " "
+
 
 class ConnectionsTest(unittest.TestCase):
     def setUp(self):
@@ -105,6 +110,20 @@ class ConnectionsTest(unittest.TestCase):
         connections._backend_for = lambda r: _FakeBackend()
         with self.assertRaises(connections.ConnectionError):
             connections.chat(self.root, rec["id"], [{"role": "user", "content": "hi"}])
+
+    def test_chat_stream_yields_chunks(self):
+        rec = connections.add(self.root, "B", "ollama", model="m")
+        connections._backend_for = lambda r: _FakeBackend(reply="a b c")
+        chunks = list(connections.chat_stream(self.root, rec["id"],
+                                              [{"role": "user", "content": "hi"}]))
+        self.assertEqual("".join(chunks).strip(), "a b c")
+
+    def test_chat_stream_validation_eager(self):
+        # disabled → ConnectionError ตั้งแต่เรียก (ก่อนเริ่ม yield) — ให้ server ตอบ 400 ได้ทัน
+        rec = connections.add(self.root, "B", "ollama", model="m", enabled=False)
+        connections._backend_for = lambda r: _FakeBackend()
+        with self.assertRaises(connections.ConnectionError):
+            connections.chat_stream(self.root, rec["id"], [{"role": "user", "content": "hi"}])
 
     def test_backend_error_becomes_connection_error(self):
         rec = connections.add(self.root, "B", "ollama", model="m")

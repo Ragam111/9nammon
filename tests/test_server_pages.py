@@ -401,6 +401,20 @@ class ServerPagesTest(unittest.TestCase):
         self.assertEqual(st, 403)
         self.assertIn(b"Connections", body)
 
+    def test_stream_endpoints_wired(self):
+        import json as _json
+        # bot stream ก็ถูก gate ด้วยฟีเจอร์ connections เหมือนกัน (ปิด default → 403)
+        st, body = self._post("/api/bots/run/stream", {"id": "bot-x", "input": "hi"})
+        self.assertEqual(st, 403)
+        # playground stream: id ที่ไม่มีจริง → chat_stream validate eager → 400 (ก่อนส่ง SSE 200)
+        st, body = self._post("/api/connections/chat/stream", {"id": "con-nope", "prompt": "hi"})
+        self.assertEqual(st, 400)
+        # หน้า Console อ้าง endpoint สตรีม + มี apiStream
+        _, _, _, page = self._get("/console")
+        self.assertIn(b"/api/connections/chat/stream", page)
+        self.assertIn(b"/api/bots/run/stream", page)
+        self.assertIn(b"apiStream", page)
+
     def test_unknown_route_404(self):
         st, _, _, _ = self._get("/does-not-exist")
         self.assertEqual(st, 404)

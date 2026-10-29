@@ -164,6 +164,26 @@ class BotsTest(unittest.TestCase):
         with self.assertRaises(bots.BotError):
             bots.run(self.root, bot["id"], "hi")
 
+    def test_run_stream_chat_mode_yields(self):
+        orig = connections.chat_stream
+        self.addCleanup(lambda: setattr(connections, "chat_stream", orig))
+
+        def fake_stream(root, cid, messages, model="", options=None):
+            for w in ["สวัสดี", "ครับ"]:
+                yield w
+        connections.chat_stream = fake_stream
+        bot = bots.add(self.root, "ChatBot", self.skill["id"])       # skill ดีฟอลต์ = chat
+        out = "".join(bots.run_stream(self.root, bot["id"], "hi"))
+        self.assertEqual(out, "สวัสดีครับ")
+        self.assertEqual(bots.get(self.root, bot["id"])["run_count"], 1)  # นับหลังสตรีมจบ
+
+    def test_run_stream_agent_mode_rejected(self):
+        agent_skill = skills_store.add(self.root, "Ag", "p", connection_id=self.conn["id"],
+                                       model="m", mode="agent")
+        bot = bots.add(self.root, "AgBot", agent_skill["id"])
+        with self.assertRaises(bots.BotError):                       # agent สตรีมไม่ได้
+            list(bots.run_stream(self.root, bot["id"], "hi"))
+
 
 class _ScriptedBackend:
     """สมองปลอม: ตอบตามสคริปต์ทีละรอบ (ให้ agent loop วิ่งแบบ deterministic)"""

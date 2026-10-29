@@ -293,6 +293,31 @@
     return data;
   }
 
+  // POST แล้วอ่านสตรีม SSE (data: {"delta"|"error"|"done"}) — เรียก onDelta(text) ทีละก้อน
+  async function apiStream(path, body, onDelta){
+    var res = await fetch(path, { method:"POST",
+      headers:Object.assign({ "Content-Type":"application/json" }, authHeaders()),
+      body:JSON.stringify(body) });
+    if(!res.ok || !res.body){
+      var d={}; try{ d=await res.json(); }catch(e){}
+      throw new Error(d.error || ("HTTP "+res.status));
+    }
+    var reader=res.body.getReader(), dec=new TextDecoder(), buf="";
+    while(true){
+      var r=await reader.read(); if(r.done) break;
+      buf += dec.decode(r.value, { stream:true });
+      var idx;
+      while((idx = buf.indexOf("\n\n")) >= 0){
+        var frame=buf.slice(0, idx); buf=buf.slice(idx+2);
+        var line=frame.split("\n").filter(function(l){ return l.indexOf("data:")===0; })[0];
+        if(!line) continue;
+        var obj; try{ obj=JSON.parse(line.slice(5).trim()); }catch(e){ continue; }
+        if(obj.error) throw new Error(obj.error);
+        if(obj.delta) onDelta(obj.delta);
+      }
+    }
+  }
+
   // ---------- nav ----------
   var PANELS=["overview","connections","skills","bots","playground"];
   function go(p){
@@ -515,21 +540,35 @@
     }
   }
   $("run-go").addEventListener("click", async function(){
-    showErr(""); $("run-out").textContent="กำลังรัน...";
+    showErr("");
+    var botId=$("run-bot").value, inp=$("run-input").value;
+    var bt=BOTS.find(function(x){return x.id===botId;});
+    var sk=bt?SKILLS.find(function(s){return s.id===bt.skill_id;}):null;
+    if(sk && sk.mode==="agent"){
+      // โหมด agent → ไม่สตรีม (ReAct คืน steps) โชว์ trace
+      $("run-out").textContent="กำลังรัน...";
+      try{ var r=await api("/api/bots/run","POST",{ id:botId, input:inp }); renderRun(r.result); }
+      catch(e){ $("run-out").textContent=""; showErr(e.message); }
+      return;
+    }
+    // โหมด chat → สตรีมทีละคำ
+    $("run-out").textContent=""; var acc="";
     try{
-      var r=await api("/api/bots/run","POST",{ id:$("run-bot").value, input:$("run-input").value });
-      renderRun(r.result);
-    }catch(e){ $("run-out").textContent=""; showErr(e.message); }
+      await apiStream("/api/bots/run/stream", { id:botId, input:inp },
+        function(d){ acc+=d; $("run-out").textContent=acc; });
+      if(!acc) $("run-out").textContent="(ว่าง)";
+    }catch(e){ if(!acc) $("run-out").textContent=""; showErr(e.message); }
   });
 
   // ---------- playground ----------
   $("pg-go").addEventListener("click", async function(){
-    showErr(""); $("pg-out").textContent="กำลังส่ง...";
+    showErr(""); $("pg-out").textContent=""; var acc="";
     try{
-      var r=await api("/api/connections/chat","POST",{ id:$("pg-conn").value,
-        model:$("pg-model").value, prompt:$("pg-prompt").value });
-      $("pg-out").textContent = r.output||"(ว่าง)";
-    }catch(e){ $("pg-out").textContent=""; showErr(e.message); }
+      await apiStream("/api/connections/chat/stream",
+        { id:$("pg-conn").value, model:$("pg-model").value, prompt:$("pg-prompt").value },
+        function(d){ acc+=d; $("pg-out").textContent=acc; });
+      if(!acc) $("pg-out").textContent="(ว่าง)";
+    }catch(e){ if(!acc) $("pg-out").textContent=""; showErr(e.message); }
   });
 
   $("load").addEventListener("click", loadAll);

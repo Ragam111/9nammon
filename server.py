@@ -495,6 +495,64 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                                       model=data.get("model", ""))
             self._send_json(200, {"output": output})
 
+        def _sse_open(self):
+            """เปิดสตรีม SSE (ส่ง 200 + header) แล้วคืนฟังก์ชัน sse(obj) ไว้เขียน event ทีละก้อน"""
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("X-Accel-Buffering", "no")   # กัน reverse-proxy buffer สตรีม
+            self.end_headers()
+
+            def sse(obj):
+                self.wfile.write(f"data: {json.dumps(obj, ensure_ascii=False)}\n\n".encode("utf-8"))
+                self.wfile.flush()
+            return sse
+
+        def _sse_stream(self, gen):
+            """iterate generator ของ chunk → sse({delta}); จบด้วย {done}; พังกลางคัน → {error}.
+            validate ต้องทำ *ก่อน* เรียกตัวนี้ (หลังส่ง 200 แล้วเปลี่ยนเป็น 400 ไม่ได้)"""
+            sse = self._sse_open()
+            try:
+                for chunk in gen:
+                    sse({"delta": chunk})
+            except (connections.ConnectionError, bots.BotError) as e:
+                sse({"error": str(e)})          # สมองพังกลางสตรีม — 200 ออกไปแล้ว ส่ง error event
+                return
+            except (BrokenPipeError, ConnectionResetError):
+                return                          # client ปิดแท็บกลางคัน — เงียบไว้
+            sse({"done": True})
+
+        def _handle_connections_chat_stream(self):
+            # Playground stream: ยิงข้อความไปสมองแล้วเห็นคำตอบทยอยขึ้นทีละคำ — ADMIN+
+            if self._require("ADMIN") is None:
+                return
+            data = self._read_json_body()
+            messages = data.get("messages")
+            if not isinstance(messages, list) or not messages:
+                prompt = (data.get("prompt") or "").strip()
+                if not prompt:
+                    self._send_json(400, {"error": "ต้องมี messages[] หรือ prompt"})
+                    return
+                messages = [{"role": "user", "content": prompt}]
+            # chat_stream validate (ไม่พบ/ปิด/ไม่มี model) แบบ eager → ConnectionError → 400 ใน do_POST
+            gen = connections.chat_stream(project_root, data.get("id", ""), messages,
+                                          model=data.get("model", ""))
+            self._sse_stream(gen)
+
+        def _handle_bots_run_stream(self):
+            # stream คำตอบ bot โหมด chat — USER+ และฟีเจอร์ connections ต้องเปิด
+            ident = self._require("USER")
+            if ident is None:
+                return
+            if not feature_flags.is_on(project_root, "connections"):
+                self._send_json(403, {"error": "ฟีเจอร์ Connections ปิดอยู่ — เปิดที่ /dev (Server features) ก่อน"})
+                return
+            data = self._read_json_body()
+            # run_stream validate (ไม่พบ/ปิด/agent/ไม่มี connection) แบบ eager → BotError → 400 ใน do_POST
+            gen = bots.run_stream(project_root, data.get("id", ""), data.get("input", ""),
+                                  model=data.get("model", ""))
+            self._sse_stream(gen)
+
         # ---------- Console: Skills ----------
         def _handle_skills_list(self):
             if self._require("ADMIN") is None:
@@ -926,6 +984,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                     self._handle_connections_test()
                 elif parsed.path == "/api/connections/chat":
                     self._handle_connections_chat()
+                elif parsed.path == "/api/connections/chat/stream":
+                    self._handle_connections_chat_stream()
                 elif parsed.path == "/api/skills":
                     self._handle_skills_create()
                 elif parsed.path == "/api/skills/update":
@@ -940,6 +1000,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                     self._handle_bots_delete()
                 elif parsed.path == "/api/bots/run":
                     self._handle_bots_run()
+                elif parsed.path == "/api/bots/run/stream":
+                    self._handle_bots_run_stream()
                 else:
                     self._send_json(404, {"error": "not found"})
             except (connections.ConnectionError, skills_store.SkillError, bots.BotError) as e:

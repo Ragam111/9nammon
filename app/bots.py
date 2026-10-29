@@ -211,3 +211,36 @@ def run(project_root, bot_id: str, user_input: str, model: str = "",
         raise BotError(f"สมองตอบไม่ได้: {e}") from e
     _bump_run(project_root, bot_id)
     return {"bot": bot["name"], "skill": skill["name"], "mode": "chat", "output": output}
+
+
+def run_stream(project_root, bot_id: str, user_input: str, model: str = ""):
+    """stream คำตอบของ bot โหมด chat (yield chunk ทีละคำ). โหมด agent สตรีมไม่ได้ (ReAct
+    ไม่ใช่ token stream) → BotError ให้ใช้ run() ปกติ. validate ก่อนเริ่ม yield."""
+    user_input = (user_input or "").strip()
+    if not user_input:
+        raise BotError("ต้องระบุข้อความเข้า (input)")
+    bot = get(project_root, bot_id)
+    if bot is None:
+        raise BotError("ไม่พบ bot นี้")
+    if not bot.get("enabled", True):
+        raise BotError(f"bot {bot.get('name')!r} ถูกปิดอยู่")
+    skill = skills_store.get(project_root, bot.get("skill_id", ""))
+    if skill is None:
+        raise BotError("skill ของ bot นี้หายไป (ถูกลบ?) — แก้ไข bot ให้ชี้ skill ใหม่")
+    if skill.get("mode") == skills_store.MODE_AGENT:
+        raise BotError("bot โหมด agent สตรีมไม่ได้ — ใช้ /api/bots/run (คืน steps)")
+    conn_id = skill.get("connection_id", "")
+    if not conn_id:
+        raise BotError("skill นี้ยังไม่ได้ผูก connection (สมอง) — ตั้งค่า skill ก่อน")
+    use_model = (model or "").strip() or skill.get("model", "")
+    try:
+        gen = connections.chat_stream(
+            project_root, conn_id, skills_store.build_messages(skill, user_input),
+            model=use_model, options=skills_store.options_for(skill))
+    except connections.ConnectionError as e:
+        raise BotError(f"สมองตอบไม่ได้: {e}") from e
+
+    def _wrap():
+        yield from gen                 # ConnectionError ระหว่างสตรีม (BackendError) ลอยออกไปให้ผู้เรียก
+        _bump_run(project_root, bot_id)  # นับหลังสตรีมจบครบ
+    return _wrap()
