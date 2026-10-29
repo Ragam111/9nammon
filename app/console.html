@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LCA — Console</title>
+  <style>
+    :root{
+      --bg:#0a0a0b; --panel:#131316; --panel2:#1a1a1f; --line:#26262c;
+      --text:#e7e7ea; --muted:#9aa0ac; --accent:#d8e24a; --accent2:#2563eb;
+      --ok:#22c55e; --bad:#e5534b; --radius:12px;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--text);
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans Thai",sans-serif;
+      font-size:14px;line-height:1.5}
+    a{color:var(--accent);text-decoration:none}
+    .app{display:flex;min-height:100vh}
+    /* sidebar */
+    .side{width:220px;flex-shrink:0;border-right:1px solid var(--line);
+      padding:18px 12px;position:sticky;top:0;height:100vh;overflow:auto}
+    .brand{display:flex;align-items:center;gap:8px;font-weight:700;padding:4px 8px 16px}
+    .brand .dot{width:16px;height:16px;border-radius:50%;
+      background:conic-gradient(from 0deg,var(--accent),#7dd3fc,var(--accent))}
+    .brand small{color:var(--muted);font-weight:500}
+    .navlbl{color:var(--muted);font-size:11px;letter-spacing:.08em;
+      text-transform:uppercase;padding:14px 10px 6px}
+    .nav{display:flex;flex-direction:column;gap:2px}
+    .nav button{all:unset;cursor:pointer;display:flex;align-items:center;gap:10px;
+      padding:9px 10px;border-radius:8px;color:var(--text);font-size:14px}
+    .nav button:hover{background:var(--panel2)}
+    .nav button.active{background:var(--panel2);color:var(--accent)}
+    .nav button .ic{width:18px;text-align:center;opacity:.8}
+    .nav .count{margin-left:auto;background:#000;border:1px solid var(--line);
+      border-radius:20px;padding:0 8px;font-size:11px;color:var(--muted)}
+    /* content */
+    .main{flex:1;min-width:0;padding:22px 26px;max-width:1100px}
+    .topbar{display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap}
+    .topbar h1{font-size:20px;margin:0}
+    .topbar .sp{flex:1}
+    input,select,textarea{background:var(--panel);color:var(--text);
+      border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px;
+      font-family:inherit;width:100%}
+    textarea{min-height:90px;resize:vertical}
+    input::placeholder,textarea::placeholder{color:#6b6b74}
+    button.btn{all:unset;cursor:pointer;background:var(--panel2);border:1px solid var(--line);
+      border-radius:8px;padding:8px 14px;font-size:13px;color:var(--text);text-align:center}
+    button.btn:hover{border-color:#3a3a44}
+    button.btn.primary{background:var(--accent);color:#1a1a0a;border-color:var(--accent);font-weight:600}
+    button.btn.sm{padding:5px 10px;font-size:12px}
+    button.btn.danger{color:var(--bad)}
+    .muted{color:var(--muted)}
+    .err{color:var(--bad);font-size:13px;margin:8px 0;white-space:pre-wrap}
+    .panel{display:none}
+    .panel.show{display:block}
+    .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+      padding:18px;margin-bottom:16px}
+    .card h2{font-size:15px;margin:0 0 4px}
+    .card .sub{color:var(--muted);font-size:12.5px;margin:0 0 14px}
+    .grid{display:grid;gap:10px}
+    .grid.two{grid-template-columns:1fr 1fr}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .field{margin-bottom:10px}
+    .field label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+    th{color:var(--muted);font-weight:500;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em}
+    .pill{display:inline-block;padding:1px 8px;border-radius:20px;font-size:11px;border:1px solid var(--line)}
+    .pill.on{color:var(--ok);border-color:#1f3d2a}
+    .pill.off{color:var(--muted)}
+    .pill.openai{color:#7dd3fc;border-color:#1e3a44}
+    .pill.ollama{color:#d8b4fe;border-color:#3a2a44}
+    .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+    .tile{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:14px}
+    .tile .n{font-size:26px;font-weight:700}
+    .tile .l{color:var(--muted);font-size:12px}
+    .out{background:#000;border:1px solid var(--line);border-radius:8px;padding:12px;
+      white-space:pre-wrap;font-size:13px;min-height:40px;margin-top:10px}
+    code{background:var(--panel2);padding:1px 6px;border-radius:5px;font-size:12px}
+    @media(max-width:720px){
+      .app{flex-direction:column}
+      .side{width:auto;height:auto;position:static;border-right:0;border-bottom:1px solid var(--line)}
+      .nav{flex-direction:row;flex-wrap:wrap}
+      .grid.two{grid-template-columns:1fr}
+      .main{padding:16px}
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="brand"><span class="dot"></span> TOKEN·LCA <small>Console</small></div>
+    <div class="navlbl">Platform</div>
+    <nav class="nav" id="nav">
+      <button data-p="overview" class="active"><span class="ic">▣</span> Overview</button>
+      <button data-p="connections"><span class="ic">🔌</span> Connections <span class="count" id="c-connections">0</span></button>
+      <button data-p="skills"><span class="ic">✦</span> Skills <span class="count" id="c-skills">0</span></button>
+      <button data-p="bots"><span class="ic">🤖</span> Bots <span class="count" id="c-bots">0</span></button>
+      <button data-p="playground"><span class="ic">▶</span> Playground</button>
+    </nav>
+    <div class="navlbl">Links</div>
+    <nav class="nav">
+      <button onclick="location.href='/dev'"><span class="ic">⚙</span> Dev / Observability</button>
+      <button onclick="location.href='/'"><span class="ic">💬</span> Chat</button>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <h1 id="title">Overview</h1>
+      <span class="sp"></span>
+      <input id="token" type="password" placeholder="X-Auth-Token หรือ API key" style="width:240px" autocomplete="off" />
+      <button class="btn" id="load">เชื่อมต่อ</button>
+    </div>
+    <div id="err" class="err"></div>
+    <div id="who" class="muted" style="margin-bottom:14px"></div>
+
+    <!-- OVERVIEW -->
+    <section class="panel show" id="p-overview">
+      <div class="card">
+        <h2>แพลตฟอร์ม LCA Console</h2>
+        <p class="sub">ต่อ "สมอง AI ภายนอก" (Connections) → ห่อเป็นคำสั่งสำเร็จรูป (Skills) → เปิดเป็นบริการ (Bots) ให้ n8n/เว็บเรียกได้</p>
+        <div class="tiles">
+          <div class="tile"><div class="n" id="t-connections">–</div><div class="l">Connections (สมอง)</div></div>
+          <div class="tile"><div class="n" id="t-skills">–</div><div class="l">Skills</div></div>
+          <div class="tile"><div class="n" id="t-bots">–</div><div class="l">Bots</div></div>
+          <div class="tile"><div class="n" id="t-botflag">–</div><div class="l">ฟีเจอร์ Bots</div></div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>เริ่มใช้งาน 3 ขั้น</h2>
+        <p class="sub" style="margin:0">
+          1) <b>Connections</b> — เพิ่มสมอง เช่น OpenAI-compatible (<code>https://host/v1</code> + API key) หรือ Ollama ในเครื่อง<br>
+          2) <b>Skills</b> — ตั้ง system prompt + เลือก connection + model<br>
+          3) <b>Bots</b> — ผูก skill แล้วเปิดใช้ → ยิง <code>POST /api/bots/run</code> จาก n8n ได้เลย (ต้องเปิดฟีเจอร์ Connections ที่ /dev)
+        </p>
+      </div>
+    </section>
+
+    <!-- CONNECTIONS -->
+    <section class="panel" id="p-connections">
+      <div class="card">
+        <h2>เพิ่ม / แก้ Connection</h2>
+        <p class="sub">สมองหนึ่งตัว = หนึ่ง connection. api_key เป็นความลับ — เก็บในเครื่อง ไม่แสดงกลับ</p>
+        <input type="hidden" id="con-id">
+        <div class="grid two">
+          <div class="field"><label>ชื่อ</label><input id="con-name" placeholder="เช่น TokenMe-Gemma"></div>
+          <div class="field"><label>ชนิด (kind)</label>
+            <select id="con-kind">
+              <option value="openai">openai (OpenAI-compatible /v1)</option>
+              <option value="ollama">ollama (ในเครื่อง)</option>
+            </select>
+          </div>
+        </div>
+        <div class="field"><label>base_url (เฉพาะ openai)</label><input id="con-base" placeholder="https://api.tokenme.limited/api/v1"></div>
+        <div class="grid two">
+          <div class="field"><label>model (default)</label><input id="con-model" placeholder="nvidia/Gemma-4-26B-A4B-NVFP4"></div>
+          <div class="field"><label>api_key (ว่าง = ไม่เปลี่ยน)</label><input id="con-key" type="password" placeholder="sk-..."></div>
+        </div>
+        <div class="row">
+          <label class="muted"><input type="checkbox" id="con-enabled" checked style="width:auto"> เปิดใช้งาน</label>
+          <span class="sp" style="flex:1"></span>
+          <button class="btn" id="con-reset">ล้างฟอร์ม</button>
+          <button class="btn primary" id="con-save">บันทึก</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="row" style="justify-content:space-between">
+          <h2 style="margin:0">Connections</h2>
+          <button class="btn sm" onclick="loadConnections()">รีเฟรช</button>
+        </div>
+        <div id="con-table" style="margin-top:12px">กด "เชื่อมต่อ" ด้านบนก่อน</div>
+      </div>
+    </section>
+
+    <!-- SKILLS -->
+    <section class="panel" id="p-skills">
+      <div class="card">
+        <h2>เพิ่ม / แก้ Skill</h2>
+        <p class="sub">คำสั่งสำเร็จรูป: system prompt + สมอง (connection) + model</p>
+        <input type="hidden" id="skl-id">
+        <div class="grid two">
+          <div class="field"><label>ชื่อ</label><input id="skl-name" placeholder="เช่น สรุปโค้ด"></div>
+          <div class="field"><label>คำอธิบายสั้น</label><input id="skl-desc" placeholder="อธิบายว่า skill นี้ทำอะไร"></div>
+        </div>
+        <div class="grid two">
+          <div class="field"><label>connection (สมอง)</label><select id="skl-conn"></select></div>
+          <div class="field"><label>model (ว่าง = ใช้ของ connection)</label><input id="skl-model" placeholder=""></div>
+        </div>
+        <div class="field"><label>temperature (0–2, ว่างได้)</label><input id="skl-temp" placeholder="0.7" style="width:120px"></div>
+        <div class="field"><label>system prompt</label><textarea id="skl-prompt" placeholder="คุณคือผู้ช่วย..."></textarea></div>
+        <div class="row">
+          <span class="sp" style="flex:1"></span>
+          <button class="btn" id="skl-reset">ล้างฟอร์ม</button>
+          <button class="btn primary" id="skl-save">บันทึก</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="row" style="justify-content:space-between">
+          <h2 style="margin:0">Skills</h2>
+          <button class="btn sm" onclick="loadSkills()">รีเฟรช</button>
+        </div>
+        <div id="skl-table" style="margin-top:12px">กด "เชื่อมต่อ" ด้านบนก่อน</div>
+      </div>
+    </section>
+
+    <!-- BOTS -->
+    <section class="panel" id="p-bots">
+      <div class="card">
+        <h2>เพิ่ม / แก้ Bot</h2>
+        <p class="sub">Bot = Skill ที่เปิดเป็นบริการ — ยิง <code>POST /api/bots/run</code> {id, input}</p>
+        <input type="hidden" id="bot-id">
+        <div class="grid two">
+          <div class="field"><label>ชื่อ</label><input id="bot-name" placeholder="เช่น code-summarizer"></div>
+          <div class="field"><label>skill</label><select id="bot-skill"></select></div>
+        </div>
+        <div class="field"><label>คำอธิบายสั้น</label><input id="bot-desc" placeholder=""></div>
+        <div class="row">
+          <label class="muted"><input type="checkbox" id="bot-enabled" checked style="width:auto"> เปิดใช้งาน</label>
+          <span class="sp" style="flex:1"></span>
+          <button class="btn" id="bot-reset">ล้างฟอร์ม</button>
+          <button class="btn primary" id="bot-save">บันทึก</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="row" style="justify-content:space-between">
+          <h2 style="margin:0">Bots</h2>
+          <button class="btn sm" onclick="loadBots()">รีเฟรช</button>
+        </div>
+        <div id="bot-table" style="margin-top:12px">กด "เชื่อมต่อ" ด้านบนก่อน</div>
+      </div>
+      <div class="card">
+        <h2>ลองรัน Bot</h2>
+        <p class="sub">ต้องเปิดฟีเจอร์ <b>Connections</b> ที่ /dev ก่อน (กัน bot ยิงออกเน็ตโดยไม่ตั้งใจ)</p>
+        <div class="field"><label>bot</label><select id="run-bot"></select></div>
+        <div class="field"><label>input</label><textarea id="run-input" placeholder="ข้อความที่จะส่งให้ bot"></textarea></div>
+        <button class="btn primary" id="run-go">รัน</button>
+        <div class="out" id="run-out"></div>
+      </div>
+    </section>
+
+    <!-- PLAYGROUND -->
+    <section class="panel" id="p-playground">
+      <div class="card">
+        <h2>Playground</h2>
+        <p class="sub">ยิงข้อความไปสมอง (connection) ตรง ๆ เพื่อทดสอบ — ใช้ API เดียวกับที่แอปใช้จริง</p>
+        <div class="grid two">
+          <div class="field"><label>connection</label><select id="pg-conn"></select></div>
+          <div class="field"><label>model (ว่าง = default)</label><input id="pg-model" placeholder=""></div>
+        </div>
+        <div class="field"><label>prompt</label><textarea id="pg-prompt" placeholder="Hello"></textarea></div>
+        <button class="btn primary" id="pg-go">ส่ง</button>
+        <div class="out" id="pg-out"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var $ = function(id){ return document.getElementById(id); };
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,function(c){
+    return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
+  function tok(){ return $("token").value.trim(); }
+  function authHeaders(){ var t=tok(); return t?{ "X-Auth-Token":t, "X-API-Key":t }:{}; }
+  function showErr(m){ $("err").textContent = m||""; }
+
+  // persist token (per-viewer convenience only)
+  try{ var saved=localStorage.getItem("lca_console_token"); if(saved) $("token").value=saved; }catch(e){}
+
+  async function api(path, method, body){
+    var opt={ method:method||"GET", headers:Object.assign({}, authHeaders()) };
+    if(body!==undefined){ opt.headers["Content-Type"]="application/json"; opt.body=JSON.stringify(body); }
+    var res = await fetch(path, opt);
+    var data = {};
+    try{ data = await res.json(); }catch(e){}
+    if(!res.ok){ throw new Error(data.error || ("HTTP "+res.status)); }
+    return data;
+  }
+
+  // ---------- nav ----------
+  var PANELS=["overview","connections","skills","bots","playground"];
+  function go(p){
+    PANELS.forEach(function(x){
+      $("p-"+x).classList.toggle("show", x===p);
+    });
+    document.querySelectorAll("#nav button").forEach(function(b){
+      b.classList.toggle("active", b.dataset.p===p);
+    });
+    $("title").textContent = p.charAt(0).toUpperCase()+p.slice(1);
+  }
+  document.querySelectorAll("#nav button").forEach(function(b){
+    b.addEventListener("click", function(){ go(b.dataset.p); });
+  });
+
+  // ---------- load all ----------
+  var CONNS=[], SKILLS=[], BOTS=[];
+  async function loadAll(){
+    showErr("");
+    try{ localStorage.setItem("lca_console_token", tok()); }catch(e){}
+    try{
+      var me = await api("/api/me");
+      $("who").textContent = "เข้าใช้งานในฐานะ "+(me.username||"?")+" ("+(me.role||"?")+")";
+    }catch(e){ $("who").textContent=""; }
+    try{
+      var feats = await api("/api/admin/features");
+      var cf = (feats.features||[]).find(function(f){ return f.key==="connections"; });
+      $("t-botflag").textContent = cf && cf.enabled ? "เปิด" : "ปิด";
+    }catch(e){ $("t-botflag").textContent="–"; }
+    await loadConnections();
+    await loadSkills();
+    await loadBots();
+  }
+
+  // ---------- connections ----------
+  function kindPill(k){ return '<span class="pill '+esc(k)+'">'+esc(k)+'</span>'; }
+  window.loadConnections = async function(){
+    try{
+      var d = await api("/api/connections");
+      CONNS = d.connections||[];
+    }catch(e){ showErr(e.message); $("con-table").textContent="โหลดไม่ได้"; return; }
+    $("c-connections").textContent = CONNS.length;
+    $("t-connections").textContent = CONNS.length;
+    fillConnSelects();
+    if(!CONNS.length){ $("con-table").innerHTML='<p class="muted">ยังไม่มี connection — เพิ่มด้านบน</p>'; return; }
+    var rows = CONNS.map(function(c){
+      return "<tr>"+
+        "<td><b>"+esc(c.name)+"</b><br><span class='muted' style='font-size:11px'>"+esc(c.id)+"</span></td>"+
+        "<td>"+kindPill(c.kind)+"</td>"+
+        "<td class='muted'>"+esc(c.base_url||"–")+"</td>"+
+        "<td>"+esc(c.model||"–")+"</td>"+
+        "<td>"+(c.api_key_set?"🔑":"–")+"</td>"+
+        "<td>"+(c.enabled?'<span class="pill on">on</span>':'<span class="pill off">off</span>')+"</td>"+
+        "<td class='row'>"+
+          "<button class='btn sm' data-act='test' data-id='"+esc(c.id)+"'>ทดสอบ</button>"+
+          "<button class='btn sm' data-act='edit' data-id='"+esc(c.id)+"'>แก้</button>"+
+          "<button class='btn sm danger' data-act='del' data-id='"+esc(c.id)+"'>ลบ</button>"+
+        "</td></tr>";
+    }).join("");
+    $("con-table").innerHTML = "<table><thead><tr><th>ชื่อ</th><th>kind</th><th>base_url</th><th>model</th><th>key</th><th>สถานะ</th><th></th></tr></thead><tbody>"+rows+"</tbody></table>";
+  };
+  function fillConnSelects(){
+    var opts = '<option value="">— เลือก connection —</option>'+CONNS.map(function(c){
+      return '<option value="'+esc(c.id)+'">'+esc(c.name)+' ('+esc(c.kind)+')</option>'; }).join("");
+    ["skl-conn","pg-conn"].forEach(function(id){
+      var el=$(id); var cur=el.value; el.innerHTML=opts; el.value=cur;
+    });
+  }
+  function conReset(){ ["con-id","con-name","con-base","con-model","con-key"].forEach(function(i){$(i).value="";});
+    $("con-kind").value="openai"; $("con-enabled").checked=true; }
+  $("con-reset").addEventListener("click", conReset);
+  $("con-save").addEventListener("click", async function(){
+    showErr("");
+    var id=$("con-id").value;
+    var body={ name:$("con-name").value, kind:$("con-kind").value, base_url:$("con-base").value,
+      model:$("con-model").value, enabled:$("con-enabled").checked };
+    if($("con-key").value) body.api_key=$("con-key").value;
+    try{
+      if(id){ body.id=id; await api("/api/connections/update","POST",body); }
+      else { await api("/api/connections","POST",body); }
+      conReset(); await loadConnections();
+    }catch(e){ showErr(e.message); }
+  });
+  $("con-table").addEventListener("click", async function(ev){
+    var b=ev.target.closest("button[data-act]"); if(!b) return;
+    var id=b.dataset.id, act=b.dataset.act;
+    var c=CONNS.find(function(x){return x.id===id;});
+    if(act==="edit"&&c){ $("con-id").value=c.id; $("con-name").value=c.name; $("con-kind").value=c.kind;
+      $("con-base").value=c.base_url||""; $("con-model").value=c.model||""; $("con-key").value="";
+      $("con-enabled").checked=!!c.enabled; window.scrollTo(0,0); }
+    else if(act==="del"&&c){ if(!confirm("ลบ connection "+c.name+"?")) return;
+      try{ await api("/api/connections/delete","POST",{id:id}); await loadConnections(); }catch(e){ showErr(e.message); } }
+    else if(act==="test"){ b.textContent="..."; try{
+      var r=await api("/api/connections/test","POST",{id:id});
+      b.textContent = r.result && r.result.available ? "ต่อติด ✓" : "ต่อไม่ติด ✗";
+    }catch(e){ b.textContent="ผิดพลาด"; showErr(e.message); } }
+  });
+
+  // ---------- skills ----------
+  window.loadSkills = async function(){
+    try{ var d=await api("/api/skills"); SKILLS=d.skills||[]; }
+    catch(e){ showErr(e.message); $("skl-table").textContent="โหลดไม่ได้"; return; }
+    $("c-skills").textContent=SKILLS.length; $("t-skills").textContent=SKILLS.length;
+    fillSkillSelects();
+    if(!SKILLS.length){ $("skl-table").innerHTML='<p class="muted">ยังไม่มี skill</p>'; return; }
+    var rows=SKILLS.map(function(s){
+      var cn=CONNS.find(function(c){return c.id===s.connection_id;});
+      return "<tr><td><b>"+esc(s.name)+"</b><br><span class='muted' style='font-size:11px'>"+esc(s.description||"")+"</span></td>"+
+        "<td>"+esc(cn?cn.name:(s.connection_id||"–"))+"</td>"+
+        "<td>"+esc(s.model||"–")+"</td>"+
+        "<td>"+(s.temperature==null?"–":esc(s.temperature))+"</td>"+
+        "<td class='row'><button class='btn sm' data-act='edit' data-id='"+esc(s.id)+"'>แก้</button>"+
+        "<button class='btn sm danger' data-act='del' data-id='"+esc(s.id)+"'>ลบ</button></td></tr>";
+    }).join("");
+    $("skl-table").innerHTML="<table><thead><tr><th>ชื่อ</th><th>connection</th><th>model</th><th>temp</th><th></th></tr></thead><tbody>"+rows+"</tbody></table>";
+  };
+  function fillSkillSelects(){
+    var opts='<option value="">— เลือก skill —</option>'+SKILLS.map(function(s){
+      return '<option value="'+esc(s.id)+'">'+esc(s.name)+'</option>'; }).join("");
+    ["bot-skill"].forEach(function(id){ var el=$(id); var cur=el.value; el.innerHTML=opts; el.value=cur; });
+  }
+  function sklReset(){ ["skl-id","skl-name","skl-desc","skl-model","skl-temp","skl-prompt"].forEach(function(i){$(i).value="";}); $("skl-conn").value=""; }
+  $("skl-reset").addEventListener("click", sklReset);
+  $("skl-save").addEventListener("click", async function(){
+    showErr("");
+    var id=$("skl-id").value;
+    var body={ name:$("skl-name").value, description:$("skl-desc").value,
+      connection_id:$("skl-conn").value, model:$("skl-model").value,
+      temperature:$("skl-temp").value, system_prompt:$("skl-prompt").value };
+    try{
+      if(id){ body.id=id; await api("/api/skills/update","POST",body); }
+      else { await api("/api/skills","POST",body); }
+      sklReset(); await loadSkills();
+    }catch(e){ showErr(e.message); }
+  });
+  $("skl-table").addEventListener("click", async function(ev){
+    var b=ev.target.closest("button[data-act]"); if(!b) return;
+    var id=b.dataset.id, s=SKILLS.find(function(x){return x.id===id;});
+    if(b.dataset.act==="edit"&&s){ $("skl-id").value=s.id; $("skl-name").value=s.name;
+      $("skl-desc").value=s.description||""; $("skl-conn").value=s.connection_id||"";
+      $("skl-model").value=s.model||""; $("skl-temp").value=s.temperature==null?"":s.temperature;
+      $("skl-prompt").value=s.system_prompt||""; window.scrollTo(0,0); }
+    else if(b.dataset.act==="del"&&s){ if(!confirm("ลบ skill "+s.name+"?")) return;
+      try{ await api("/api/skills/delete","POST",{id:id}); await loadSkills(); }catch(e){ showErr(e.message); } }
+  });
+
+  // ---------- bots ----------
+  window.loadBots = async function(){
+    try{ var d=await api("/api/bots"); BOTS=d.bots||[]; }
+    catch(e){ showErr(e.message); $("bot-table").textContent="โหลดไม่ได้"; return; }
+    $("c-bots").textContent=BOTS.length; $("t-bots").textContent=BOTS.length;
+    fillBotSelects();
+    if(!BOTS.length){ $("bot-table").innerHTML='<p class="muted">ยังไม่มี bot</p>'; return; }
+    var rows=BOTS.map(function(bt){
+      var sk=SKILLS.find(function(s){return s.id===bt.skill_id;});
+      return "<tr><td><b>"+esc(bt.name)+"</b><br><span class='muted' style='font-size:11px'>"+esc(bt.description||"")+"</span></td>"+
+        "<td>"+esc(sk?sk.name:(bt.skill_id||"–"))+"</td>"+
+        "<td>"+(bt.enabled?'<span class="pill on">on</span>':'<span class="pill off">off</span>')+"</td>"+
+        "<td>"+esc(bt.run_count||0)+"</td>"+
+        "<td class='row'><button class='btn sm' data-act='edit' data-id='"+esc(bt.id)+"'>แก้</button>"+
+        "<button class='btn sm danger' data-act='del' data-id='"+esc(bt.id)+"'>ลบ</button></td></tr>";
+    }).join("");
+    $("bot-table").innerHTML="<table><thead><tr><th>ชื่อ</th><th>skill</th><th>สถานะ</th><th>รัน</th><th></th></tr></thead><tbody>"+rows+"</tbody></table>";
+  };
+  function fillBotSelects(){
+    var opts='<option value="">— เลือก bot —</option>'+BOTS.map(function(b){
+      return '<option value="'+esc(b.id)+'">'+esc(b.name)+'</option>'; }).join("");
+    $("run-bot").innerHTML=opts;
+  }
+  function botReset(){ ["bot-id","bot-name","bot-desc"].forEach(function(i){$(i).value="";}); $("bot-skill").value=""; $("bot-enabled").checked=true; }
+  $("bot-reset").addEventListener("click", botReset);
+  $("bot-save").addEventListener("click", async function(){
+    showErr("");
+    var id=$("bot-id").value;
+    var body={ name:$("bot-name").value, skill_id:$("bot-skill").value,
+      description:$("bot-desc").value, enabled:$("bot-enabled").checked };
+    try{
+      if(id){ body.id=id; await api("/api/bots/update","POST",body); }
+      else { await api("/api/bots","POST",body); }
+      botReset(); await loadBots();
+    }catch(e){ showErr(e.message); }
+  });
+  $("bot-table").addEventListener("click", async function(ev){
+    var b=ev.target.closest("button[data-act]"); if(!b) return;
+    var id=b.dataset.id, bt=BOTS.find(function(x){return x.id===id;});
+    if(b.dataset.act==="edit"&&bt){ $("bot-id").value=bt.id; $("bot-name").value=bt.name;
+      $("bot-desc").value=bt.description||""; $("bot-skill").value=bt.skill_id||"";
+      $("bot-enabled").checked=!!bt.enabled; window.scrollTo(0,0); }
+    else if(b.dataset.act==="del"&&bt){ if(!confirm("ลบ bot "+bt.name+"?")) return;
+      try{ await api("/api/bots/delete","POST",{id:id}); await loadBots(); }catch(e){ showErr(e.message); } }
+  });
+  $("run-go").addEventListener("click", async function(){
+    showErr(""); $("run-out").textContent="กำลังรัน...";
+    try{
+      var r=await api("/api/bots/run","POST",{ id:$("run-bot").value, input:$("run-input").value });
+      $("run-out").textContent = (r.result&&r.result.output)||"(ว่าง)";
+    }catch(e){ $("run-out").textContent=""; showErr(e.message); }
+  });
+
+  // ---------- playground ----------
+  $("pg-go").addEventListener("click", async function(){
+    showErr(""); $("pg-out").textContent="กำลังส่ง...";
+    try{
+      var r=await api("/api/connections/chat","POST",{ id:$("pg-conn").value,
+        model:$("pg-model").value, prompt:$("pg-prompt").value });
+      $("pg-out").textContent = r.output||"(ว่าง)";
+    }catch(e){ $("pg-out").textContent=""; showErr(e.message); }
+  });
+
+  $("load").addEventListener("click", loadAll);
+  $("token").addEventListener("keydown", function(e){ if(e.key==="Enter") loadAll(); });
+})();
+</script>
+</body>
+</html>

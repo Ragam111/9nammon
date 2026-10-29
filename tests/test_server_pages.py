@@ -336,6 +336,68 @@ class ServerPagesTest(unittest.TestCase):
         r = conn.getresponse(); r.read(); conn.close()
         self.assertEqual(r.status, 400)
 
+    def _post(self, path, payload):
+        import json as _json
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("POST", path, body=_json.dumps(payload),
+                     headers={"Content-Type": "application/json"})
+        r = conn.getresponse(); body = r.read(); conn.close()
+        return r.status, body
+
+    def test_console_page_served_and_wires_apis(self):
+        # Console: หน้า /console ต้องเสิร์ฟได้ + อ้าง endpoint connections/skills/bots
+        st, ctype, _, body = self._get("/console")
+        self.assertEqual(st, 200)
+        self.assertIn("text/html", ctype)
+        self.assertIn(b"/api/connections", body)
+        self.assertIn(b"/api/skills", body)
+        self.assertIn(b"/api/bots/run", body)
+
+    def test_connections_crud_endpoints(self):
+        # local = CEO → จัดการ connection ได้; list เริ่มต้นว่าง
+        import json as _json
+        st, _, _, body = self._get("/api/connections")
+        self.assertEqual(st, 200)
+        self.assertEqual(_json.loads(body)["connections"], [])
+        # เพิ่ม openai แต่ไม่มี base_url → 400
+        st, _ = self._post("/api/connections", {"name": "x", "kind": "openai"})
+        self.assertEqual(st, 400)
+        # เพิ่ม ollama ถูกต้อง → 200 + ไม่เผย api_key
+        st, body = self._post("/api/connections",
+                              {"name": "LocalBrain", "kind": "ollama", "model": "m"})
+        self.assertEqual(st, 200)
+        rec = _json.loads(body)["connection"]
+        self.assertNotIn("api_key", rec)
+        self.assertEqual(rec["kind"], "ollama")
+        # ลบ
+        st, _ = self._post("/api/connections/delete", {"id": rec["id"]})
+        self.assertEqual(st, 200)
+
+    def test_skills_and_bots_endpoints(self):
+        import json as _json
+        st, _, _, body = self._get("/api/skills")
+        self.assertEqual(st, 200)
+        self.assertEqual(_json.loads(body)["skills"], [])
+        st, _, _, body = self._get("/api/bots")
+        self.assertEqual(st, 200)
+        self.assertEqual(_json.loads(body)["bots"], [])
+        # สร้าง skill แล้ว bot ที่ชี้ skill นั้น
+        st, body = self._post("/api/skills",
+                              {"name": "S", "system_prompt": "คุณคือบอท"})
+        self.assertEqual(st, 200)
+        sid = _json.loads(body)["skill"]["id"]
+        st, body = self._post("/api/bots", {"name": "B", "skill_id": sid})
+        self.assertEqual(st, 200)
+        # bot ที่ชี้ skill มั่ว → 400
+        st, _ = self._post("/api/bots", {"name": "B2", "skill_id": "skl-nope"})
+        self.assertEqual(st, 400)
+
+    def test_bot_run_gated_by_feature_flag(self):
+        # ฟีเจอร์ connections ปิดเป็น default → รัน bot ได้ 403 (กันยิงออกเน็ตโดยไม่ตั้งใจ)
+        st, body = self._post("/api/bots/run", {"id": "bot-x", "input": "hi"})
+        self.assertEqual(st, 403)
+        self.assertIn(b"Connections", body)
+
     def test_unknown_route_404(self):
         st, _, _, _ = self._get("/does-not-exist")
         self.assertEqual(st, 404)
