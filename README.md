@@ -31,6 +31,14 @@ powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercon
 >
 > **อยากเข้าใจทั้งระบบแบบคอร์ส (ไฟล์ไหนทำอะไร, frontend↔backend, สร้างใหม่ทีละขั้น)?** อ่าน `docs/APP_WALKTHROUGH.md`
 
+## ติดตั้งด้วยตัวติดตั้ง .exe (ถ้ามีการปล่อย Release แล้ว)
+
+ถ้ามี Release บน [หน้า Releases](https://github.com/Ragam111/9nammon/releases) แล้ว —
+โหลด **`TokenLCAlimit.exe`** → ดับเบิลคลิก → เลือกโฟลเดอร์ → แถบวิ่งจนเขียวเต็ม → Close พร้อมใช้งาน
+(ยังต้องมี **Python + Ollama** บนเครื่องปลายทาง — ตัว .exe เป็นตัวติดตั้ง ไม่ได้ฝัง runtime)
+
+> ไฟล์ .exe ถูก build อัตโนมัติด้วย GitHub Actions ตอน push tag `v*` (ดู `docs/INSTALLER_EXE.md`)
+
 ## ติดตั้ง (แบบดาวน์โหลดแพ็กเกจเอง) — ดับเบิลคลิกล้วน ไม่ต้องใช้เทอร์มินัล
 
 1. กด **⬇ ดาวน์โหลด .zip** (จากหน้า `/install` หรือ [GitHub](https://github.com/Ragam111/9nammon/archive/refs/heads/main.zip))

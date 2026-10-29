@@ -14,7 +14,23 @@
 
 ทดสอบตรรกะ (ไม่แตะ GUI/เน็ต) แล้วใน `tests/test_installer_gui.py` (mock การดาวน์โหลด)
 
-## แพ็กเป็น .exe (ต้องทำบน Windows)
+## วิธีที่แนะนำ: ให้ GitHub build+แปะ Release ให้อัตโนมัติ
+
+มี workflow `.github/workflows/build-exe.yml` ที่ build `.exe` บน **Windows runner** ให้เอง
+(ไม่ต้องมีเครื่อง Windows ของตัวเอง):
+
+**ปล่อยเวอร์ชันใหม่ให้คนโหลด** — push tag ขึ้นต้นด้วย `v`:
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+GitHub จะ: build `TokenLCAlimit.exe` → สร้าง **Release** `v0.1.0` → แปะ `.exe` ไว้ให้
+ดาวน์โหลดจากหน้า Releases (พร้อมโน้ตเตือนเรื่องต้องมี Python+Ollama) โดยอัตโนมัติ
+
+**แค่อยากได้ไฟล์มาลองก่อน (ไม่ปล่อย Release)** — ไปแท็บ **Actions → build-exe → Run workflow**
+แล้วโหลด `.exe` จาก **Artifacts** ของ run นั้น
+
+## หรือแพ็กเองบน Windows (ถ้าอยากทำมือ)
 ```powershell
 pip install pyinstaller
 pyinstaller --onefile --windowed --name TokenLCAlimit installer_gui.py

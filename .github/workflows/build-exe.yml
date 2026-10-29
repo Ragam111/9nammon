@@ -1,0 +1,56 @@
+name: build-exe
+
+# build ตัวติดตั้ง GUI ไฟล์เดียว TokenLCAlimit.exe บน Windows runner แล้วแปะเข้า Release
+# - push tag v* (เช่น v0.1.0) → build + สร้าง/อัปเดต Release ให้ดาวน์โหลด .exe ได้เลย
+# - workflow_dispatch (กดเองในแท็บ Actions) → build + แนบเป็น artifact ของ run (ไว้ทดสอบ)
+# หมายเหตุ: ต้อง build บน Windows เท่านั้น (.exe ที่รันบน Windows); runner อื่น build ไม่ได้
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+# ต้องเขียน Release ได้ (แนบไฟล์ .exe) — ขอสิทธิ์เท่าที่จำเป็น
+permissions:
+  contents: write
+
+jobs:
+  build-windows-exe:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PyInstaller
+        run: pip install "pyinstaller>=6,<7"
+
+      - name: Build TokenLCAlimit.exe
+        run: pyinstaller --onefile --windowed --name TokenLCAlimit installer_gui.py
+
+      # เก็บเป็น artifact ของ run เสมอ — กดดาวน์โหลด .exe ได้แม้ตอนรันเองแบบไม่มี tag
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TokenLCAlimit-exe
+          path: dist/TokenLCAlimit.exe
+          if-no-files-found: error
+
+      # แปะเข้า Release เฉพาะตอน push tag (ใช้ gh CLI ที่ติดมากับ runner อยู่แล้ว)
+      - name: Attach .exe to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          NOTES=$'ตัวติดตั้ง GUI ไฟล์เดียว — ดับเบิลคลิก **TokenLCAlimit.exe** → เลือกโฟลเดอร์ติดตั้ง → แถบวิ่งจนเขียวเต็ม → Close พร้อมใช้งาน\n\n⚠️ เครื่องปลายทางต้องมี **Python 3** และ **Ollama** ก่อน (ตัว .exe เป็น *ตัวติดตั้ง* ดาวน์โหลดซอร์ส+วางไฟล์ ไม่ได้ฝัง runtime มาด้วย)\nหลังติดตั้ง ดึงโมเดลครั้งเดียว เช่น: `ollama pull qwen2.5-coder:1.5b`'
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/TokenLCAlimit.exe --clobber
+          else
+            gh release create "$TAG" dist/TokenLCAlimit.exe --title "LCA $TAG" --notes "$NOTES"
+          fi
