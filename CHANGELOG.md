@@ -4,6 +4,24 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [0.1.1] — 2026-10-29 (Bug fixes — ready-for-use, not beta)
+
+ตามที่ user สั่ง: "0.1.1 เป็นตัวพร้อมใช้งาน ไม่ใช่เบต้า" — bug hunt + fix:
+
+### Fixed (v0.1.1 bugs)
+- **installer_gui.py `check_free_disk` ไม่ครอบ TEMP**: ของเดิมเช็คแค่ `install_dir`
+  แต่ installer ใช้ `tempfile.TemporaryDirectory()` สำหรับ download+extract ก่อน
+  (ถ้า install=D: แต่ C:/TEMP เต็ม → urlretrieve พังตั้งแต่โหลด). ตอนนี้ตรวจทั้งคู่
+  + รายงาน disk ไหนตึง (`install_dir` หรือ `TEMP`)
+- **server.py `_schedule_gated` ไม่ handle trailing slash**: `/console/` (มี slash
+  ท้าย) ไม่ตรงกับ `/console` ใน allowlist → ถูก gate ปิด. เพิ่ม `_norm_path()`
+  ลบ trailing slash ก่อนเทียบ
+
+### PRs (v0.1.1)
+- (this one) — bug fixes จาก v0.1.0 QA review
+
+---
+
 ## [0.1.0] — 2026-10-29 (Official Release)
 
 **Milestone แรกของ LCA** — รวม 5 PRs (#89–#93), **812 unit/integration tests ผ่านหมด**

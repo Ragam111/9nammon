@@ -1,6 +1,6 @@
 # Local Code Assistant (LCA) — Windows Package
 
-**Version:** 0.1.0 (official release 2026-10-29) · 812 tests pass · [CHANGELOG](CHANGELOG.md)
+**Version:** 0.1.1 (bug fixes 2026-10-29) · 819 tests pass · [CHANGELOG](CHANGELOG.md)
 
 ตัวติดตั้ง AI Coding Assistant แบบฟรี รันด้วย Ollama บนเครื่อง (Windows 10/11, AMD64)
 

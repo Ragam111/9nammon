@@ -42,24 +42,40 @@ def default_install_dir() -> str:
     return str(Path(base) / "LocalCodeAssistant")
 
 
-def check_free_disk(install_dir: str, min_bytes: int = MIN_FREE_DISK_BYTES) -> tuple:
-    """ตรวจพื้นที่ว่างของดิสก์ที่จะติดตั้ง — คืน (ok, free_bytes, message)
-    หา parent ที่มีอยู่จริง (ยังไม่สร้างโฟลเดอร์) เพื่อเรียก shutil.disk_usage"""
-    p = Path(install_dir).resolve()
-    # หา parent ที่มีอยู่จริง (โฟลเดอร์เป้ายังไม่ถูกสร้าง)
+def _probe_free(path_str: str) -> int:
+    """คืนพื้นที่ว่าง (bytes) ของดิสก์ที่ path นี้อยู่ — walk up หา parent ที่มีจริง"""
+    p = Path(path_str).resolve()
     probe = p
     while not probe.exists() and probe.parent != probe:
         probe = probe.parent
+    return shutil.disk_usage(str(probe)).free
+
+
+def check_free_disk(install_dir: str, min_bytes: int = MIN_FREE_DISK_BYTES) -> tuple:
+    """ตรวจพื้นที่ว่างของดิสก์ที่จะติดตั้ง + TEMP (ที่ download/extract) — คืน (ok, free_bytes, message)
+    bug fix v0.1.1: ของเดิมเช็คแค่ install_dir ไม่ครอบ TEMP ที่ tempfile ใช้
+    (ถ้า install=D: แต่ C: TEMP เต็ม → download ฟังก์ชัน urlretrieve พังตั้งแต่โหลด)"""
+    import tempfile
     try:
-        free = shutil.disk_usage(str(probe)).free
+        install_free = _probe_free(install_dir)
     except OSError as e:
-        return False, 0, f"อ่านพื้นที่ว่างไม่ได้ ({e}) — ตรวจ path อีกครั้ง"
-    if free < min_bytes:
+        return False, 0, f"อ่านพื้นที่ว่าง install_dir ไม่ได้ ({e}) — ตรวจ path อีกครั้ง"
+    try:
+        temp_free = _probe_free(tempfile.gettempdir())
+    except OSError:
+        temp_free = install_free  # degrade: ถือว่า TEMP = install (same drive)
+    # ตรวจทั้งคู่ — รายงาน disk ไหนแคบที่สุด
+    tight = min(install_free, temp_free)
+    if tight < min_bytes:
         need_mb = min_bytes // (1024 * 1024)
-        free_mb = free // (1024 * 1024)
-        return False, free, (f"พื้นที่ว่างไม่พอ: ต้องมี {need_mb} MB แต่เหลือ {free_mb} MB "
-                             f"บนดิสก์นี้. ลบไฟล์เก่า/ย้าย Downloads หรือเลือกไดร์ฟอื่น")
-    return True, free, ""
+        install_mb = install_free // (1024 * 1024)
+        temp_mb = temp_free // (1024 * 1024)
+        tight_label = "install_dir" if install_free < temp_free else "TEMP"
+        return False, tight, (
+            f"พื้นที่ว่างไม่พอ: ต้องมี {need_mb} MB — install_dir {install_mb} MB, "
+            f"TEMP {temp_mb} MB (ตึงที่ {tight_label}). "
+            f"ลบไฟล์เก่า/ย้าย Downloads หรือเลือกไดร์ฟอื่น")
+    return True, tight, ""
 
 
 def _find_src_root(extract_dir: Path) -> Path:

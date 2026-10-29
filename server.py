@@ -190,11 +190,19 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             "/app.css", "/favicon.ico",
         )
 
+        @staticmethod
+        def _norm_path(path: str) -> str:
+            """ลบ trailing slash ยกเว้น root `/` — เพื่อให้ `/console/` ตรงกับ `/console`"""
+            if path != "/" and path.endswith("/"):
+                return path.rstrip("/")
+            return path
+
         def _schedule_gated(self, parsed) -> bool:
             """ถ้า schedule gate ปิดอยู่ (เลยเวลาทำการ) ตอบ 503 แล้วคืน True.
             ยกเว้น: path ใน allowlist, CEO/ADMIN (ให้ดูแลระบบตอนปิดได้).
-            schedule gate ปิดเป็นค่าเริ่มต้น (SCHEDULE_ENABLED=False) → ฟังก์ชันนี้ no-op"""
-            if parsed.path in self._SCHEDULE_ALLOWLIST:
+            schedule gate ปิดเป็นค่าเริ่มต้น (SCHEDULE_ENABLED=False) → ฟังก์ชันนี้ no-op
+            bug fix v0.1.1: normalize path (trailing slash) ก่อนเทียบ allowlist"""
+            if self._norm_path(parsed.path) in self._SCHEDULE_ALLOWLIST:
                 return False
             if not schedule_gate.enabled(project_root):
                 return False
