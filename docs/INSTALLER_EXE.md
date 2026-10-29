@@ -1,3 +1,32 @@
+# LCA Desktop.exe — แอปก้อนเดียว (เหมือน ChatGPT/Claude/Gemini desktop)
+
+> ดับเบิลคลิก **`LCA-Desktop.exe`** → เปิดหน้าต่างแอป → แชตได้เลย — เซิร์ฟเวอร์ LCA +
+> Python runtime **ฝังมาในตัว** (ไม่ต้องลง Python แยก). ข้อมูลเก็บที่
+> `%LOCALAPPDATA%\LocalCodeAssistant\data` และ bind `127.0.0.1` เท่านั้น → **ข้อมูลไม่หลุดออกเครื่อง**
+
+ซอร์ส: `lca_app.py` (เปิด server ในตัว + หน้าต่างแอป app-mode) + `server.py` (รองรับ frozen ผ่าน
+`_resource_root()` อ่าน asset จาก `sys._MEIPASS` ตอนเป็น .exe)
+
+## 2 โหมดสมอง (เลือกที่ `/console`)
+| โหมด | ต้องมีอะไร | ความเป็นส่วนตัว |
+|---|---|---|
+| **(ก) Cloud** | ตั้ง connection OpenAI-compatible (เช่น TokenMe/OpenAI) + API key | เหมือน ChatGPT — prompt วิ่งไป cloud ที่คุณตั้ง · **ไม่ต้องลง Ollama** |
+| **(ข) Local / GPU ส่วนตัว** | ลง **Ollama** ในเครื่อง | **ข้อมูลไม่ออกเครื่องเลย** (รันโมเดลในเครื่อง) |
+
+## ซื่อตรง (สำคัญ)
+- โหมด cloud: ฮาร์ดแวร์เครื่องไม่สำคัญเลย (compute อยู่ที่ cloud) — ใช้ได้ทุกเครื่อง
+- โหมด local: **การรองรับ CPU onboard / GPU เก่า-ใหม่ ทุกค่าย เป็นเรื่องของ Ollama** (CPU fallback
+  ได้ทุกเครื่อง, GPU เร่งผ่าน CUDA/ROCm/Vulkan ตามที่ Ollama รองรับ) — ตัว .exe ไม่ได้คุมส่วนนี้
+  และ **ไม่ได้ฝัง Ollama/โมเดล** มาด้วย (ไฟล์จะใหญ่หลายร้อย MB)
+- **MCP Server**: ยังไม่รองรับในเวอร์ชันนี้ (เป็นโปรโตคอลแยก คนละเรื่องกับ connection ปัจจุบัน
+  ที่เป็น OpenAI-compatible) — เป็นงานรอบถัดไป
+
+## โหลด .exe จากไหน
+- **ตอนนี้**: GitHub **Actions → build-exe → run ล่าสุด → Artifacts → `LCA-Desktop-exe`**
+- **หน้า Releases**: โผล่อัตโนมัติเมื่อ push tag `v*` (เช่น `git tag v0.1.0 && git push origin v0.1.0`)
+
+---
+
 # ตัวติดตั้ง GUI ไฟล์เดียว — TokenLCAlimit.exe
 
 > ไอเดีย: ผู้ใช้ได้ไฟล์ **.exe ไฟล์เดียว** → ดับเบิลคลิก → หน้าต่างติดตั้ง (เลือกโฟลเดอร์ +

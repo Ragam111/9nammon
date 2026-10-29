@@ -31,6 +31,14 @@ powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercon
 >
 > **อยากเข้าใจทั้งระบบแบบคอร์ส (ไฟล์ไหนทำอะไร, frontend↔backend, สร้างใหม่ทีละขั้น)?** อ่าน `docs/APP_WALKTHROUGH.md`
 
+## แอปเดสก์ท็อป `LCA-Desktop.exe` (เหมือน ChatGPT/Claude/Gemini desktop)
+
+ดับเบิลคลิก **`LCA-Desktop.exe`** → เปิดหน้าต่างแอป → แชตได้เลย (ฝัง Python+server มาในตัว ไม่ต้องลง Python)
+- **โหมด cloud**: ตั้ง connection + API key ที่ `/console` → แชตได้เหมือน ChatGPT (ไม่ต้องลง Ollama)
+- **โหมด local/ส่วนตัว**: ลง Ollama → ข้อมูลไม่ออกเครื่อง (bind 127.0.0.1)
+
+โหลดจาก **Actions → build-exe → Artifacts → `LCA-Desktop-exe`** (หรือหน้า Releases เมื่อ push tag) — ดู `docs/INSTALLER_EXE.md`
+
 ## ติดตั้งด้วยตัวติดตั้ง .exe (ถ้ามีการปล่อย Release แล้ว)
 
 ถ้ามี Release บน [หน้า Releases](https://github.com/Ragam111/9nammon/releases) แล้ว —
