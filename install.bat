@@ -5,8 +5,14 @@ REM เรียก install.ps1 ผ่าน PowerShell โดย bypass executi
 REM (ไม่แก้ execution policy ถาวรของเครื่อง)
 title ติดตั้ง Local Code Assistant
 echo ============================================
-echo   ติดตั้ง Local Code Assistant (LCA)
+echo   ติดตั้ง Local Code Assistant (LCA) v0.1.0
 echo ============================================
+echo.
+echo ** แนะนำ: มี .exe ไฟล์เดียวให้โหลดด้วยนะ **
+echo    https://github.com/Ragam111/9nammon/releases/latest
+echo    (ดับเบิลคลิก TokenLCAlimit.exe แทนการแตก zip)
+echo.
+echo กำลังรันตัวติดตั้งแบบสคริปต์ (zip แตกแล้ว)...
 echo.
 where powershell >nul 2>&1
 if errorlevel 1 (

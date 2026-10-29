@@ -51,8 +51,23 @@
     <div class="badge">Python stdlib ล้วน · ไม่มี dependency นอก (ยกเว้น psutil) · Windows / Linux / WSL / macOS</div>
   </header>
 
+  <div class="card" style="border-color:var(--accent);">
+    <h2><span class="step">⭐</span>แนะนำที่สุด: ดาวน์โหลด .exe ไฟล์เดียว (Windows)</h2>
+    <p>ไม่ต้องแตก zip ไม่ต้องเทอร์มินัล — ดับเบิลคลิกไฟล์เดียวจบ</p>
+    <div class="row">
+      <a class="btn" href="https://github.com/Ragam111/9nammon/releases/latest">⬇ โหลด TokenLCAlimit.exe</a>
+      <a class="btn ghost" href="https://github.com/Ragam111/9nammon/actions/workflows/build-exe.yml">หรือจาก Actions artifacts</a>
+    </div>
+    <ul class="muted" style="margin-top:10px; padding-left:18px; font-size:13px;">
+      <li><b>TokenLCAlimit.exe</b> (~12 MB) — ตัวติดตั้ง GUI: คลิก → เลือกโฟลเดอร์ → แถบวิ่งเขียวเต็ม → Close</li>
+      <li><b>LCA-Desktop.exe</b> (~10 MB) — แอปก้อนเดียว: ดับเบิลคลิก → แชตได้เลย (ฝัง Python + server)</li>
+      <li>ต้องมี <b>Python 3.10+</b> และ <b>Ollama</b> ที่เครื่องปลายทาง (`.exe` เป็น installer/launcher ไม่ได้ฝัง runtime หนัก)</li>
+      <li>ตรวจพื้นที่ดิสก์อัตโนมัติก่อนติดตั้ง (≥ 300 MB) — fail-fast ถ้า Downloads/Desktop เต็ม</li>
+    </ul>
+  </div>
+
   <div class="card">
-    <h2><span class="step">1</span>ติดตั้ง (เลือกระบบของคุณ)</h2>
+    <h2><span class="step">1</span>หรือติดตั้งแบบดั้งเดิม (เลือกระบบของคุณ)</h2>
     <div class="tab-row">
       <div class="tab active" data-os="win">Windows (PowerShell)</div>
       <div class="tab" data-os="nix">Linux / macOS / WSL</div>
