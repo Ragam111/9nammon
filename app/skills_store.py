@@ -1,0 +1,160 @@
+"""skills_store.py — ทะเบียน "Skills" (prompt + สมองสำเร็จรูป ใช้ซ้ำได้)
+
+โจทย์ (ตามที่ user สั่ง): เพิ่มฟีเจอร์ Skills / AI Agent / Bot บนคอนโซล.
+Skill = ชุดคำสั่งสำเร็จรูป 1 อย่าง = system prompt + ผูกกับ connection (สมอง) + model +
+พารามิเตอร์ (temperature...). สร้างครั้งเดียว เอาไปใช้ซ้ำใน Playground/Bot ได้เรื่อย ๆ.
+
+เช่น skill "แปลไทย→อังกฤษ", "สรุปโค้ด", "ตอบลูกค้าสุภาพ" — แต่ละอันจำ prompt + สมองไว้.
+
+เก็บ skills.json (gitignored, atomic, lock). stdlib ล้วน. ไม่เรียก LLM เอง (แค่เก็บนิยาม) —
+การรันจริงอยู่ที่ bots.run() / console playground ที่หยิบ skill ไปประกอบ messages.
+"""
+
+from __future__ import annotations
+
+import json
+import threading
+import time
+import uuid
+from pathlib import Path
+
+STORE_FILE = "skills.json"
+MAX_RECORDS = 500
+
+_lock = threading.Lock()
+
+
+class SkillError(Exception):
+    """input ผิด/ไม่พบ skill — ผู้เรียกแปลงเป็น 400/404 ได้"""
+
+
+def _path(project_root) -> Path:
+    return Path(project_root) / STORE_FILE
+
+
+def _load(project_root) -> list:
+    try:
+        data = json.loads(_path(project_root).read_text(encoding="utf-8"))
+        return data if isinstance(data, list) else []
+    except (OSError, ValueError):
+        return []
+
+
+def _save(project_root, recs: list) -> None:
+    p = _path(project_root)
+    tmp = p.with_suffix(p.suffix + ".tmp")
+    try:
+        tmp.write_text(json.dumps(recs, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(p)
+    except OSError as e:
+        print(f"[skills][error] เขียน {STORE_FILE} ไม่ได้: {e}")
+
+
+def _clamp_temp(value, default=None):
+    """temperature อยู่ช่วง 0..2 — ค่านอกช่วง/ไม่ใช่ตัวเลข → default (ไม่พัง)"""
+    if value is None or value == "":
+        return default
+    try:
+        t = float(value)
+    except (TypeError, ValueError):
+        raise SkillError(f"temperature ต้องเป็นตัวเลข (ได้ {value!r})")
+    return max(0.0, min(2.0, t))
+
+
+def list_skills(project_root) -> list:
+    with _lock:
+        return [dict(r) for r in _load(project_root)]
+
+
+def get(project_root, skill_id: str):
+    with _lock:
+        for r in _load(project_root):
+            if r.get("id") == skill_id:
+                return dict(r)
+    return None
+
+
+def add(project_root, name: str, system_prompt: str, connection_id: str = "",
+        model: str = "", description: str = "", temperature=None) -> dict:
+    """เพิ่ม skill ใหม่ — คืน record. input ผิด → SkillError"""
+    name = (name or "").strip()
+    if not name:
+        raise SkillError("ต้องระบุชื่อ skill")
+    system_prompt = (system_prompt or "").strip()
+    if not system_prompt:
+        raise SkillError("ต้องระบุ system_prompt (คำสั่งประจำตัวของ skill)")
+    rec = {
+        "id": "skl-" + uuid.uuid4().hex[:12],
+        "name": name,
+        "description": (description or "").strip(),
+        "system_prompt": system_prompt,
+        "connection_id": (connection_id or "").strip(),
+        "model": (model or "").strip(),
+        "temperature": _clamp_temp(temperature),
+        "created_at": time.time(),
+        "updated_at": time.time(),
+    }
+    with _lock:
+        recs = _load(project_root)
+        if any(r.get("name") == name for r in recs):
+            raise SkillError(f"มี skill ชื่อ {name!r} อยู่แล้ว")
+        recs.append(rec)
+        if len(recs) > MAX_RECORDS:
+            recs = recs[-MAX_RECORDS:]
+        _save(project_root, recs)
+    return rec
+
+
+def update(project_root, skill_id: str, fields: dict) -> dict:
+    """แก้ skill — เฉพาะคีย์ที่รู้จัก. คืน record. ไม่พบ/ผิด → SkillError"""
+    fields = fields or {}
+    with _lock:
+        recs = _load(project_root)
+        rec = next((r for r in recs if r.get("id") == skill_id), None)
+        if rec is None:
+            raise SkillError("ไม่พบ skill นี้")
+        if "name" in fields and str(fields["name"]).strip():
+            new_name = str(fields["name"]).strip()
+            if any(r.get("name") == new_name and r.get("id") != skill_id for r in recs):
+                raise SkillError(f"มี skill ชื่อ {new_name!r} อยู่แล้ว")
+            rec["name"] = new_name
+        if "system_prompt" in fields and str(fields["system_prompt"]).strip():
+            rec["system_prompt"] = str(fields["system_prompt"]).strip()
+        if "description" in fields:
+            rec["description"] = str(fields["description"]).strip()
+        if "connection_id" in fields:
+            rec["connection_id"] = str(fields["connection_id"]).strip()
+        if "model" in fields:
+            rec["model"] = str(fields["model"]).strip()
+        if "temperature" in fields:
+            rec["temperature"] = _clamp_temp(fields["temperature"], rec.get("temperature"))
+        rec["updated_at"] = time.time()
+        _save(project_root, recs)
+        return dict(rec)
+
+
+def remove(project_root, skill_id: str) -> bool:
+    with _lock:
+        recs = _load(project_root)
+        new = [r for r in recs if r.get("id") != skill_id]
+        if len(new) == len(recs):
+            return False
+        _save(project_root, new)
+        return True
+
+
+def build_messages(skill: dict, user_input: str) -> list:
+    """ประกอบ messages สำหรับเรียกสมอง: system = คำสั่งของ skill, user = ข้อความเข้า"""
+    return [
+        {"role": "system", "content": skill.get("system_prompt", "")},
+        {"role": "user", "content": user_input or ""},
+    ]
+
+
+def options_for(skill: dict) -> dict:
+    """ดึงพารามิเตอร์ของ skill เป็น options ให้ backend (ตอนนี้: temperature)"""
+    opts = {}
+    t = skill.get("temperature")
+    if t is not None:
+        opts["temperature"] = t
+    return opts

@@ -23,6 +23,7 @@ powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercon
 - **AI agent สายเทค (สภาที่ปรึกษา)** — `python -m app.agent council "โจทย์"` หลายมุม (ceo/elon/jobs/…) แล้วสังเคราะห์
 - **เฝ้าระบบ 24/7 + rollback config** — เตือนเมื่อผิดปกติ, ย้อนเวอร์ชันได้เมื่อ incident
 - **เสียบ cloud GPU ได้** — สลับ backend เป็น OpenAI-compatible endpoint จากหน้า `/dev`
+- **Console ต่อสมอง AI ภายนอก (`/console`)** — ต่อ OpenAI-compatible (TokenMe/vLLM/cloud) หรือ Ollama หลายตัว → ทำ **Skills** (prompt สำเร็จรูป) → เปิดเป็น **Bots** ให้ n8n ยิง `POST /api/bots/run` (ดู `docs/CONSOLE_PLATFORM.md`)
 
 > เอกสารเพิ่มเติม: `docs/CLUSTER_FORWARD.md`, `docs/AGENT_TECH_PLAN.md`, `docs/learn/` (ความรู้พื้นฐาน)
 >

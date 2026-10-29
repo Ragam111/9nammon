@@ -37,3 +37,9 @@ agent_jobs.json.tmp
 agent_queue.txt       # คิวงาน agent แบบไฟล์ (CLI worker)
 agent_approvals.json
 agent_approvals.json.tmp
+connections.json      # ต่อสมอง AI ภายนอก (มี api_key — secret, Rule 23)
+connections.json.tmp
+skills.json           # นิยาม Skills (รันไทม์ ไม่ commit)
+skills.json.tmp
+bots.json             # นิยาม Bots (รันไทม์ ไม่ commit)
+bots.json.tmp

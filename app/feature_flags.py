@@ -22,6 +22,8 @@ FEATURES = [
      "name": "Watchdog 24/7", "desc": "เฝ้าระบบ + เตือนเมื่อผิดปกติ (สังเกต/เตือนเท่านั้น)", "default": False},
     {"key": "agent", "config_key": "AGENT_ENABLED",
      "name": "AI Agent สายเทค", "desc": "เปิดให้ใช้ agent (council/run) ผ่าน API", "default": False},
+    {"key": "connections", "config_key": "CONNECTIONS_ENABLED",
+     "name": "Connections + Bots", "desc": "เปิดให้ bot รันผ่านสมอง AI ภายนอก (Console /console)", "default": False},
     {"key": "collect_training_data", "config_key": "COLLECT_TRAINING_DATA",
      "name": "เก็บข้อมูลเทรน", "desc": "เก็บคู่สนทนาไว้ทำ dataset (ความเป็นส่วนตัว — ปิดไว้)", "default": False},
 ]
