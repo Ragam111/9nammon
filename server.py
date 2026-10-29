@@ -15,6 +15,7 @@ View       : app/index.html (หน้าเว็บ) + JSON response (สำ�
 """
 
 import argparse
+import hmac
 import json
 import os
 import socket
@@ -137,7 +138,9 @@ def make_handler(project_root: Path, auth_token: Optional[str],
               3. ถ้าไม่ได้ตั้ง master token เลย = โหมด local ล้วน (ตาม Rule 12) → ถือเป็น CEO
                  (ปลอดภัยเพราะ bind 127.0.0.1 เท่านั้นถึงจะไม่ตั้ง token ได้)
             """
-            if auth_token and self.headers.get("X-Auth-Token") == auth_token:
+            # เทียบ master token แบบ constant-time กัน timing attack (hmac.compare_digest)
+            provided = self.headers.get("X-Auth-Token")
+            if auth_token and provided and hmac.compare_digest(provided, auth_token):
                 return {"username": "__master__", "role": "CEO", "tier": "paid", "key_id": None}
             raw_key = self.headers.get("X-API-Key")
             if raw_key:
@@ -157,10 +160,17 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             self.end_headers()
             self.wfile.write(body)
 
+        # จำกัดขนาด request body กัน DoS (attacker แกล้งส่ง Content-Length ใหญ่
+        # ทำให้ server รอ/จอง RAM จนล้ม). 2 MiB พอใช้งานจริง — ข้อความ/code ทั่วไปเล็ก;
+        # ยิง chat ก็ไม่น่าเกิน few KB. ถ้ามีเคสต้องรับใหญ่กว่านี้ ค่อยเพิ่ม config
+        MAX_BODY_BYTES = 2 * 1024 * 1024
+
         def _read_json_body(self) -> dict:
-            length = int(self.headers.get("Content-Length", 0))
-            if length == 0:
+            length = int(self.headers.get("Content-Length", 0) or 0)
+            if length <= 0:
                 return {}
+            if length > self.MAX_BODY_BYTES:
+                raise ValueError(f"request body ใหญ่เกิน {self.MAX_BODY_BYTES} bytes")
             raw = self.rfile.read(length)
             return json.loads(raw.decode("utf-8"))
 
