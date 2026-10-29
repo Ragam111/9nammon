@@ -14,9 +14,18 @@ SCHEDULE_CLOSE_HOUR (20). timezone คง UTC+7 (ไทย) ตามโจท�
 
 from __future__ import annotations
 
+import threading
+import time
 from datetime import datetime, timedelta, timezone
 
 from app import config_manager
+
+# cache config lookup (hot path — ทุก request เรียก enabled()) — TTL 10 วินาที
+# → config.json ไม่ถูกเปิดอ่านทุก request. invalidate ตาม TTL โดยไม่ต้องแตะ fs
+_CACHE_TTL_SECONDS = 10.0
+_cache_lock = threading.Lock()
+_enabled_cache: dict = {}       # {project_root_str: (expiry_ts, bool)}
+_hours_cache: dict = {}         # {project_root_str: (expiry_ts, (open, close))}
 
 TH_OFFSET_HOURS = 7
 TH_TZ = timezone(timedelta(hours=TH_OFFSET_HOURS))
@@ -50,21 +59,44 @@ def _clamp_hour(value, default: int) -> int:
 
 
 def window_hours(project_root) -> tuple[int, int]:
-    """อ่าน open_hour, close_hour จาก config → ค่าปัจจุบัน"""
+    """อ่าน open_hour, close_hour จาก config → ค่าปัจจุบัน (cache TTL 10 วินาที)"""
+    key = str(project_root)
+    now = time.time()
+    with _cache_lock:
+        cached = _hours_cache.get(key)
+        if cached and cached[0] > now:
+            return cached[1]
     open_h = _clamp_hour(
         config_manager.get_key(project_root, CFG_OPEN), DEFAULT_OPEN_HOUR)
     close_h = _clamp_hour(
         config_manager.get_key(project_root, CFG_CLOSE), DEFAULT_CLOSE_HOUR)
+    with _cache_lock:
+        _hours_cache[key] = (now + _CACHE_TTL_SECONDS, (open_h, close_h))
     return open_h, close_h
 
 
 def enabled(project_root) -> bool:
     """อ่าน SCHEDULE_ENABLED จาก config → True/False (default: False)
-    ค่าถือเป็น True ถ้าเป็น "1", "true", "yes", "on" (case-insensitive)"""
+    ค่าถือเป็น True ถ้าเป็น "1", "true", "yes", "on" (case-insensitive)
+    cache TTL 10 วินาที — ลด disk I/O ใน hot path (ทุก request เรียกฟังก์ชันนี้)"""
+    key = str(project_root)
+    now = time.time()
+    with _cache_lock:
+        cached = _enabled_cache.get(key)
+        if cached and cached[0] > now:
+            return cached[1]
     v = config_manager.get_key(project_root, CFG_ENABLED)
-    if v is None:
-        return False
-    return str(v).strip().lower() in ("1", "true", "yes", "on")
+    result = False if v is None else str(v).strip().lower() in ("1", "true", "yes", "on")
+    with _cache_lock:
+        _enabled_cache[key] = (now + _CACHE_TTL_SECONDS, result)
+    return result
+
+
+def invalidate_cache() -> None:
+    """ล้าง cache (ใช้ตอนเทส หรือเมื่อ config เปลี่ยนทันที)"""
+    with _cache_lock:
+        _enabled_cache.clear()
+        _hours_cache.clear()
 
 
 def is_open(now_utc: datetime | None = None,

@@ -1,4 +1,4 @@
-"""installer_gui.py — ตัวติดตั้ง LCA แบบ GUI ไฟล์เดียว (ดับเบิลคลิก → progress bar → Close)
+r"""installer_gui.py — ตัวติดตั้ง LCA แบบ GUI ไฟล์เดียว (ดับเบิลคลิก → progress bar → Close)
 
 ไอเดีย (ตามที่ user สั่ง): แพ็กไฟล์นี้เป็น TokenLCAlimit.exe ไฟล์เดียว
   ดับเบิลคลิก → GUI → เลือกโฟลเดอร์ติดตั้ง + จะสร้าง icon บน Desktop ไหม →
