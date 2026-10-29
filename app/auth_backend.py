@@ -23,6 +23,7 @@ stdlib ล้วน — ไม่เพิ่ม dependency
 
 from __future__ import annotations
 
+import hmac
 import json
 from pathlib import Path
 
@@ -58,7 +59,8 @@ class LocalAuthBackend(AuthBackend):
 
     def authenticate(self, token, client_ip=None) -> dict | None:
         token = (token or "").strip() or None
-        if token and self.master_token and token == self.master_token:
+        # เทียบ token แบบ constant-time (hmac.compare_digest) กัน timing attack
+        if token and self.master_token and hmac.compare_digest(token, self.master_token):
             return {"role": "CEO", "source": "master_token"}
         if token:
             rec = org_store.verify_api_key(self.project_root, token)
@@ -87,9 +89,17 @@ class StaticTokenBackend(AuthBackend):
 
     def authenticate(self, token, client_ip=None) -> dict | None:
         token = (token or "").strip() or None
-        if token and token in self.tokens:
-            return {"role": self.tokens[token], "source": "static"}
-        return None
+        if not token:
+            return None
+        # เทียบ token กับทุก entry ด้วย compare_digest เสมอ (ไม่หยุด early) กัน timing attack
+        matched = None
+        for known, role in self.tokens.items():
+            if hmac.compare_digest(token, known):
+                matched = role
+                # ไม่ break — วิ่งต่อให้ครบ ทำให้เวลาคงที่ไม่ว่าตรงที่ไหน
+        if matched is None:
+            return None
+        return {"role": matched, "source": "static"}
 
 
 def get_auth_backend(project_root, master_token: str | None = None) -> AuthBackend:
