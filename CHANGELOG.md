@@ -4,7 +4,9 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
-## [Unreleased]
+## [0.1.0] — 2026-10-29 (Official Release)
+
+**Milestone แรกของ LCA** — รวม 5 PRs (#89–#93), **812 unit/integration tests ผ่านหมด**
 
 ### Fixed
 - **Installer disk space pre-check** (`installer_gui.py`) — ตรวจพื้นที่ว่างก่อนดาวน์โหลด
@@ -39,6 +41,15 @@ Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไ�
 - #90 — เพิ่ม 136 tests สำหรับ 8 modules เหลือ
 - #91 — system tray installer mode
 - #92 — schedule gate + zero-day security fixes
+- #93 — disk space pre-check + README .exe section
+
+### Downloads (ของทางการ)
+
+ที่ [GitHub Releases](https://github.com/Ragam111/9nammon/releases/tag/v0.1.0) หรือ [Actions artifacts](https://github.com/Ragam111/9nammon/actions):
+- **`TokenLCAlimit.exe`** (~12 MB) — ตัวติดตั้ง GUI ไฟล์เดียว (ดับเบิลคลิก → ติดตั้ง)
+- **`LCA-Desktop.exe`** (~10 MB) — แอปก้อนเดียวเปิดแชตได้เลย (ฝัง Python + server มาด้วย)
+
+ต้องมี **Python 3.10+** และ **Ollama** บนเครื่องปลายทาง (`.exe` เป็น installer/launcher, ไม่ได้ฝัง runtime หนัก)
 
 ---
 
