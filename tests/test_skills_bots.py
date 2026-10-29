@@ -4,6 +4,7 @@ bots.run monkeypatch connections.chat ไม่ต่อสมองจริง
 นับ run_count + error paths (skill หาย / ไม่ผูก connection / bot ปิด)
 """
 
+import json
 import sys
 import tempfile
 import unittest
@@ -73,6 +74,27 @@ class SkillsStoreTest(unittest.TestCase):
         up = skills_store.update(self.root, skill["id"], {"mode": "agent", "max_steps": 3})
         self.assertEqual(up["mode"], "agent")
         self.assertEqual(up["max_steps"], 3)
+
+    def test_saved_file_is_versioned_envelope(self):
+        skills_store.add(self.root, "S", "p")
+        raw = json.loads((self.root / skills_store.STORE_FILE).read_text(encoding="utf-8"))
+        self.assertEqual(raw["schema_version"], skills_store.SCHEMA_VERSION)
+        self.assertIsInstance(raw["records"], list)
+
+    def test_old_bare_list_file_migrates_on_load(self):
+        # จำลองไฟล์เก่า (ก่อนมี field โหมด agent) เป็น list เปล่า ๆ แบบ v1
+        old = [{"id": "skl-old", "name": "Legacy", "system_prompt": "เก่า",
+                "connection_id": "", "model": "", "temperature": None}]
+        (self.root / skills_store.STORE_FILE).write_text(json.dumps(old), encoding="utf-8")
+        # โหลดผ่าน store → ต้อง backfill mode/max_steps/tools_write ให้เอง (ไม่พัง)
+        skills = skills_store.list_skills(self.root)
+        self.assertEqual(skills[0]["mode"], "chat")
+        self.assertEqual(skills[0]["max_steps"], skills_store.DEFAULT_MAX_STEPS)
+        self.assertFalse(skills[0]["tools_write"])
+        # และไฟล์บนดิสก์ถูกเขียนใหม่เป็น envelope v ปัจจุบัน (persist การ migrate)
+        raw = json.loads((self.root / skills_store.STORE_FILE).read_text(encoding="utf-8"))
+        self.assertEqual(raw["schema_version"], skills_store.SCHEMA_VERSION)
+        self.assertEqual(raw["records"][0]["mode"], "chat")
 
 
 class BotsTest(unittest.TestCase):

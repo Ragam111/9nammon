@@ -12,11 +12,12 @@ Skill = ชุดคำสั่งสำเร็จรูป 1 อย่าง
 
 from __future__ import annotations
 
-import json
 import threading
 import time
 import uuid
 from pathlib import Path
+
+from app import store_schema
 
 STORE_FILE = "skills.json"
 MAX_RECORDS = 500
@@ -29,6 +30,21 @@ MAX_STEPS_CAP = 20        # กันลูปยาวเกิน (กิน t
 _lock = threading.Lock()
 
 
+def _migrate_v1_to_v2(records: list) -> list:
+    """v1→v2: เติม field โหมด agent (mode/max_steps/tools_write) ให้ record เก่าที่ยังไม่มี —
+    เขียนลงไฟล์จริง (ไม่ใช่แค่ .get ตอนอ่าน) เพื่อให้ schema บนดิสก์ตรงรูปแบบใหม่ถาวร"""
+    for r in records:
+        r.setdefault("mode", MODE_CHAT)
+        r.setdefault("max_steps", DEFAULT_MAX_STEPS)
+        r.setdefault("tools_write", False)
+    return records
+
+
+# เวอร์ชัน schema ของ skills.json — เพิ่ม migration = ต่อท้าย MIGRATIONS + บวก SCHEMA_VERSION
+SCHEMA_VERSION = 2
+MIGRATIONS = [_migrate_v1_to_v2]   # index 0 = v1→v2
+
+
 class SkillError(Exception):
     """input ผิด/ไม่พบ skill — ผู้เรียกแปลงเป็น 400/404 ได้"""
 
@@ -38,18 +54,17 @@ def _path(project_root) -> Path:
 
 
 def _load(project_root) -> list:
-    try:
-        data = json.loads(_path(project_root).read_text(encoding="utf-8"))
-        return data if isinstance(data, list) else []
-    except (OSError, ValueError):
-        return []
+    recs, upgraded = store_schema.load(_path(project_root), SCHEMA_VERSION, MIGRATIONS)
+    if upgraded:                      # migrate แล้ว → persist ให้ไฟล์เป็น v ปัจจุบันถาวร
+        _save(project_root, recs)
+    return recs
 
 
 def _save(project_root, recs: list) -> None:
     p = _path(project_root)
     tmp = p.with_suffix(p.suffix + ".tmp")
     try:
-        tmp.write_text(json.dumps(recs, ensure_ascii=False), encoding="utf-8")
+        tmp.write_text(store_schema.dumps(recs, SCHEMA_VERSION), encoding="utf-8")
         tmp.replace(p)
     except OSError as e:
         print(f"[skills][error] เขียน {STORE_FILE} ไม่ได้: {e}")

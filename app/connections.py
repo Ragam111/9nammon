@@ -19,7 +19,6 @@ stdlib ล้วน.
 
 from __future__ import annotations
 
-import json
 import threading
 import time
 import urllib.parse
@@ -27,8 +26,11 @@ import uuid
 from pathlib import Path
 
 from app import model_backend
+from app import store_schema
 
 STORE_FILE = "connections.json"
+SCHEMA_VERSION = 1       # ยังไม่เคยเปลี่ยน schema — baseline
+MIGRATIONS = []          # ยังไม่มี migration (เพิ่มตอนเปลี่ยน schema จริง)
 MAX_RECORDS = 500
 KIND_OPENAI = "openai"
 KIND_OLLAMA = "ollama"
@@ -46,18 +48,17 @@ def _path(project_root) -> Path:
 
 
 def _load(project_root) -> list:
-    try:
-        data = json.loads(_path(project_root).read_text(encoding="utf-8"))
-        return data if isinstance(data, list) else []
-    except (OSError, ValueError):
-        return []
+    recs, upgraded = store_schema.load(_path(project_root), SCHEMA_VERSION, MIGRATIONS)
+    if upgraded:                      # อัปเกรดไฟล์เก่าแล้ว → เขียนกลับให้เป็นรูปแบบใหม่ถาวร
+        _save(project_root, recs)
+    return recs
 
 
 def _save(project_root, recs: list) -> None:
     p = _path(project_root)
     tmp = p.with_suffix(p.suffix + ".tmp")
     try:
-        tmp.write_text(json.dumps(recs, ensure_ascii=False), encoding="utf-8")
+        tmp.write_text(store_schema.dumps(recs, SCHEMA_VERSION), encoding="utf-8")
         tmp.replace(p)
     except OSError as e:
         print(f"[connections][error] เขียน {STORE_FILE} ไม่ได้: {e}")
