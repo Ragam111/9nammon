@@ -50,6 +50,7 @@ from app import cluster_router  # noqa: E402  (สมองจัดคิวง
 from app import cluster_forward  # noqa: E402  (แขนคลัสเตอร์: forward งาน chat ไปทำที่ node ที่ router เลือกจริง)
 from app import watchdog  # noqa: E402  (เฝ้าระบบ 24/7 + เตือนเมื่อผิดปกติ — observe/alert เท่านั้น)
 from app import feature_flags  # noqa: E402  (ศูนย์กลางเปิด/ปิดฟีเจอร์ server + มอนิเตอร์)
+from app import schedule_gate  # noqa: E402  (เวลาเปิด-ปิดเซิร์ฟเวอร์ตามเวลาไทย — ประหยัดค่าไฟ/cloud)
 from app.agent import jobs as agent_jobs  # noqa: E402  (คิวงาน agent — ให้ n8n/automation ป้อนงาน)
 from app.agent import approvals as agent_approvals  # noqa: E402  (P6: ด่านอนุมัติก่อนทำสิ่งย้อนไม่ได้)
 from app import connections  # noqa: E402  (ทะเบียนต่อสมอง AI ภายนอก — Console)
@@ -173,10 +174,48 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 return True
             return False
 
+        # เส้นทาง "เปิดเสมอ" ที่ schedule gate ไม่ปิด — ให้ลูกค้าเช็คสถานะ/health ได้ตลอด
+        _SCHEDULE_ALLOWLIST = (
+            "/api/health", "/api/status", "/", "/console", "/web", "/install",
+            "/app.css", "/favicon.ico",
+        )
+
+        def _schedule_gated(self, parsed) -> bool:
+            """ถ้า schedule gate ปิดอยู่ (เลยเวลาทำการ) ตอบ 503 แล้วคืน True.
+            ยกเว้น: path ใน allowlist, CEO/ADMIN (ให้ดูแลระบบตอนปิดได้).
+            schedule gate ปิดเป็นค่าเริ่มต้น (SCHEDULE_ENABLED=False) → ฟังก์ชันนี้ no-op"""
+            if parsed.path in self._SCHEDULE_ALLOWLIST:
+                return False
+            if not schedule_gate.enabled(project_root):
+                return False
+            info = schedule_gate.status(project_root)
+            if info.get("state") == "open":
+                return False
+            # closed — ปล่อย CEO/ADMIN ผ่าน เพื่อดูแลระบบตอนปิด
+            ident = self._identity()
+            if ident and ident.get("role") in ("CEO", "ADMIN"):
+                return False
+            body = json.dumps(info, ensure_ascii=False).encode("utf-8")
+            self.send_response(503)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            retry_after = max(1, int(info.get("seconds_until_change") or 60))
+            self.send_header("Retry-After", str(retry_after))
+            self.end_headers()
+            self.wfile.write(body)
+            return True
+
+        def _handle_status(self):
+            """สถานะเซิร์ฟเวอร์ตาม schedule (public, ไม่ auth) — ลูกค้าดูได้ตลอด
+            คืน state (open/closed), เวลาเปลี่ยนสถานะถัดไป, และข้อความอ่านง่าย"""
+            self._send_json(200, schedule_gate.status(project_root))
+
         # ---------- View: serve index.html ----------
         def do_GET(self):
             parsed = urlparse(self.path)
             if self._rate_limited(parsed):
+                return
+            if self._schedule_gated(parsed):
                 return
             if parsed.path in STATIC_ROUTES:
                 self._serve_static(parsed.path)
@@ -184,6 +223,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._handle_todos_get()
             elif parsed.path == "/api/health":
                 self._handle_health()
+            elif parsed.path == "/api/status":
+                self._handle_status()
             elif parsed.path == "/api/sysinfo":
                 self._handle_sysinfo()
             elif parsed.path == "/api/metrics":
@@ -917,6 +958,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
         def do_POST(self):
             parsed = urlparse(self.path)
             if self._rate_limited(parsed):
+                return
+            if self._schedule_gated(parsed):
                 return
             try:
                 if parsed.path == "/api/chat":
