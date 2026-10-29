@@ -49,10 +49,14 @@ def _parse(reply: str) -> dict:
 
 
 def run(project_root, task: str, workspace, model: str = DEFAULT_MODEL,
-        max_steps: int = DEFAULT_MAX_STEPS, allowed_commands=None, approvals_root=None) -> dict:
+        max_steps: int = DEFAULT_MAX_STEPS, allowed_commands=None, approvals_root=None,
+        generate_fn=None, extra_system: str = None) -> dict:
     """รัน agent 1 งาน — คืน {final, steps:[...], stopped_reason}
     - workspace: โฟลเดอร์ที่ agent ทำงานได้ (sandbox confine ไว้)
     - approvals_root: ถ้าให้มา → เปิด tool 'เสนอ' (P6) เขียนไฟล์/รันคำสั่งที่ต้องรอคนอนุมัติ
+    - generate_fn: ถ้าให้มา → ใช้ "สมอง" นี้แทน backend ตาม config (callable(messages)->str)
+      ให้ bot วิ่ง ReAct ผ่าน connection ที่เลือกได้ (ไม่ผูกกับ MODEL_BACKEND กลาง)
+    - extra_system: system prompt เสริม (เช่น persona ของ skill) ต่อท้าย tool-protocol
     - steps: log ทุกขั้น (thought/tool/args/observation หรือ final) ไว้ตรวจย้อน
     """
     task = (task or "").strip()
@@ -63,14 +67,17 @@ def run(project_root, task: str, workspace, model: str = DEFAULT_MODEL,
     schemas = list(tools_mod.TOOL_SCHEMAS)
     if approvals_root is not None:
         schemas = schemas + tools_mod.PROPOSE_SCHEMAS
+    # เลือกสมอง: generate_fn ที่ส่งมา (เช่น connection ของ bot) หรือ backend ตาม config (เดิม)
+    gen = generate_fn if generate_fn is not None else \
+        (lambda msgs: model_backend.generate(project_root, model, msgs))
 
-    messages = [
-        {"role": "system", "content": _system_prompt(schemas)},
-        {"role": "user", "content": f"งาน: {task}"},
-    ]
+    messages = [{"role": "system", "content": _system_prompt(schemas)}]
+    if extra_system:
+        messages.append({"role": "system", "content": extra_system})
+    messages.append({"role": "user", "content": f"งาน: {task}"})
     steps = []
     for _ in range(max_steps):
-        reply = model_backend.generate(project_root, model, messages)
+        reply = gen(messages)
         try:
             action = _parse(reply)
         except ValueError:

@@ -352,6 +352,9 @@ class ServerPagesTest(unittest.TestCase):
         self.assertIn(b"/api/connections", body)
         self.assertIn(b"/api/skills", body)
         self.assertIn(b"/api/bots/run", body)
+        # agent mode (ReAct): ฟอร์ม skill ต้องเลือกโหมด agent + ตั้ง max_steps ได้
+        self.assertIn(b"skl-mode", body)
+        self.assertIn(b"skl-steps", body)
 
     def test_connections_crud_endpoints(self):
         # local = CEO → จัดการ connection ได้; list เริ่มต้นว่าง

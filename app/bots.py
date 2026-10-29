@@ -21,8 +21,10 @@ import uuid
 from pathlib import Path
 
 from app import connections, skills_store
+from app.agent import core as agent_core
 
 STORE_FILE = "bots.json"
+AGENT_WORKSPACE_DIR = "agent_workspace"   # sandbox ของ bot-agent (ไม่ให้เห็น repo/secret)
 MAX_RECORDS = 500
 
 _lock = threading.Lock()
@@ -148,9 +150,22 @@ def _bump_run(project_root, bot_id: str) -> None:
         _save(project_root, recs)
 
 
-def run(project_root, bot_id: str, user_input: str, model: str = "") -> dict:
-    """รัน bot กับข้อความเข้า — คืน {bot, skill, output}. ตัวไหนหาย/ปิด/ต่อไม่ได้ → BotError.
-    model ว่าง → ใช้ของ skill → ของ connection (ตามลำดับ)."""
+def _agent_workspace(project_root, workspace: str) -> Path:
+    """โฟลเดอร์ sandbox ของ bot-agent — confine ใต้ project_root/agent_workspace เท่านั้น
+    (กัน bot ที่ automation ยิงเข้ามา อ่าน repo/config.json ที่มี secret)"""
+    base = (Path(project_root) / AGENT_WORKSPACE_DIR).resolve()
+    base.mkdir(parents=True, exist_ok=True)
+    ws = (base / (workspace or ".")).resolve()
+    if ws != base and base not in ws.parents:
+        raise BotError("workspace หลุดนอก agent_workspace (ปฏิเสธ)")
+    return ws
+
+
+def run(project_root, bot_id: str, user_input: str, model: str = "",
+        workspace: str = ".") -> dict:
+    """รัน bot กับข้อความเข้า — คืน {bot, skill, mode, output, ...}. หาย/ปิด/ต่อไม่ได้ → BotError.
+    model ว่าง → ใช้ของ skill → ของ connection (ตามลำดับ).
+    skill.mode == 'agent' → วิ่ง ReAct (เรียก tools ใน sandbox) แทนตอบแชตตรง."""
     user_input = (user_input or "").strip()
     if not user_input:
         raise BotError("ต้องระบุข้อความเข้า (input)")
@@ -165,12 +180,34 @@ def run(project_root, bot_id: str, user_input: str, model: str = "") -> dict:
     conn_id = skill.get("connection_id", "")
     if not conn_id:
         raise BotError("skill นี้ยังไม่ได้ผูก connection (สมอง) — ตั้งค่า skill ก่อน")
-    messages = skills_store.build_messages(skill, user_input)
     use_model = (model or "").strip() or skill.get("model", "")
+
+    if skill.get("mode") == skills_store.MODE_AGENT:
+        ws = _agent_workspace(project_root, workspace)
+        gen = connections.make_generate_fn(project_root, conn_id, model=use_model,
+                                           options=skills_store.options_for(skill))
+        # tools_write → เปิด tool 'เสนอ' (P6): เขียนไฟล์/รันคำสั่งต้องรอคนอนุมัติที่ /dev
+        approvals_root = project_root if skill.get("tools_write") else None
+        try:
+            res = agent_core.run(
+                project_root, user_input, workspace=str(ws),
+                model=use_model or agent_core.DEFAULT_MODEL,
+                max_steps=int(skill.get("max_steps") or skills_store.DEFAULT_MAX_STEPS),
+                approvals_root=approvals_root, generate_fn=gen,
+                extra_system=skill.get("system_prompt", ""))
+        except connections.ConnectionError as e:
+            raise BotError(f"สมองตอบไม่ได้: {e}") from e
+        _bump_run(project_root, bot_id)
+        return {"bot": bot["name"], "skill": skill["name"], "mode": "agent",
+                "output": res.get("final") or "(ไม่จบใน max_steps)",
+                "steps": res.get("steps", []), "stopped_reason": res.get("stopped_reason")}
+
+    # chat mode (เดิม): system+user → คำตอบทีเดียว
+    messages = skills_store.build_messages(skill, user_input)
     try:
         output = connections.chat(project_root, conn_id, messages, model=use_model,
                                   options=skills_store.options_for(skill))
     except connections.ConnectionError as e:
         raise BotError(f"สมองตอบไม่ได้: {e}") from e
     _bump_run(project_root, bot_id)
-    return {"bot": bot["name"], "skill": skill["name"], "output": output}
+    return {"bot": bot["name"], "skill": skill["name"], "mode": "chat", "output": output}

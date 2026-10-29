@@ -43,3 +43,4 @@ skills.json           # นิยาม Skills (รันไทม์ ไม่ 
 skills.json.tmp
 bots.json             # นิยาม Bots (รันไทม์ ไม่ commit)
 bots.json.tmp
+agent_workspace/      # sandbox ของ bot-agent (ไฟล์ที่ agent อ่าน/เขียน — ไม่ commit)

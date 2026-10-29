@@ -219,3 +219,11 @@ def chat(project_root, conn_id: str, messages: list, model: str = "",
         return backend.generate(use_model, messages, options=options)
     except model_backend.BackendError as e:
         raise ConnectionError(str(e)) from e
+
+
+def make_generate_fn(project_root, conn_id: str, model: str = "", options: dict = None):
+    """คืน callable(messages)->str ที่ยิงไปสมองของ connection นี้ — ให้ agent ReAct (core.run)
+    ใช้ connection ที่เลือกเป็น "สมอง" แทน backend กลาง (ไม่ผูก MODEL_BACKEND)"""
+    def _gen(messages):
+        return chat(project_root, conn_id, messages, model=model, options=options)
+    return _gen

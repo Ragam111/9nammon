@@ -20,6 +20,11 @@ from pathlib import Path
 
 STORE_FILE = "skills.json"
 MAX_RECORDS = 500
+MODE_CHAT = "chat"
+MODE_AGENT = "agent"
+VALID_MODES = (MODE_CHAT, MODE_AGENT)
+DEFAULT_MAX_STEPS = 6
+MAX_STEPS_CAP = 20        # กันลูปยาวเกิน (กิน token/เวลา)
 
 _lock = threading.Lock()
 
@@ -61,6 +66,26 @@ def _clamp_temp(value, default=None):
     return max(0.0, min(2.0, t))
 
 
+def _norm_mode(value, default=MODE_CHAT):
+    if value is None or value == "":
+        return default
+    m = str(value).strip().lower()
+    if m not in VALID_MODES:
+        raise SkillError(f"mode ต้องเป็น {list(VALID_MODES)} (ได้ {m!r})")
+    return m
+
+
+def _clamp_steps(value, default=DEFAULT_MAX_STEPS):
+    """max_steps 1..MAX_STEPS_CAP — ว่าง/ผิด → default/โยน error"""
+    if value is None or value == "":
+        return default
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        raise SkillError(f"max_steps ต้องเป็นจำนวนเต็ม (ได้ {value!r})")
+    return max(1, min(MAX_STEPS_CAP, n))
+
+
 def list_skills(project_root) -> list:
     with _lock:
         return [dict(r) for r in _load(project_root)]
@@ -75,8 +100,11 @@ def get(project_root, skill_id: str):
 
 
 def add(project_root, name: str, system_prompt: str, connection_id: str = "",
-        model: str = "", description: str = "", temperature=None) -> dict:
-    """เพิ่ม skill ใหม่ — คืน record. input ผิด → SkillError"""
+        model: str = "", description: str = "", temperature=None,
+        mode: str = MODE_CHAT, max_steps=None, tools_write: bool = False) -> dict:
+    """เพิ่ม skill ใหม่ — คืน record. input ผิด → SkillError.
+    mode=agent → skill นี้รันเป็น ReAct (เรียก tools ใน sandbox) แทนตอบแชตตรง.
+    tools_write=True → เปิด tool 'เสนอ' (P6) เขียนไฟล์/รันคำสั่ง ต้องรอคนอนุมัติที่ /dev"""
     name = (name or "").strip()
     if not name:
         raise SkillError("ต้องระบุชื่อ skill")
@@ -91,6 +119,9 @@ def add(project_root, name: str, system_prompt: str, connection_id: str = "",
         "connection_id": (connection_id or "").strip(),
         "model": (model or "").strip(),
         "temperature": _clamp_temp(temperature),
+        "mode": _norm_mode(mode),
+        "max_steps": _clamp_steps(max_steps),
+        "tools_write": bool(tools_write),
         "created_at": time.time(),
         "updated_at": time.time(),
     }
@@ -128,6 +159,12 @@ def update(project_root, skill_id: str, fields: dict) -> dict:
             rec["model"] = str(fields["model"]).strip()
         if "temperature" in fields:
             rec["temperature"] = _clamp_temp(fields["temperature"], rec.get("temperature"))
+        if "mode" in fields:
+            rec["mode"] = _norm_mode(fields["mode"], rec.get("mode", MODE_CHAT))
+        if "max_steps" in fields:
+            rec["max_steps"] = _clamp_steps(fields["max_steps"], rec.get("max_steps", DEFAULT_MAX_STEPS))
+        if "tools_write" in fields:
+            rec["tools_write"] = bool(fields["tools_write"])
         rec["updated_at"] = time.time()
         _save(project_root, recs)
         return dict(rec)

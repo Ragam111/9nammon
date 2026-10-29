@@ -52,6 +52,28 @@ class SkillsStoreTest(unittest.TestCase):
         self.assertEqual(msgs[1]["content"], "ทำงาน")
         self.assertEqual(skills_store.options_for(skill), {"temperature": 0.3})
 
+    def test_mode_defaults_chat(self):
+        skill = skills_store.add(self.root, "S", "p")
+        self.assertEqual(skill["mode"], "chat")
+        self.assertEqual(skill["max_steps"], skills_store.DEFAULT_MAX_STEPS)
+        self.assertFalse(skill["tools_write"])
+
+    def test_agent_mode_and_steps_clamp(self):
+        skill = skills_store.add(self.root, "A", "p", mode="agent", max_steps=99, tools_write=True)
+        self.assertEqual(skill["mode"], "agent")
+        self.assertEqual(skill["max_steps"], skills_store.MAX_STEPS_CAP)   # clamp 99→20
+        self.assertTrue(skill["tools_write"])
+
+    def test_bad_mode_rejected(self):
+        with self.assertRaises(skills_store.SkillError):
+            skills_store.add(self.root, "A", "p", mode="telepathy")
+
+    def test_update_mode(self):
+        skill = skills_store.add(self.root, "A", "p")
+        up = skills_store.update(self.root, skill["id"], {"mode": "agent", "max_steps": 3})
+        self.assertEqual(up["mode"], "agent")
+        self.assertEqual(up["max_steps"], 3)
+
 
 class BotsTest(unittest.TestCase):
     def setUp(self):
@@ -119,6 +141,75 @@ class BotsTest(unittest.TestCase):
         skills_store.remove(self.root, self.skill["id"])             # ลบ skill ทิ้ง
         with self.assertRaises(bots.BotError):
             bots.run(self.root, bot["id"], "hi")
+
+
+class _ScriptedBackend:
+    """สมองปลอม: ตอบตามสคริปต์ทีละรอบ (ให้ agent loop วิ่งแบบ deterministic)"""
+    def __init__(self, replies):
+        self.replies = list(replies)
+
+    def is_available(self):
+        return True
+
+    def generate(self, model, messages, num_ctx=8192, options=None):
+        return self.replies.pop(0) if self.replies else '{"final":"หมดสคริปต์"}'
+
+
+class BotsAgentModeTest(unittest.TestCase):
+    """bot ที่ skill.mode=agent → วิ่ง ReAct เรียก tools ใน sandbox (agent_workspace)"""
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self._orig_backend_for = connections._backend_for
+        self.conn = connections.add(self.root, "Brain", "ollama", model="m")
+
+    def tearDown(self):
+        connections._backend_for = self._orig_backend_for
+        self._tmp.cleanup()
+
+    def _agent_bot(self, tools_write=False, max_steps=6):
+        skill = skills_store.add(self.root, "Agent", "คุณคือ agent", connection_id=self.conn["id"],
+                                 model="m", mode="agent", max_steps=max_steps, tools_write=tools_write)
+        return bots.add(self.root, "AgentBot", skill["id"])
+
+    def test_agent_runs_tools_and_returns_steps(self):
+        backend = _ScriptedBackend([
+            '{"thought":"ดูไฟล์","tool":"list_dir","args":{"path":"."}}',
+            '{"thought":"เสร็จ","final":"ไม่มีไฟล์ในโฟลเดอร์"}',
+        ])
+        connections._backend_for = lambda rec: backend
+        bot = self._agent_bot()
+        res = bots.run(self.root, bot["id"], "สำรวจ workspace")
+        self.assertEqual(res["mode"], "agent")
+        self.assertEqual(res["output"], "ไม่มีไฟล์ในโฟลเดอร์")
+        self.assertEqual(res["stopped_reason"], "final")
+        self.assertTrue(len(res["steps"]) >= 1)
+        self.assertEqual(res["steps"][0]["tool"], "list_dir")
+        # agent_workspace ถูกสร้างใต้ project_root
+        self.assertTrue((self.root / bots.AGENT_WORKSPACE_DIR).is_dir())
+
+    def test_agent_workspace_confined_rejects_escape(self):
+        connections._backend_for = lambda rec: _ScriptedBackend(['{"final":"ok"}'])
+        bot = self._agent_bot()
+        with self.assertRaises(bots.BotError):
+            bots.run(self.root, bot["id"], "x", workspace="../../etc")
+
+    def test_agent_tools_write_creates_pending_approval(self):
+        # P6: skill tools_write → agent เสนอเขียนไฟล์ → เกิดคำขออนุมัติ (ยังไม่เขียนจริง)
+        from app.agent import approvals as agent_approvals
+        backend = _ScriptedBackend([
+            '{"thought":"เขียน","tool":"propose_write_file","args":{"path":"out.txt","content":"hi"}}',
+            '{"thought":"เสนอแล้ว","final":"รออนุมัติ"}',
+        ])
+        connections._backend_for = lambda rec: backend
+        bot = self._agent_bot(tools_write=True)
+        res = bots.run(self.root, bot["id"], "เขียนไฟล์ out.txt")
+        self.assertEqual(res["output"], "รออนุมัติ")
+        pending = agent_approvals.list_pending(self.root)
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(pending[0]["kind"], agent_approvals.KIND_WRITE)
+        # ยังไม่เขียนจริง (ไฟล์ยังไม่เกิดใน agent_workspace)
+        self.assertFalse((self.root / bots.AGENT_WORKSPACE_DIR / "out.txt").exists())
 
 
 if __name__ == "__main__":
