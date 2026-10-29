@@ -213,5 +213,40 @@ class CopyManifestTest(unittest.TestCase):
         self.assertIn("start-lca.bat", installer_gui.COPY_FILES)
 
 
+class CheckFreeDiskTest(unittest.TestCase):
+    def test_sufficient_space_returns_ok(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            # ใช้ค่า min เล็กมาก (1 byte) — ยังไงดิสก์จริงก็มีเกิน
+            ok, free, msg = installer_gui.check_free_disk(tmp, min_bytes=1)
+            self.assertTrue(ok)
+            self.assertGreater(free, 0)
+            self.assertEqual(msg, "")
+
+    def test_insufficient_space_returns_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            # min ใหญ่กว่าดิสก์จริง (10 PB) → ok=False + ข้อความช่วย recovery
+            huge = 10 * 1024 * 1024 * 1024 * 1024 * 1024
+            ok, _, msg = installer_gui.check_free_disk(tmp, min_bytes=huge)
+            self.assertFalse(ok)
+            self.assertIn("MB", msg)
+            self.assertIn("ไม่พอ", msg)
+
+    def test_check_nonexistent_parent_falls_back(self):
+        # path ที่ยังไม่มี parent — ควร walk up หา parent ที่มีจริง ไม่ crash
+        fake = "/tmp/no-such-dir-12345/sub/deeper/install-target"
+        ok, _, _ = installer_gui.check_free_disk(fake, min_bytes=1)
+        self.assertTrue(ok)  # /tmp มีจริง → check ผ่าน
+
+    def test_do_install_raises_if_insufficient_disk(self):
+        # Mock check_free_disk ให้คืน (False, ...) → do_install ต้อง raise ก่อนดาวน์โหลด
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.object(installer_gui, "check_free_disk",
+                          return_value=(False, 0, "พื้นที่ว่างไม่พอ: test")):
+            with self.assertRaises(RuntimeError) as cm:
+                installer_gui.do_install(tmp, False, lambda p, m: None)
+            self.assertIn("ไม่พอ", str(cm.exception))
+
+
 if __name__ == "__main__":
     unittest.main()
