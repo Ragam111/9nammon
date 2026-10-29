@@ -6,6 +6,14 @@ Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไ�
 
 ## [Unreleased]
 
+### Fixed
+- **Installer disk space pre-check** (`installer_gui.py`) — ตรวจพื้นที่ว่างก่อนดาวน์โหลด
+  (ต้องมี ≥ 300 MB) → fail-fast พร้อมข้อความช่วย recovery แทนให้ user เจอ
+  "Cannot create ... Not enough space on the disk" กลางคัน (user เจอ 118 errors
+  ตอน extract บน Desktop ที่เต็ม)
+- README: เพิ่ม section ".exe ไฟล์เดียว" ขึ้นเป็นวิธีติดตั้งที่แนะนำที่สุด +
+  warning สำหรับคน extract zip ที่ดิสก์เต็ม
+
 ### Added
 - **เวลาเปิด-ปิดเซิร์ฟเวอร์ตามเวลาไทย** (`app/schedule_gate.py`) — ปิดเซิร์ฟเวอร์
   ตามตารางเวลา เพื่อประหยัดค่า cloud/ไฟ ตอนลูกค้าไม่ค่อยใช้

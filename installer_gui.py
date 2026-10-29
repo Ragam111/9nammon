@@ -26,6 +26,10 @@ from pathlib import Path
 
 ZIP_URL = "https://github.com/Ragam111/9nammon/archive/refs/heads/main.zip"
 APP_NAME = "Local Code Assistant"
+# ขนาดดิสก์ขั้นต่ำที่ต้องมีก่อนติดตั้ง (bytes) — zip ~2 MB + extracted ~30 MB + buffer
+# ตั้ง 300 MB เผื่อ Python packages ตอนรัน + log + workspace ของ agent (user เจอ 118 errors
+# ตอน extract บน Desktop ที่เต็ม — fail-fast ที่นี่แทนให้ user เจอกลางคัน)
+MIN_FREE_DISK_BYTES = 300 * 1024 * 1024
 # ของที่ต้องคัดลอกจากซอร์สที่แตกออกมาไปยังโฟลเดอร์ติดตั้ง
 COPY_DIRS = ("app", "sysmanager")
 COPY_FILES = ("server.py", "local_coder.py", "lca.bat", "lca-web.bat", "start-lca.bat",
@@ -36,6 +40,26 @@ COPY_FILES = ("server.py", "local_coder.py", "lca.bat", "lca-web.bat", "start-lc
 def default_install_dir() -> str:
     base = os.environ.get("LOCALAPPDATA") or str(Path.home())
     return str(Path(base) / "LocalCodeAssistant")
+
+
+def check_free_disk(install_dir: str, min_bytes: int = MIN_FREE_DISK_BYTES) -> tuple:
+    """ตรวจพื้นที่ว่างของดิสก์ที่จะติดตั้ง — คืน (ok, free_bytes, message)
+    หา parent ที่มีอยู่จริง (ยังไม่สร้างโฟลเดอร์) เพื่อเรียก shutil.disk_usage"""
+    p = Path(install_dir).resolve()
+    # หา parent ที่มีอยู่จริง (โฟลเดอร์เป้ายังไม่ถูกสร้าง)
+    probe = p
+    while not probe.exists() and probe.parent != probe:
+        probe = probe.parent
+    try:
+        free = shutil.disk_usage(str(probe)).free
+    except OSError as e:
+        return False, 0, f"อ่านพื้นที่ว่างไม่ได้ ({e}) — ตรวจ path อีกครั้ง"
+    if free < min_bytes:
+        need_mb = min_bytes // (1024 * 1024)
+        free_mb = free // (1024 * 1024)
+        return False, free, (f"พื้นที่ว่างไม่พอ: ต้องมี {need_mb} MB แต่เหลือ {free_mb} MB "
+                             f"บนดิสก์นี้. ลบไฟล์เก่า/ย้าย Downloads หรือเลือกไดร์ฟอื่น")
+    return True, free, ""
 
 
 def _find_src_root(extract_dir: Path) -> Path:
@@ -53,6 +77,12 @@ def do_install(install_dir: str, make_desktop_icon: bool, progress_cb,
     """ติดตั้งจริง — เรียก progress_cb(percent, ข้อความ) ระหว่างทาง. โยน exception ถ้าพัง
     progress_cb: ฟังก์ชัน(int 0-100, str)
     use_tray=True → ไอคอน Desktop ชี้ไปที่ lca-tray.bat (รันเบื้องหลัง + system tray)"""
+    # Pre-check: พื้นที่ดิสก์พอไหม — fail-fast กัน user เจอ error กลางคัน (118 errors
+    # จาก WinRAR ตอน extract บน Desktop เต็ม)
+    progress_cb(2, "ตรวจพื้นที่ดิสก์...")
+    ok, _, msg = check_free_disk(install_dir)
+    if not ok:
+        raise RuntimeError(msg)
     install_path = Path(install_dir)
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
