@@ -4,12 +4,14 @@ mock การดาวน์โหลด (urlretrieve) ด้วย zip ปล�
 progress ถึง 100 + สร้าง start-lca.bat + desktop icon. ไม่ import tkinter (อยู่ใน launch_gui เท่านั้น)
 """
 
+import os
 import sys
 import tempfile
 import unittest
 import zipfile
 from pathlib import Path
 from unittest import mock
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -24,6 +26,8 @@ def _make_fake_zip(zip_path: Path):
         zf.writestr("9nammon-main/app/__init__.py", "")
         zf.writestr("9nammon-main/app/model_backend.py", "# backend\n")
         zf.writestr("9nammon-main/sysmanager/__init__.py", "")
+        zf.writestr("9nammon-main/lca-tray.bat", "@echo tray\n")
+        zf.writestr("9nammon-main/lca-tray.ps1", "# tray\n")
 
 
 class InstallerLogicTest(unittest.TestCase):
@@ -56,6 +60,13 @@ class InstallerLogicTest(unittest.TestCase):
         # progress ไปถึง 100
         self.assertEqual(seen[-1], 100)
 
+    def test_install_copies_tray_files(self):
+        with mock.patch.object(installer_gui.urllib.request, "urlretrieve", self._fake_urlretrieve):
+            installer_gui.do_install(str(self.install_dir), make_desktop_icon=False,
+                                     progress_cb=lambda p, m: None)
+        self.assertTrue((self.install_dir / "lca-tray.bat").exists())
+        self.assertTrue((self.install_dir / "lca-tray.ps1").exists())
+
     def test_desktop_icon_created_when_requested(self):
         desktop = self.base / "Desktop"
         desktop.mkdir()
@@ -67,6 +78,17 @@ class InstallerLogicTest(unittest.TestCase):
         self.assertEqual(len(icons), 1)
         self.assertIn("start-lca.bat", icons[0].read_text(encoding="utf-8"))
 
+    def test_desktop_icon_use_tray_points_to_tray_bat(self):
+        desktop = self.base / "Desktop"
+        desktop.mkdir()
+        with mock.patch.object(installer_gui.urllib.request, "urlretrieve", self._fake_urlretrieve), \
+             mock.patch.dict(installer_gui.os.environ, {"USERPROFILE": str(self.base)}):
+            installer_gui.do_install(str(self.install_dir), make_desktop_icon=True,
+                                     progress_cb=lambda p, m: None, use_tray=True)
+        icons = list(desktop.glob("*.bat"))
+        self.assertEqual(len(icons), 1)
+        self.assertIn("lca-tray.bat", icons[0].read_text(encoding="utf-8"))
+
     def test_find_src_root_handles_github_folder(self):
         with tempfile.TemporaryDirectory() as t:
             t = Path(t)
@@ -76,6 +98,119 @@ class InstallerLogicTest(unittest.TestCase):
 
     def test_default_install_dir_nonempty(self):
         self.assertTrue(installer_gui.default_install_dir())
+
+
+class DefaultInstallDirTest(unittest.TestCase):
+    def test_uses_localappdata_when_set(self):
+        with patch.dict(os.environ, {"LOCALAPPDATA": r"C:\Users\Nam\AppData\Local"}):
+            result = installer_gui.default_install_dir()
+            self.assertIn("LocalCodeAssistant", result)
+            self.assertIn("AppData", result)
+
+    def test_falls_back_to_home_when_no_localappdata(self):
+        with patch.dict(os.environ, {}, clear=True):
+            os.environ.pop("LOCALAPPDATA", None)
+            result = installer_gui.default_install_dir()
+            self.assertIn("LocalCodeAssistant", result)
+
+
+class FindSrcRootTest(unittest.TestCase):
+    def test_finds_direct(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            (p / "server.py").write_text("# server", encoding="utf-8")
+            self.assertEqual(installer_gui._find_src_root(p), p)
+
+    def test_raises_when_no_server_py(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            (p / "random.txt").write_text("x", encoding="utf-8")
+            with self.assertRaises(RuntimeError):
+                installer_gui._find_src_root(p)
+
+
+class EnsureStartLauncherTest(unittest.TestCase):
+    def test_creates_launcher_when_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            installer_gui._ensure_start_launcher(p)
+            self.assertTrue((p / "start-lca.bat").exists())
+
+    def test_keeps_existing_launcher(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            marker = "USER CUSTOM LAUNCHER"
+            (p / "start-lca.bat").write_text(marker, encoding="utf-8")
+            installer_gui._ensure_start_launcher(p)
+            self.assertIn("USER CUSTOM LAUNCHER",
+                          (p / "start-lca.bat").read_text(encoding="utf-8"))
+
+    def test_launcher_contents(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            installer_gui._ensure_start_launcher(p)
+            content = (p / "start-lca.bat").read_text(encoding="utf-8")
+            self.assertIn("python", content.lower())
+            self.assertIn("server.py", content)
+
+
+class MakeDesktopIconTest(unittest.TestCase):
+    def test_no_desktop_dir_no_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            fake_home = Path(tmp) / "fake-home-no-desktop"
+            fake_home.mkdir()
+            with patch.dict(os.environ, {"USERPROFILE": str(fake_home)}):
+                installer_gui._make_desktop_icon(p)  # must not raise
+
+    def test_prefers_desktop_bat(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            home = Path(tmp) / "home"
+            desktop = home / "Desktop"
+            desktop.mkdir(parents=True)
+            (p / "lca-desktop.bat").write_text("@echo", encoding="utf-8")
+            (p / "start-lca.bat").write_text("@echo", encoding="utf-8")
+            with patch.dict(os.environ, {"USERPROFILE": str(home)}):
+                installer_gui._make_desktop_icon(p, use_tray=False)
+            shortcut = desktop / "เปิด Local Code Assistant.bat"
+            self.assertTrue(shortcut.exists())
+            self.assertIn("lca-desktop.bat", shortcut.read_text(encoding="utf-8"))
+
+    def test_use_tray_picks_tray_bat(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            home = Path(tmp) / "home"
+            desktop = home / "Desktop"
+            desktop.mkdir(parents=True)
+            (p / "lca-tray.bat").write_text("@echo", encoding="utf-8")
+            (p / "lca-desktop.bat").write_text("@echo", encoding="utf-8")
+            with patch.dict(os.environ, {"USERPROFILE": str(home)}):
+                installer_gui._make_desktop_icon(p, use_tray=True)
+            shortcut = desktop / "เปิด Local Code Assistant.bat"
+            self.assertIn("lca-tray.bat", shortcut.read_text(encoding="utf-8"))
+
+    def test_fallback_to_start_lca(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            home = Path(tmp) / "home"
+            desktop = home / "Desktop"
+            desktop.mkdir(parents=True)
+            (p / "start-lca.bat").write_text("@echo", encoding="utf-8")
+            with patch.dict(os.environ, {"USERPROFILE": str(home)}):
+                installer_gui._make_desktop_icon(p, use_tray=True)
+            shortcut = desktop / "เปิด Local Code Assistant.bat"
+            self.assertIn("start-lca.bat", shortcut.read_text(encoding="utf-8"))
+
+
+class CopyManifestTest(unittest.TestCase):
+    def test_tray_files_in_copy_list(self):
+        self.assertIn("lca-tray.bat", installer_gui.COPY_FILES)
+        self.assertIn("lca-tray.ps1", installer_gui.COPY_FILES)
+
+    def test_essential_files_in_copy_list(self):
+        self.assertIn("server.py", installer_gui.COPY_FILES)
+        self.assertIn("start-lca.bat", installer_gui.COPY_FILES)
 
 
 if __name__ == "__main__":

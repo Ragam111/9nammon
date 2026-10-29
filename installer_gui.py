@@ -29,7 +29,8 @@ APP_NAME = "Local Code Assistant"
 # ของที่ต้องคัดลอกจากซอร์สที่แตกออกมาไปยังโฟลเดอร์ติดตั้ง
 COPY_DIRS = ("app", "sysmanager")
 COPY_FILES = ("server.py", "local_coder.py", "lca.bat", "lca-web.bat", "start-lca.bat",
-              "lca-desktop.bat", "install.ps1", "requirements.txt", "README.md")
+              "lca-desktop.bat", "lca-tray.bat", "lca-tray.ps1",
+              "install.ps1", "requirements.txt", "README.md")
 
 
 def default_install_dir() -> str:
@@ -47,9 +48,11 @@ def _find_src_root(extract_dir: Path) -> Path:
     raise RuntimeError("ไม่พบ server.py ในไฟล์ที่ดาวน์โหลด")
 
 
-def do_install(install_dir: str, make_desktop_icon: bool, progress_cb) -> None:
+def do_install(install_dir: str, make_desktop_icon: bool, progress_cb,
+               use_tray: bool = False) -> None:
     """ติดตั้งจริง — เรียก progress_cb(percent, ข้อความ) ระหว่างทาง. โยน exception ถ้าพัง
-    progress_cb: ฟังก์ชัน(int 0-100, str)"""
+    progress_cb: ฟังก์ชัน(int 0-100, str)
+    use_tray=True → ไอคอน Desktop ชี้ไปที่ lca-tray.bat (รันเบื้องหลัง + system tray)"""
     install_path = Path(install_dir)
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
@@ -74,7 +77,7 @@ def do_install(install_dir: str, make_desktop_icon: bool, progress_cb) -> None:
         _ensure_start_launcher(install_path)
         if make_desktop_icon:
             progress_cb(92, "สร้าง icon บน Desktop...")
-            _make_desktop_icon(install_path)
+            _make_desktop_icon(install_path, use_tray=use_tray)
     progress_cb(100, "ติดตั้งเสร็จแล้ว — กด Close ได้เลย")
 
 
@@ -90,13 +93,19 @@ def _ensure_start_launcher(install_path: Path) -> None:
         encoding="utf-8")
 
 
-def _make_desktop_icon(install_path: Path) -> None:
-    """สร้างทางลัดบน Desktop — เปิดโหมดแอป (lca-desktop.bat) ถ้ามี ไม่งั้น start-lca.bat"""
+def _make_desktop_icon(install_path: Path, use_tray: bool = False) -> None:
+    """สร้างทางลัดบน Desktop — ลำดับความต้องการ:
+      use_tray=True + lca-tray.bat → รันเบื้องหลังใน system tray (ไม่มีหน้าต่างค้าง)
+      else lca-desktop.bat → เปิดเป็นหน้าต่างแอป
+      else start-lca.bat → เปิดเซิร์ฟเวอร์ + เบราว์เซอร์"""
     desktop = Path(os.environ.get("USERPROFILE", str(Path.home()))) / "Desktop"
     if not desktop.exists():
         return
-    target = install_path / "lca-desktop.bat"
-    if not target.exists():
+    if use_tray and (install_path / "lca-tray.bat").exists():
+        target = install_path / "lca-tray.bat"
+    elif (install_path / "lca-desktop.bat").exists():
+        target = install_path / "lca-desktop.bat"
+    else:
         target = install_path / "start-lca.bat"
     (desktop / "เปิด Local Code Assistant.bat").write_text(
         f'@echo off\r\ncall "{target}"\r\n', encoding="utf-8")
@@ -110,7 +119,7 @@ def launch_gui():
 
     root = tk.Tk()
     root.title(f"ติดตั้ง {APP_NAME}")
-    root.geometry("520x300")
+    root.geometry("560x340")
     root.resizable(False, False)
 
     tk.Label(root, text=APP_NAME, font=("Segoe UI", 15, "bold")).pack(pady=(16, 2))
@@ -129,6 +138,10 @@ def launch_gui():
 
     icon_var = tk.BooleanVar(value=True)
     tk.Checkbutton(root, text="สร้าง icon บน Desktop", variable=icon_var).pack(anchor="w", padx=20)
+
+    tray_var = tk.BooleanVar(value=True)
+    tk.Checkbutton(root, text="เริ่มใน system tray (เบื้องหลัง — เหมือน Discord/Steam)",
+                   variable=tray_var).pack(anchor="w", padx=20)
 
     bar = ttk.Progressbar(root, length=470, maximum=100)
     bar.pack(pady=(14, 2), padx=20)
@@ -161,7 +174,8 @@ def launch_gui():
         install_btn.config(state="disabled")
         try:
             do_install(dir_var.get().strip() or default_install_dir(),
-                       icon_var.get(), lambda p, m: root.after(0, set_progress, p, m))
+                       icon_var.get(), lambda p, m: root.after(0, set_progress, p, m),
+                       use_tray=tray_var.get())
         except Exception as e:   # pragma: no cover - GUI path
             root.after(0, lambda: (status.config(text=f"ผิดพลาด: {e}", fg="#dc2626"),
                                    install_btn.config(state="normal")))
