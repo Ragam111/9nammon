@@ -22,9 +22,9 @@ $InstallTargetDir = Join-Path $env:LOCALAPPDATA "LocalCodeAssistant"
 
 Write-Host "=== Local Code Assistant v0.1.0 — ตัวติดตั้งออนไลน์ ===" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "** แนะนำ: มี .exe ไฟล์เดียวใน Release แล้ว **" -ForegroundColor Yellow
+Write-Host "** แนะนำ: LCA-Desktop.exe (ก้อนเดียวจริง ไม่ต้องลง Python) **" -ForegroundColor Yellow
 Write-Host "   https://github.com/Ragam111/9nammon/releases/latest" -ForegroundColor Yellow
-Write-Host "   (ดับเบิลคลิก TokenLCAlimit.exe → เสร็จ ไม่ต้องรันสคริปต์)" -ForegroundColor DarkGray
+Write-Host "   ดับเบิลคลิก LCA-Desktop.exe → หน้าต่างแชตเปิดเลย (~10 MB)" -ForegroundColor DarkGray
 Write-Host ""
 Write-Host "สคริปต์นี้จะดาวน์โหลด zip + ติดตั้งแทน (ถ้าไม่โหลด .exe)" -ForegroundColor DarkGray
 Write-Host ""

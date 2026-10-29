@@ -52,17 +52,29 @@
   </header>
 
   <div class="card" style="border-color:var(--accent);">
-    <h2><span class="step">⭐</span>แนะนำที่สุด: ดาวน์โหลด .exe ไฟล์เดียว (Windows)</h2>
-    <p>ไม่ต้องแตก zip ไม่ต้องเทอร์มินัล — ดับเบิลคลิกไฟล์เดียวจบ</p>
+    <h2><span class="step">⭐</span>แนะนำที่สุด: LCA-Desktop.exe — ก้อนเดียวจริง (ไม่ต้องลง Python)</h2>
+    <p>ดับเบิลคลิกไฟล์เดียว → หน้าต่างแชตเปิดเลย เหมือน ChatGPT/Claude Desktop</p>
     <div class="row">
-      <a class="btn" href="https://github.com/Ragam111/9nammon/releases/latest">⬇ โหลด TokenLCAlimit.exe</a>
+      <a class="btn" href="https://github.com/Ragam111/9nammon/releases/latest">⬇ โหลด LCA-Desktop.exe (~10 MB)</a>
       <a class="btn ghost" href="https://github.com/Ragam111/9nammon/actions/workflows/build-exe.yml">หรือจาก Actions artifacts</a>
     </div>
     <ul class="muted" style="margin-top:10px; padding-left:18px; font-size:13px;">
-      <li><b>TokenLCAlimit.exe</b> (~12 MB) — ตัวติดตั้ง GUI: คลิก → เลือกโฟลเดอร์ → แถบวิ่งเขียวเต็ม → Close</li>
-      <li><b>LCA-Desktop.exe</b> (~10 MB) — แอปก้อนเดียว: ดับเบิลคลิก → แชตได้เลย (ฝัง Python + server)</li>
-      <li>ต้องมี <b>Python 3.10+</b> และ <b>Ollama</b> ที่เครื่องปลายทาง (`.exe` เป็น installer/launcher ไม่ได้ฝัง runtime หนัก)</li>
-      <li>ตรวจพื้นที่ดิสก์อัตโนมัติก่อนติดตั้ง (≥ 300 MB) — fail-fast ถ้า Downloads/Desktop เต็ม</li>
+      <li>✅ <b>ฝัง Python runtime + server มาด้วย</b> (ผ่าน <code>pyinstaller --onefile --add-data</code>) → ไม่กระจายไฟล์ ไม่พึ่ง Python ภายนอก</li>
+      <li>✅ ต้องมีแค่ <b>Ollama</b> (local mode) หรือตั้ง <b>API key</b> ที่ <code>/console</code> (cloud mode — ไม่ต้องลง Ollama)</li>
+      <li>ข้อมูลเก็บที่ <code>%LOCALAPPDATA%\\LocalCodeAssistant\\data</code> (bind 127.0.0.1 ไม่หลุดออกเครื่อง)</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2><span class="step">🔧</span>ทางเลือก: TokenLCAlimit.exe — ตัวติดตั้ง GUI (ต้องมี Python)</h2>
+    <p>ถ้ามี Python 3.10+ อยู่แล้ว + อยากติดตั้งเป็นระบบ (ใช้ CLI/server เองได้)</p>
+    <div class="row">
+      <a class="btn ghost" href="https://github.com/Ragam111/9nammon/releases/latest">⬇ โหลด TokenLCAlimit.exe (~12 MB)</a>
+    </div>
+    <ul class="muted" style="margin-top:10px; padding-left:18px; font-size:13px;">
+      <li>ดับเบิลคลิก → GUI → เลือกโฟลเดอร์ → ติดตั้งลง <code>%LOCALAPPDATA%\\LocalCodeAssistant\\</code></li>
+      <li>ตรวจพื้นที่ดิสก์อัตโนมัติ (≥ 300 MB รวม TEMP) — fail-fast ถ้า Downloads/Desktop เต็ม</li>
+      <li>⚠️ <b>ต้องมี Python 3.10+ บนเครื่องปลายทาง</b> (ตัวติดตั้งไม่ได้ฝัง Python)</li>
     </ul>
   </div>
 
