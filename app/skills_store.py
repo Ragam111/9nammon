@@ -40,9 +40,16 @@ def _migrate_v1_to_v2(records: list) -> list:
     return records
 
 
+def _migrate_v2_to_v3(records: list) -> list:
+    """v2→v3: เติม tools_net (เปิด tool เครือข่าย http_get/call_connection) ให้ record เก่า"""
+    for r in records:
+        r.setdefault("tools_net", False)
+    return records
+
+
 # เวอร์ชัน schema ของ skills.json — เพิ่ม migration = ต่อท้าย MIGRATIONS + บวก SCHEMA_VERSION
-SCHEMA_VERSION = 2
-MIGRATIONS = [_migrate_v1_to_v2]   # index 0 = v1→v2
+SCHEMA_VERSION = 3
+MIGRATIONS = [_migrate_v1_to_v2, _migrate_v2_to_v3]   # index 0 = v1→v2, 1 = v2→v3
 
 
 class SkillError(Exception):
@@ -116,7 +123,8 @@ def get(project_root, skill_id: str):
 
 def add(project_root, name: str, system_prompt: str, connection_id: str = "",
         model: str = "", description: str = "", temperature=None,
-        mode: str = MODE_CHAT, max_steps=None, tools_write: bool = False) -> dict:
+        mode: str = MODE_CHAT, max_steps=None, tools_write: bool = False,
+        tools_net: bool = False) -> dict:
     """เพิ่ม skill ใหม่ — คืน record. input ผิด → SkillError.
     mode=agent → skill นี้รันเป็น ReAct (เรียก tools ใน sandbox) แทนตอบแชตตรง.
     tools_write=True → เปิด tool 'เสนอ' (P6) เขียนไฟล์/รันคำสั่ง ต้องรอคนอนุมัติที่ /dev"""
@@ -137,6 +145,7 @@ def add(project_root, name: str, system_prompt: str, connection_id: str = "",
         "mode": _norm_mode(mode),
         "max_steps": _clamp_steps(max_steps),
         "tools_write": bool(tools_write),
+        "tools_net": bool(tools_net),
         "created_at": time.time(),
         "updated_at": time.time(),
     }
@@ -180,6 +189,8 @@ def update(project_root, skill_id: str, fields: dict) -> dict:
             rec["max_steps"] = _clamp_steps(fields["max_steps"], rec.get("max_steps", DEFAULT_MAX_STEPS))
         if "tools_write" in fields:
             rec["tools_write"] = bool(fields["tools_write"])
+        if "tools_net" in fields:
+            rec["tools_net"] = bool(fields["tools_net"])
         rec["updated_at"] = time.time()
         _save(project_root, recs)
         return dict(rec)

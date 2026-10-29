@@ -127,6 +127,55 @@ class AgentLoopTest(unittest.TestCase):
         self.assertEqual(res["final"], "เข้าไม่ได้")
 
 
+class NetToolsTest(unittest.TestCase):
+    """tool เครือข่าย (opt-in): http_get กัน SSRF + call_connection; เปิดเฉพาะเมื่อให้ net_ctx"""
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.sb = tools.Sandbox(self.root)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_ssrf_rejects_scheme(self):
+        with self.assertRaises(tools.ToolError):
+            tools._assert_public_url("ftp://example.com/x")
+
+    def test_ssrf_rejects_loopback(self):
+        with self.assertRaises(tools.ToolError):
+            tools._assert_public_url("http://127.0.0.1/")
+
+    def test_ssrf_rejects_localhost_name(self):
+        with self.assertRaises(tools.ToolError):
+            tools._assert_public_url("http://localhost:8420/api")
+
+    def test_ssrf_rejects_cloud_metadata(self):
+        # 169.254.169.254 = link-local (endpoint metadata ของ cloud) ต้องโดนปฏิเสธ
+        with self.assertRaises(tools.ToolError):
+            tools._assert_public_url("http://169.254.169.254/latest/meta-data/")
+
+    def test_http_get_private_is_tool_error(self):
+        with self.assertRaises(tools.ToolError):
+            tools.http_get("http://10.0.0.1/")
+
+    def test_net_tools_only_with_ctx(self):
+        base = tools.build_registry(self.sb)
+        self.assertNotIn("http_get", base)
+        self.assertNotIn("call_connection", base)
+        net = tools.build_registry(self.sb, net_ctx={"project_root": self.root})
+        self.assertIn("http_get", net)
+        self.assertIn("call_connection", net)
+
+    def test_call_connection_tool_delegates(self):
+        from app import connections
+        orig = connections.chat
+        self.addCleanup(lambda: setattr(connections, "chat", orig))
+        connections.chat = lambda root, cid, messages, **k: "ตอบจากสมองย่อย"
+        reg = tools.build_registry(self.sb, net_ctx={"project_root": self.root})
+        out = reg["call_connection"]({"connection_id": "con-1", "prompt": "hi"})
+        self.assertEqual(out, "ตอบจากสมองย่อย")
+
+
 class AgentBrainOverrideTest(unittest.TestCase):
     """generate_fn = ใช้ "สมอง" ที่ส่งมา (เช่น connection) แทน backend กลาง + extra_system"""
     def setUp(self):

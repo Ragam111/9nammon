@@ -197,10 +197,15 @@
             </select>
           </div>
         </div>
-        <div class="grid two" id="skl-agentcfg" style="display:none">
-          <div class="field"><label>max_steps (1–20)</label><input id="skl-steps" placeholder="6"></div>
-          <div class="field" style="display:flex;align-items:flex-end;padding-bottom:9px">
-            <label class="muted"><input type="checkbox" id="skl-write" style="width:auto"> เปิด tools เขียนไฟล์/รันคำสั่ง (รออนุมัติที่ /dev · P6)</label>
+        <div id="skl-agentcfg" style="display:none">
+          <div class="grid two">
+            <div class="field"><label>max_steps (1–20)</label><input id="skl-steps" placeholder="6"></div>
+            <div class="field" style="display:flex;align-items:flex-end;padding-bottom:9px">
+              <label class="muted"><input type="checkbox" id="skl-write" style="width:auto"> เปิด tools เขียนไฟล์/รันคำสั่ง (รออนุมัติที่ /dev · P6)</label>
+            </div>
+          </div>
+          <div class="field">
+            <label class="muted"><input type="checkbox" id="skl-net" style="width:auto"> เปิด tools เครือข่าย (http_get / call_connection) — ⚠️ ผิวสัมผัสความปลอดภัยสูง, กัน SSRF แล้ว</label>
           </div>
         </div>
         <div class="field"><label>system prompt</label><textarea id="skl-prompt" placeholder="คุณคือผู้ช่วย..."></textarea></div>
@@ -495,7 +500,7 @@
   function syncSkillMode(){ $("skl-agentcfg").style.display = $("skl-mode").value==="agent" ? "grid" : "none"; }
   $("skl-mode").addEventListener("change", syncSkillMode);
   function sklReset(){ ["skl-id","skl-name","skl-desc","skl-model","skl-temp","skl-steps","skl-prompt"].forEach(function(i){$(i).value="";});
-    $("skl-conn").value=""; $("skl-mode").value="chat"; $("skl-write").checked=false; syncSkillMode(); }
+    $("skl-conn").value=""; $("skl-mode").value="chat"; $("skl-write").checked=false; $("skl-net").checked=false; syncSkillMode(); }
   $("skl-reset").addEventListener("click", sklReset);
   $("skl-save").addEventListener("click", async function(){
     showErr("");
@@ -503,7 +508,8 @@
     var body={ name:$("skl-name").value, description:$("skl-desc").value,
       connection_id:$("skl-conn").value, model:$("skl-model").value,
       temperature:$("skl-temp").value, system_prompt:$("skl-prompt").value,
-      mode:$("skl-mode").value, max_steps:$("skl-steps").value, tools_write:$("skl-write").checked };
+      mode:$("skl-mode").value, max_steps:$("skl-steps").value,
+      tools_write:$("skl-write").checked, tools_net:$("skl-net").checked };
     try{
       if(id){ body.id=id; await api("/api/skills/update","POST",body); }
       else { await api("/api/skills","POST",body); }
@@ -517,7 +523,7 @@
       $("skl-desc").value=s.description||""; $("skl-conn").value=s.connection_id||"";
       $("skl-model").value=s.model||""; $("skl-temp").value=s.temperature==null?"":s.temperature;
       $("skl-mode").value=s.mode||"chat"; $("skl-steps").value=s.max_steps||"";
-      $("skl-write").checked=!!s.tools_write; syncSkillMode();
+      $("skl-write").checked=!!s.tools_write; $("skl-net").checked=!!s.tools_net; syncSkillMode();
       $("skl-prompt").value=s.system_prompt||""; window.scrollTo(0,0); }
     else if(b.dataset.act==="del"&&s){ if(!confirm("ลบ skill "+s.name+"?")) return;
       try{ await api("/api/skills/delete","POST",{id:id}); await loadSkills(); }catch(e){ showErr(e.message); } }

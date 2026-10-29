@@ -57,6 +57,12 @@ Skill = system prompt + ผูก connection (สมอง) + model + temperatur
 - `max_steps` (1–20, ดีฟอลต์ 6) — กันลูปยาวเกิน
 - `tools_write` (bool) — เปิด tool **เสนอ** เขียนไฟล์/รันคำสั่ง (P6): agent เสนอได้ แต่
   **ไม่ลงมือจริงจนกว่าคนจะกดอนุมัติที่ `/dev`** (ดู `docs/` P6)
+- `tools_net` (bool) — เปิด tool **เครือข่าย** (opt-in, ผิวสัมผัสความปลอดภัยสูง):
+  - `http_get(url)` — ดึง URL สาธารณะ (GET) มีด่าน **กัน SSRF** ปฏิเสธ IP ภายใน/loopback/
+    link-local (เช่น 169.254.169.254 metadata ของ cloud) + timeout + ตัดขนาด
+  - `call_connection(connection_id, prompt)` — ถามสมอง (connection) อีกตัวเป็น sub-tool
+  - ซื่อตรง: ด่าน SSRF resolve ตอนเช็ก แต่ urllib resolve ซ้ำตอน fetch → เหลือ residual risk
+    (DNS rebinding) เล็กน้อย เป็น opt-in ให้ operator ที่เชื่อถือเปิดเองเท่านั้น
 
 **sandbox ของ agent:** จำกัดอยู่ใต้ `agent_workspace/` (ใต้ project root) เท่านั้น —
 bot ที่ automation ยิงเข้ามา **อ่าน repo/`config.json` (secret) ไม่ได้**. tools อ่าน-อย่างเดียว
@@ -116,8 +122,8 @@ bot ที่ skill เป็นโหมด `agent` จะคืน `steps[]` (
 - **ไม่ downgrade** ไฟล์ที่เขียนด้วยโค้ดใหม่กว่า (กันข้อมูลหาย)
 - ไฟล์พัง → degrade เป็นว่าง ไม่ crash
 
-ตัวอย่างจริง: `skills.json` อยู่ที่ **v2** — migration `v1→v2` เติม field โหมด agent
-(`mode`/`max_steps`/`tools_write`) ให้ record เก่าที่สร้างก่อนมีโหมด agent โดยไม่ต้องแก้มือ
+ตัวอย่างจริง: `skills.json` อยู่ที่ **v3** — `v1→v2` เติม field โหมด agent
+(`mode`/`max_steps`/`tools_write`), `v2→v3` เติม `tools_net` ให้ record เก่า โดยไม่ต้องแก้มือ
 
 **เพิ่ม migration ใหม่:** เขียนฟังก์ชัน `records -> records` ต่อท้าย `MIGRATIONS` แล้วบวก
 `SCHEMA_VERSION` ของ store นั้น — index 0 = v1→v2, index 1 = v2→v3, ... (รองรับ **เพิ่ม/ตัด/
@@ -133,11 +139,10 @@ bot ที่ skill เป็นโหมด `agent` จะคืน `steps[]` (
 
 ## ยังไม่ได้ทำ (รอบถัดไป)
 
-- **streaming** คำตอบของ bot/playground (ตอนนี้ตอบทีเดียว) — `model_backend` มี
-  `generate_stream` อยู่แล้ว ต่อเข้า SSE ได้
-- **usage metering** ต่อ connection (นับ token/ราคาแบบที่ TokenMe โชว์) — ต่อกับ `app/usage_store.py`
-- tool ชุดกว้างขึ้นสำหรับ agent (ค้นเว็บ/เรียก connection อื่นเป็น sub-tool)
+- **web_search** tool สำหรับ agent (ค้นเว็บจริง) — เลื่อนไว้เพราะ `app/web_search.py` มี import
+  quirk (`from config_manager`) ที่ต้องแก้ก่อน reuse ผ่าน `app.` (ตอนนี้ agent ใช้ `http_get` แทนได้)
+- token ที่ **แม่นจริง** จาก provider (แทนค่าประมาณ) — ต้องให้ backend คืน field `usage`
 
-> ✅ **ทำแล้ว:** bot แบบ **agent (ReAct + tools)** — ตั้ง skill `mode=agent` แล้ว bot จะวิ่ง
-> ReAct ผ่าน `app/agent/core.py` โดยใช้ connection เป็น "สมอง", sandbox ที่ `agent_workspace/`,
-> และเสียบ P6 approval ได้ด้วย `tools_write`
+> ✅ **ทำแล้ว:** bot แบบ **agent (ReAct + tools)** (`mode=agent`, sandbox `agent_workspace/`,
+> P6 approval ด้วย `tools_write`, tool เครือข่าย `http_get`/`call_connection` ด้วย `tools_net`),
+> **Streaming** (Playground + Bot chat ตอบทีละคำ SSE), **Usage** (Observability ต่อ connection)

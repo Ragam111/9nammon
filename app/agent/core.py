@@ -50,7 +50,7 @@ def _parse(reply: str) -> dict:
 
 def run(project_root, task: str, workspace, model: str = DEFAULT_MODEL,
         max_steps: int = DEFAULT_MAX_STEPS, allowed_commands=None, approvals_root=None,
-        generate_fn=None, extra_system: str = None) -> dict:
+        generate_fn=None, extra_system: str = None, net_ctx=None) -> dict:
     """รัน agent 1 งาน — คืน {final, steps:[...], stopped_reason}
     - workspace: โฟลเดอร์ที่ agent ทำงานได้ (sandbox confine ไว้)
     - approvals_root: ถ้าให้มา → เปิด tool 'เสนอ' (P6) เขียนไฟล์/รันคำสั่งที่ต้องรอคนอนุมัติ
@@ -63,10 +63,12 @@ def run(project_root, task: str, workspace, model: str = DEFAULT_MODEL,
     if not task:
         raise ValueError("ต้องระบุ task")
     sb = tools_mod.Sandbox(workspace, allowed_commands or tools_mod.DEFAULT_ALLOWED_COMMANDS)
-    registry = tools_mod.build_registry(sb, approvals_root=approvals_root)
+    registry = tools_mod.build_registry(sb, approvals_root=approvals_root, net_ctx=net_ctx)
     schemas = list(tools_mod.TOOL_SCHEMAS)
     if approvals_root is not None:
         schemas = schemas + tools_mod.PROPOSE_SCHEMAS
+    if net_ctx is not None:
+        schemas = schemas + tools_mod.NET_SCHEMAS
     # เลือกสมอง: generate_fn ที่ส่งมา (เช่น connection ของ bot) หรือ backend ตาม config (เดิม)
     gen = generate_fn if generate_fn is not None else \
         (lambda msgs: model_backend.generate(project_root, model, msgs))
