@@ -256,6 +256,29 @@ def chat_stream(project_root, conn_id: str, messages: list, model: str = "",
     return _gen()
 
 
+def chat_stream(project_root, conn_id: str, messages: list, model: str = "",
+                options: dict = None):
+    """เหมือน chat แต่ yield คำตอบทีละ chunk (generator) — ให้ Playground/Bot เห็นคำตอบ
+    ทยอยขึ้น (SSE). enabled=False/ไม่พบ/ไม่มี model → ConnectionError (ก่อนเริ่ม yield)."""
+    rec = get(project_root, conn_id, raw=True)
+    if rec is None:
+        raise ConnectionError("ไม่พบ connection นี้")
+    if not rec.get("enabled", True):
+        raise ConnectionError(f"connection {rec.get('name')!r} ถูกปิดอยู่")
+    use_model = (model or "").strip() or rec.get("model", "")
+    if not use_model:
+        raise ConnectionError("ต้องระบุ model (connection นี้ไม่ได้ตั้ง default model ไว้)")
+    backend = _backend_for(rec)
+
+    def _gen():
+        try:
+            for chunk in backend.generate_stream(use_model, messages, options=options):
+                yield chunk
+        except model_backend.BackendError as e:
+            raise ConnectionError(str(e)) from e
+    return _gen()
+
+
 def make_generate_fn(project_root, conn_id: str, model: str = "", options: dict = None):
     """คืน callable(messages)->str ที่ยิงไปสมองของ connection นี้ — ให้ agent ReAct (core.run)
     ใช้ connection ที่เลือกเป็น "สมอง" แทน backend กลาง (ไม่ผูก MODEL_BACKEND)"""
