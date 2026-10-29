@@ -415,6 +415,18 @@ class ServerPagesTest(unittest.TestCase):
         self.assertIn(b"/api/bots/run/stream", page)
         self.assertIn(b"apiStream", page)
 
+    def test_connections_usage_endpoint(self):
+        # Observability: สรุป usage ต่อ connection (local=CEO → 200, เริ่มต้นว่าง)
+        import json as _json
+        st, _, _, body = self._get("/api/connections/usage")
+        self.assertEqual(st, 200)
+        data = _json.loads(body)["usage"]
+        self.assertIn("totals", data)
+        self.assertEqual(data["totals"]["requests"], 0)
+        # หน้า Console มีแท็บ Usage ที่เรียก endpoint นี้
+        _, _, _, page = self._get("/console")
+        self.assertIn(b"/api/connections/usage", page)
+
     def test_unknown_route_404(self):
         st, _, _, _ = self._get("/does-not-exist")
         self.assertEqual(st, 404)

@@ -97,6 +97,7 @@
       <button data-p="skills"><span class="ic">✦</span> Skills <span class="count" id="c-skills">0</span></button>
       <button data-p="bots"><span class="ic">🤖</span> Bots <span class="count" id="c-bots">0</span></button>
       <button data-p="playground"><span class="ic">▶</span> Playground</button>
+      <button data-p="usage"><span class="ic">📊</span> Usage</button>
     </nav>
     <div class="navlbl">Links</div>
     <nav class="nav">
@@ -253,6 +254,28 @@
       </div>
     </section>
 
+    <!-- USAGE -->
+    <section class="panel" id="p-usage">
+      <div class="card">
+        <div class="row" style="justify-content:space-between">
+          <div><h2 style="margin:0">Observability</h2>
+            <p class="sub" style="margin:2px 0 0">requests / tokens / ค่าใช้จ่ายต่อสมอง (connection)</p></div>
+          <button class="btn sm" onclick="loadUsage()">รีเฟรช</button>
+        </div>
+        <div class="tiles" style="margin-top:14px">
+          <div class="tile"><div class="n" id="u-req">–</div><div class="l">Requests</div></div>
+          <div class="tile"><div class="n" id="u-tok">–</div><div class="l">Total tokens</div></div>
+          <div class="tile"><div class="n" id="u-in">–</div><div class="l">Input tokens</div></div>
+          <div class="tile"><div class="n" id="u-cost">–</div><div class="l">Est. cost (USD)</div></div>
+        </div>
+        <p class="sub" style="margin:12px 0 0">⚠️ token เป็น <b>ค่าประมาณ</b> (~chars/4) + cost เป็นประมาณการ ไม่ใช่ตัวเลขที่ provider เรียกเก็บจริง</p>
+      </div>
+      <div class="card">
+        <h2 style="margin:0 0 12px">ต่อ connection</h2>
+        <div id="u-table" class="muted">กด "เชื่อมต่อ" ด้านบนก่อน</div>
+      </div>
+    </section>
+
     <!-- PLAYGROUND -->
     <section class="panel" id="p-playground">
       <div class="card">
@@ -319,7 +342,7 @@
   }
 
   // ---------- nav ----------
-  var PANELS=["overview","connections","skills","bots","playground"];
+  var PANELS=["overview","connections","skills","bots","playground","usage"];
   function go(p){
     PANELS.forEach(function(x){
       $("p-"+x).classList.toggle("show", x===p);
@@ -350,7 +373,32 @@
     await loadConnections();
     await loadSkills();
     await loadBots();
+    await loadUsage();
   }
+
+  // ---------- usage (Observability) ----------
+  window.loadUsage = async function(){
+    var u;
+    try{ var d=await api("/api/connections/usage"); u=d.usage; }
+    catch(e){ showErr(e.message); $("u-table").textContent="โหลดไม่ได้"; return; }
+    var t=u.totals||{};
+    $("u-req").textContent = t.requests||0;
+    $("u-tok").textContent = (t.total_tokens||0).toLocaleString();
+    $("u-in").textContent = (t.input_tokens||0).toLocaleString();
+    $("u-cost").textContent = "$"+(t.est_cost||0).toFixed(4);
+    var rows=(u.connections||[]);
+    if(!rows.length){ $("u-table").innerHTML='<p class="muted">ยังไม่มีการใช้งาน — ลองยิง Playground หรือรัน Bot</p>'; return; }
+    var html=rows.map(function(c){
+      var cn=CONNS.find(function(x){return x.id===c.conn_id;});
+      return "<tr><td><b>"+esc(c.conn_name||(cn?cn.name:c.conn_id)||"?")+"</b></td>"+
+        "<td>"+esc(c.requests)+"</td>"+
+        "<td>"+esc((c.input_tokens||0).toLocaleString())+"</td>"+
+        "<td>"+esc((c.output_tokens||0).toLocaleString())+"</td>"+
+        "<td>"+esc((c.total_tokens||0).toLocaleString())+"</td>"+
+        "<td>$"+esc((c.est_cost||0).toFixed(4))+"</td></tr>";
+    }).join("");
+    $("u-table").innerHTML="<table><thead><tr><th>connection</th><th>requests</th><th>input</th><th>output</th><th>total</th><th>est.cost</th></tr></thead><tbody>"+html+"</tbody></table>";
+  };
 
   // ---------- connections ----------
   function kindPill(k){ return '<span class="pill '+esc(k)+'">'+esc(k)+'</span>'; }

@@ -27,6 +27,7 @@ from pathlib import Path
 
 from app import model_backend
 from app import store_schema
+from app import conn_usage
 
 STORE_FILE = "connections.json"
 SCHEMA_VERSION = 1       # ยังไม่เคยเปลี่ยน schema — baseline
@@ -217,9 +218,13 @@ def chat(project_root, conn_id: str, messages: list, model: str = "",
         raise ConnectionError("ต้องระบุ model (connection นี้ไม่ได้ตั้ง default model ไว้)")
     backend = _backend_for(rec)
     try:
-        return backend.generate(use_model, messages, options=options)
+        out = backend.generate(use_model, messages, options=options)
     except model_backend.BackendError as e:
         raise ConnectionError(str(e)) from e
+    conn_usage.record_usage(project_root, rec["id"], rec.get("name", ""),
+                            conn_usage.estimate_messages_tokens(messages),
+                            conn_usage.estimate_tokens(out))
+    return out
 
 
 def chat_stream(project_root, conn_id: str, messages: list, model: str = "",
@@ -237,11 +242,17 @@ def chat_stream(project_root, conn_id: str, messages: list, model: str = "",
     backend = _backend_for(rec)
 
     def _gen():
+        out_parts = []
         try:
             for chunk in backend.generate_stream(use_model, messages, options=options):
+                out_parts.append(chunk)
                 yield chunk
         except model_backend.BackendError as e:
             raise ConnectionError(str(e)) from e
+        # นับ usage หลังสตรีมจบครบ (พังกลางคัน = ไม่นับ)
+        conn_usage.record_usage(project_root, rec["id"], rec.get("name", ""),
+                                conn_usage.estimate_messages_tokens(messages),
+                                conn_usage.estimate_tokens("".join(out_parts)))
     return _gen()
 
 
