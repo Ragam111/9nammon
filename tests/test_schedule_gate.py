@@ -106,6 +106,9 @@ class ClampHourTest(unittest.TestCase):
 
 
 class ConfigReadTest(unittest.TestCase):
+    def setUp(self):
+        schedule_gate.invalidate_cache()  # กัน cache ข้ามเทสหลัง optimization
+
     def test_disabled_by_default(self):
         with tempfile.TemporaryDirectory() as tmp:
             self.assertFalse(schedule_gate.enabled(Path(tmp)))
@@ -145,7 +148,54 @@ class ConfigReadTest(unittest.TestCase):
             self.assertEqual(close_h, 22)
 
 
+class CacheTest(unittest.TestCase):
+    """optimization: enabled()/window_hours() ควรใช้ cache ใน hot path"""
+
+    def setUp(self):
+        schedule_gate.invalidate_cache()
+
+    def test_cache_hits_second_call(self):
+        """second call ภายใน TTL ไม่ควรอ่าน config ใหม่"""
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            (p / "config.json").write_text(json.dumps({"SCHEDULE_ENABLED": "true"}),
+                                           encoding="utf-8")
+            # เรียกครั้งแรก — ตรวจ True
+            self.assertTrue(schedule_gate.enabled(p))
+            # แก้ config เป็น false — ถ้า cache ทำงานถูก ต้องยังอ่าน True (cached)
+            (p / "config.json").write_text(json.dumps({"SCHEDULE_ENABLED": "false"}),
+                                           encoding="utf-8")
+            self.assertTrue(schedule_gate.enabled(p))  # cache ยังสด → True
+
+    def test_invalidate_cache_refreshes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            (p / "config.json").write_text(json.dumps({"SCHEDULE_ENABLED": "true"}),
+                                           encoding="utf-8")
+            self.assertTrue(schedule_gate.enabled(p))
+            (p / "config.json").write_text(json.dumps({"SCHEDULE_ENABLED": "false"}),
+                                           encoding="utf-8")
+            schedule_gate.invalidate_cache()
+            self.assertFalse(schedule_gate.enabled(p))
+
+    def test_window_hours_cached(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            (p / "config.json").write_text(
+                json.dumps({"SCHEDULE_OPEN_HOUR": 7, "SCHEDULE_CLOSE_HOUR": 19}),
+                encoding="utf-8")
+            self.assertEqual(schedule_gate.window_hours(p), (7, 19))
+            # แก้ config — ยังควร return cached
+            (p / "config.json").write_text(
+                json.dumps({"SCHEDULE_OPEN_HOUR": 8, "SCHEDULE_CLOSE_HOUR": 22}),
+                encoding="utf-8")
+            self.assertEqual(schedule_gate.window_hours(p), (7, 19))
+
+
 class StatusTest(unittest.TestCase):
+    def setUp(self):
+        schedule_gate.invalidate_cache()
+
     def test_status_when_disabled(self):
         with tempfile.TemporaryDirectory() as tmp:
             info = schedule_gate.status(Path(tmp))

@@ -19,6 +19,7 @@ MASTER_TOKEN = "master-token-for-test"
 
 class ScheduleGateIntegrationTest(unittest.TestCase):
     def setUp(self):
+        schedule_gate.invalidate_cache()  # กัน cache ข้ามเทส (optimization: TTL cache)
         self._tmp = tempfile.TemporaryDirectory()
         self.root = Path(self._tmp.name)
         # ตั้ง auth_token เพื่อให้ anonymous request ไม่ fallback เป็น CEO
