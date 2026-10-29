@@ -24,6 +24,10 @@ powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercon
 - **เฝ้าระบบ 24/7 + rollback config** — เตือนเมื่อผิดปกติ, ย้อนเวอร์ชันได้เมื่อ incident
 - **เสียบ cloud GPU ได้** — สลับ backend เป็น OpenAI-compatible endpoint จากหน้า `/dev`
 - **Console ต่อสมอง AI ภายนอก (`/console`)** — ต่อ OpenAI-compatible (TokenMe/vLLM/cloud) หรือ Ollama หลายตัว → ทำ **Skills** (prompt สำเร็จรูป) → เปิดเป็น **Bots** ให้ n8n ยิง `POST /api/bots/run` (ดู `docs/CONSOLE_PLATFORM.md`)
+- **System tray installer** — ติดตั้งปุ๊บแล้วอยู่ใน tray เหมือน Discord/Steam (ดู `docs/TRAY_INSTALLER.md`)
+- **เวลาเปิด-ปิดเซิร์ฟเวอร์** (schedule gate) — ปิด server นอกเวลาทำการเพื่อประหยัดค่า cloud/ไฟ, แจ้งลูกค้าผ่าน `GET /api/status`
+
+> **เวอร์ชันล่าสุด:** ดู `CHANGELOG.md` (อัพเดตทุก PR cycle)
 
 > เอกสารเพิ่มเติม: `docs/CLUSTER_FORWARD.md`, `docs/AGENT_TECH_PLAN.md`, `docs/learn/` (ความรู้พื้นฐาน)
 >

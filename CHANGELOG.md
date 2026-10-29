@@ -1,0 +1,45 @@
+# Changelog
+
+เปลี่ยนแปลงของ LCA (Local Code Assistant) — เรียงใหม่สุดบน
+
+Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
+
+## [Unreleased]
+
+### Added
+- **เวลาเปิด-ปิดเซิร์ฟเวอร์ตามเวลาไทย** (`app/schedule_gate.py`) — ปิดเซิร์ฟเวอร์
+  ตามตารางเวลา เพื่อประหยัดค่า cloud/ไฟ ตอนลูกค้าไม่ค่อยใช้
+  - Config: `SCHEDULE_ENABLED`, `SCHEDULE_OPEN_HOUR` (default 6), `SCHEDULE_CLOSE_HOUR` (default 20)
+  - รองรับ window ภายในวัน (6..20) และข้ามเที่ยงคืน (22..6)
+  - CEO/ADMIN bypass → ดูแลระบบตอนปิดได้
+- **`GET /api/status`** (public, ไม่ auth) — แจ้งลูกค้าสถานะ (เปิด/ปิด/เวลาเปลี่ยนสถานะถัดไป)
+  คืน response + `Retry-After` header เมื่อปิด
+- **System tray installer** (`lca-tray.ps1` + `lca-tray.bat`) — ติดตั้งปุ๊บแล้วอยู่
+  ใน system tray เหมือน Discord/Steam (คลิกซ้าย = เปิดแอป, คลิกขวา = เมนู)
+- **764+ unit tests** (จาก 489) — เพิ่ม coverage ให้ 16 modules ที่ยังไม่มีเทส
+
+### Security
+- **Timing-safe token comparison** — ใช้ `hmac.compare_digest` แทน `==` ใน:
+  - `app/auth_backend.py` (`LocalAuthBackend` master_token + `StaticTokenBackend`)
+  - `server.py` (`X-Auth-Token` header)
+  - ป้องกัน timing attack เดา token ทีละ byte
+- **Request body size limit** — cap `_read_json_body` ที่ 2 MiB
+  (ป้องกัน DoS จากการส่ง `Content-Length` ใหญ่ ทำให้ server รอ/จอง RAM จนล้ม)
+
+### PRs
+- #89 — เพิ่ม 124 tests สำหรับ 8 modules
+- #90 — เพิ่ม 136 tests สำหรับ 8 modules เหลือ
+- #91 — system tray installer mode
+- #92 — schedule gate + zero-day security fixes
+
+---
+
+## วิธีอ่าน
+
+- **Added**: ของใหม่
+- **Changed**: ของเดิมที่พฤติกรรมเปลี่ยน (potentially breaking)
+- **Fixed**: บั๊ก
+- **Security**: ช่องโหว่/การเสริมความปลอดภัย
+- **Removed**: ของที่เอาออก
+
+> ไฟล์นี้อัพเดตทุก PR cycle (ตามที่ user สั่ง: "ห้ามลืม update file GitHub แพ็ดใหม่ด้วยครั้งใหม่")
