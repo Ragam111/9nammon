@@ -566,7 +566,7 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 return
             data = self._read_json_body()
             res = bots.run(project_root, data.get("id", ""), data.get("input", ""),
-                           model=data.get("model", ""))
+                           model=data.get("model", ""), workspace=data.get("workspace", "."))
             self._send_json(200, {"result": res})
 
         def _handle_cluster_route(self, parsed):

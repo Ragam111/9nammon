@@ -127,5 +127,37 @@ class AgentLoopTest(unittest.TestCase):
         self.assertEqual(res["final"], "เข้าไม่ได้")
 
 
+class AgentBrainOverrideTest(unittest.TestCase):
+    """generate_fn = ใช้ "สมอง" ที่ส่งมา (เช่น connection) แทน backend กลาง + extra_system"""
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_generate_fn_used_instead_of_backend(self):
+        seen = {"msgs": None, "called": 0}
+
+        def fake_gen(messages):
+            seen["msgs"] = messages
+            seen["called"] += 1
+            return '{"final":"จากสมองภายนอก"}'
+        # ไม่ patch model_backend เลย — ถ้า core ไปเรียก backend กลางจะพังเพราะไม่มี Ollama
+        res = core.run(Path("/tmp"), "ทำงาน", workspace=self.root,
+                       generate_fn=fake_gen, extra_system="คุณคือบอทของบริษัท")
+        self.assertEqual(res["final"], "จากสมองภายนอก")
+        self.assertEqual(seen["called"], 1)
+        # extra_system ต้องถูกใส่เป็น system message เพิ่ม
+        systems = [m["content"] for m in seen["msgs"] if m["role"] == "system"]
+        self.assertTrue(any("บริษัท" in s for s in systems))
+
+    def test_generate_fn_error_propagates(self):
+        def boom(messages):
+            raise RuntimeError("สมองล่ม")
+        with self.assertRaises(RuntimeError):
+            core.run(Path("/tmp"), "ทำงาน", workspace=self.root, generate_fn=boom)
+
+
 if __name__ == "__main__":
     unittest.main()

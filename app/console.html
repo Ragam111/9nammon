@@ -187,7 +187,21 @@
           <div class="field"><label>connection (สมอง)</label><select id="skl-conn"></select></div>
           <div class="field"><label>model (ว่าง = ใช้ของ connection)</label><input id="skl-model" placeholder=""></div>
         </div>
-        <div class="field"><label>temperature (0–2, ว่างได้)</label><input id="skl-temp" placeholder="0.7" style="width:120px"></div>
+        <div class="grid two">
+          <div class="field"><label>temperature (0–2, ว่างได้)</label><input id="skl-temp" placeholder="0.7"></div>
+          <div class="field"><label>โหมด</label>
+            <select id="skl-mode">
+              <option value="chat">chat — ตอบทีเดียว</option>
+              <option value="agent">agent — ReAct + tools (ลงมือทำงาน)</option>
+            </select>
+          </div>
+        </div>
+        <div class="grid two" id="skl-agentcfg" style="display:none">
+          <div class="field"><label>max_steps (1–20)</label><input id="skl-steps" placeholder="6"></div>
+          <div class="field" style="display:flex;align-items:flex-end;padding-bottom:9px">
+            <label class="muted"><input type="checkbox" id="skl-write" style="width:auto"> เปิด tools เขียนไฟล์/รันคำสั่ง (รออนุมัติที่ /dev · P6)</label>
+          </div>
+        </div>
         <div class="field"><label>system prompt</label><textarea id="skl-prompt" placeholder="คุณคือผู้ช่วย..."></textarea></div>
         <div class="row">
           <span class="sp" style="flex:1"></span>
@@ -386,28 +400,37 @@
     if(!SKILLS.length){ $("skl-table").innerHTML='<p class="muted">ยังไม่มี skill</p>'; return; }
     var rows=SKILLS.map(function(s){
       var cn=CONNS.find(function(c){return c.id===s.connection_id;});
+      var mode=s.mode||"chat";
+      var modePill = mode==="agent"
+        ? '<span class="pill openai">agent'+(s.tools_write?" ✎":"")+'</span>'
+        : '<span class="pill off">chat</span>';
       return "<tr><td><b>"+esc(s.name)+"</b><br><span class='muted' style='font-size:11px'>"+esc(s.description||"")+"</span></td>"+
+        "<td>"+modePill+"</td>"+
         "<td>"+esc(cn?cn.name:(s.connection_id||"–"))+"</td>"+
         "<td>"+esc(s.model||"–")+"</td>"+
-        "<td>"+(s.temperature==null?"–":esc(s.temperature))+"</td>"+
+        "<td>"+(mode==="agent"?esc(s.max_steps||6)+" steps":(s.temperature==null?"–":"t="+esc(s.temperature)))+"</td>"+
         "<td class='row'><button class='btn sm' data-act='edit' data-id='"+esc(s.id)+"'>แก้</button>"+
         "<button class='btn sm danger' data-act='del' data-id='"+esc(s.id)+"'>ลบ</button></td></tr>";
     }).join("");
-    $("skl-table").innerHTML="<table><thead><tr><th>ชื่อ</th><th>connection</th><th>model</th><th>temp</th><th></th></tr></thead><tbody>"+rows+"</tbody></table>";
+    $("skl-table").innerHTML="<table><thead><tr><th>ชื่อ</th><th>โหมด</th><th>connection</th><th>model</th><th>cfg</th><th></th></tr></thead><tbody>"+rows+"</tbody></table>";
   };
   function fillSkillSelects(){
     var opts='<option value="">— เลือก skill —</option>'+SKILLS.map(function(s){
       return '<option value="'+esc(s.id)+'">'+esc(s.name)+'</option>'; }).join("");
     ["bot-skill"].forEach(function(id){ var el=$(id); var cur=el.value; el.innerHTML=opts; el.value=cur; });
   }
-  function sklReset(){ ["skl-id","skl-name","skl-desc","skl-model","skl-temp","skl-prompt"].forEach(function(i){$(i).value="";}); $("skl-conn").value=""; }
+  function syncSkillMode(){ $("skl-agentcfg").style.display = $("skl-mode").value==="agent" ? "grid" : "none"; }
+  $("skl-mode").addEventListener("change", syncSkillMode);
+  function sklReset(){ ["skl-id","skl-name","skl-desc","skl-model","skl-temp","skl-steps","skl-prompt"].forEach(function(i){$(i).value="";});
+    $("skl-conn").value=""; $("skl-mode").value="chat"; $("skl-write").checked=false; syncSkillMode(); }
   $("skl-reset").addEventListener("click", sklReset);
   $("skl-save").addEventListener("click", async function(){
     showErr("");
     var id=$("skl-id").value;
     var body={ name:$("skl-name").value, description:$("skl-desc").value,
       connection_id:$("skl-conn").value, model:$("skl-model").value,
-      temperature:$("skl-temp").value, system_prompt:$("skl-prompt").value };
+      temperature:$("skl-temp").value, system_prompt:$("skl-prompt").value,
+      mode:$("skl-mode").value, max_steps:$("skl-steps").value, tools_write:$("skl-write").checked };
     try{
       if(id){ body.id=id; await api("/api/skills/update","POST",body); }
       else { await api("/api/skills","POST",body); }
@@ -420,6 +443,8 @@
     if(b.dataset.act==="edit"&&s){ $("skl-id").value=s.id; $("skl-name").value=s.name;
       $("skl-desc").value=s.description||""; $("skl-conn").value=s.connection_id||"";
       $("skl-model").value=s.model||""; $("skl-temp").value=s.temperature==null?"":s.temperature;
+      $("skl-mode").value=s.mode||"chat"; $("skl-steps").value=s.max_steps||"";
+      $("skl-write").checked=!!s.tools_write; syncSkillMode();
       $("skl-prompt").value=s.system_prompt||""; window.scrollTo(0,0); }
     else if(b.dataset.act==="del"&&s){ if(!confirm("ลบ skill "+s.name+"?")) return;
       try{ await api("/api/skills/delete","POST",{id:id}); await loadSkills(); }catch(e){ showErr(e.message); } }
@@ -470,11 +495,30 @@
     else if(b.dataset.act==="del"&&bt){ if(!confirm("ลบ bot "+bt.name+"?")) return;
       try{ await api("/api/bots/delete","POST",{id:id}); await loadBots(); }catch(e){ showErr(e.message); } }
   });
+  function renderRun(res){
+    var out = (res && res.output) || "(ว่าง)";
+    var html = "";
+    if(res && res.mode==="agent" && res.steps && res.steps.length){
+      html += "<div class='muted' style='font-size:11px;margin-bottom:8px'>โหมด agent · "+
+        esc(res.steps.length)+" ขั้น · จบเพราะ "+esc(res.stopped_reason||"-")+"</div>";
+      html += res.steps.map(function(s, i){
+        if(s.final!=null) return "";
+        if(s.error) return "<div class='muted'>["+(i+1)+"] parse error — ลองใหม่</div>";
+        return "<div style='margin-bottom:6px'><b>["+(i+1)+"]</b> "+esc(s.thought||"")+
+          "<br><span class='muted'>→ "+esc(s.tool||"")+"("+esc(JSON.stringify(s.args||{}))+")</span>"+
+          "<br><span style='color:#9aa0ac'>"+esc((s.observation||"").slice(0,300))+"</span></div>";
+      }).join("");
+      html += "<div style='border-top:1px solid var(--line);margin-top:8px;padding-top:8px'><b>ผลสรุป:</b><br>"+esc(out)+"</div>";
+      $("run-out").innerHTML = html;
+    } else {
+      $("run-out").textContent = out;
+    }
+  }
   $("run-go").addEventListener("click", async function(){
     showErr(""); $("run-out").textContent="กำลังรัน...";
     try{
       var r=await api("/api/bots/run","POST",{ id:$("run-bot").value, input:$("run-input").value });
-      $("run-out").textContent = (r.result&&r.result.output)||"(ว่าง)";
+      renderRun(r.result);
     }catch(e){ $("run-out").textContent=""; showErr(e.message); }
   });
 
