@@ -114,6 +114,14 @@ class ScheduleGateIntegrationTest(unittest.TestCase):
         status, _, _ = self._get("/api/health")
         self.assertEqual(status, 200)
 
+    def test_allowlist_with_trailing_slash_bypasses(self):
+        """bug fix v0.1.1: /console/ (trailing slash) ต้อง bypass gate เหมือน /console"""
+        self._set_closed()
+        # /console/ (มี trailing slash) ต้อง bypass gate
+        status, _, _ = self._get("/console/")
+        self.assertNotEqual(status, 503,
+                            "trailing slash บน allowlist ต้องไม่ถูก gate ปิด")
+
 
 if __name__ == "__main__":
     unittest.main()

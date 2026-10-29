@@ -237,6 +237,27 @@ class CheckFreeDiskTest(unittest.TestCase):
         ok, _, _ = installer_gui.check_free_disk(fake, min_bytes=1)
         self.assertTrue(ok)  # /tmp มีจริง → check ผ่าน
 
+    def test_error_message_mentions_both_locations(self):
+        """bug fix v0.1.1: error message ต้องบอกทั้ง install_dir และ TEMP"""
+        with tempfile.TemporaryDirectory() as tmp:
+            huge = 10 * 1024 * 1024 * 1024 * 1024 * 1024
+            ok, _, msg = installer_gui.check_free_disk(tmp, min_bytes=huge)
+            self.assertFalse(ok)
+            self.assertIn("install_dir", msg)
+            self.assertIn("TEMP", msg)
+
+    def test_probe_free_returns_bytes(self):
+        """helper _probe_free คืนจำนวน bytes ว่างของดิสก์"""
+        with tempfile.TemporaryDirectory() as tmp:
+            free = installer_gui._probe_free(tmp)
+            self.assertGreater(free, 0)
+
+    def test_probe_free_walks_up_nonexistent(self):
+        """walk up หา parent ที่มีจริง"""
+        fake = "/tmp/zzzz-no-such-dir/deeper/install"
+        free = installer_gui._probe_free(fake)
+        self.assertGreater(free, 0)
+
     def test_do_install_raises_if_insufficient_disk(self):
         # Mock check_free_disk ให้คืน (False, ...) → do_install ต้อง raise ก่อนดาวน์โหลด
         from unittest.mock import patch
