@@ -355,6 +355,7 @@ class ServerPagesTest(unittest.TestCase):
         # agent mode (ReAct): ฟอร์ม skill ต้องเลือกโหมด agent + ตั้ง max_steps ได้
         self.assertIn(b"skl-mode", body)
         self.assertIn(b"skl-steps", body)
+        self.assertIn(b"skl-net", body)   # เปิด tools เครือข่าย (http_get/call_connection)
 
     def test_connections_crud_endpoints(self):
         # local = CEO → จัดการ connection ได้; list เริ่มต้นว่าง

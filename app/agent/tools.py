@@ -15,8 +15,16 @@ stdlib ล้วน (subprocess/pathlib).
 
 from __future__ import annotations
 
+import ipaddress
+import socket
 import subprocess
+import urllib.error
+import urllib.parse
+import urllib.request
 from pathlib import Path
+
+HTTP_TIMEOUT = 15            # วินาที/คำขอ
+MAX_HTTP_CHARS = 8000        # ตัดเนื้อหายาว ๆ กัน context ระเบิด
 
 # คำสั่งที่อนุญาต (อ่าน/ตรวจอย่างเดียว — ไม่มีคำสั่งเขียน/ลบ/ติดตั้ง/เครือข่าย)
 DEFAULT_ALLOWED_COMMANDS = (
@@ -99,6 +107,46 @@ class Sandbox:
         return f"เขียนไฟล์แล้ว: {path} ({len(content or '')} ตัวอักษร)"
 
 
+def _assert_public_url(url: str):
+    """กัน SSRF: อนุญาตเฉพาะ http/https ที่ปลายทางเป็น IP สาธารณะ — ปฏิเสธ loopback/
+    private/link-local/reserved (กัน agent ยิงเข้าในวงแลน/metadata endpoint ของ cloud).
+    ซื่อตรง: resolve ตอนเช็ก แต่ urllib resolve ซ้ำตอน fetch (TOCTOU/DNS rebinding ยังเหลือ
+    residual risk เล็กน้อย) — เป็น opt-in ให้ operator ที่เชื่อถือเปิดเองเท่านั้น"""
+    p = urllib.parse.urlparse(url)
+    if p.scheme not in ("http", "https"):
+        raise ToolError("อนุญาตเฉพาะ http/https")
+    host = p.hostname
+    if not host:
+        raise ToolError("URL ไม่มี host")
+    port = p.port or (443 if p.scheme == "https" else 80)
+    try:
+        infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
+    except OSError:
+        raise ToolError("resolve host ไม่ได้")
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0])
+        if (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved
+                or ip.is_multicast or ip.is_unspecified):
+            raise ToolError(f"ปฏิเสธ: ปลายทาง {ip} เป็น IP ภายใน/สงวน (กัน SSRF)")
+    return p
+
+
+def http_get(url: str) -> str:
+    """ดึงเนื้อหา URL สาธารณะ (GET อย่างเดียว) — ผ่านด่านกัน SSRF, timeout, ตัดขนาด"""
+    _assert_public_url(url)
+    req = urllib.request.Request(url, headers={"User-Agent": "LCA-agent"})
+    try:
+        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as resp:
+            ctype = resp.headers.get("Content-Type", "")
+            raw = resp.read(MAX_HTTP_CHARS * 4)   # cap bytes ก่อน decode
+    except urllib.error.URLError as e:
+        raise ToolError(f"ดึง URL ไม่ได้: {e.__class__.__name__}")
+    except OSError as e:
+        raise ToolError(f"ดึง URL ไม่ได้: {e.__class__.__name__}")
+    text = raw.decode("utf-8", errors="replace")[:MAX_HTTP_CHARS]
+    return f"[{ctype}]\n{text}".strip()
+
+
 # schema ของ tool (ให้ agent รู้ว่ามีอะไร เรียกยังไง) — ใช้ประกอบ system prompt
 TOOL_SCHEMAS = [
     {"name": "read_file", "args": {"path": "str"}, "desc": "อ่านไฟล์ใน workspace"},
@@ -116,9 +164,19 @@ PROPOSE_SCHEMAS = [
 ]
 
 
-def build_registry(sandbox: Sandbox, approvals_root=None) -> dict:
+# tool เครือข่าย (opt-in) — ผิวสัมผัสความปลอดภัยสูง เปิดเฉพาะเมื่อ skill ตั้ง tools_net
+NET_SCHEMAS = [
+    {"name": "http_get", "args": {"url": "str"},
+     "desc": "ดึงเนื้อหา URL สาธารณะ (GET; กัน SSRF ปฏิเสธ IP ภายใน)"},
+    {"name": "call_connection", "args": {"connection_id": "str", "prompt": "str"},
+     "desc": "ถามสมอง (connection) อีกตัวเป็น sub-tool แล้วเอาคำตอบมาใช้ต่อ"},
+]
+
+
+def build_registry(sandbox: Sandbox, approvals_root=None, net_ctx=None) -> dict:
     """คืน map ชื่อ tool -> ฟังก์ชัน(args)->str. ถ้าให้ approvals_root จะเปิด tool 'เสนอ' (P6)
-    ที่สร้างคำขออนุมัติแทนการลงมือเอง — ของจริงเกิดตอนคนกดอนุมัติที่ /dev เท่านั้น"""
+    ที่สร้างคำขออนุมัติแทนการลงมือเอง — ของจริงเกิดตอนคนกดอนุมัติที่ /dev เท่านั้น.
+    ถ้าให้ net_ctx ({'project_root': ...}) จะเปิด tool เครือข่าย (http_get/call_connection)"""
     reg = {
         "read_file": lambda a: sandbox.read_file(a.get("path", "")),
         "list_dir": lambda a: sandbox.list_dir(a.get("path", ".")),
@@ -136,4 +194,20 @@ def build_registry(sandbox: Sandbox, approvals_root=None) -> dict:
             approvals.KIND_WRITE, {"path": a.get("path", ""), "content": a.get("content", "")})
         reg["propose_command"] = lambda a: _propose(
             approvals.KIND_COMMAND, {"command": a.get("command", "")})
+    if net_ctx is not None:
+        pr = net_ctx.get("project_root")
+
+        def _call_connection(a):
+            from app import connections   # lazy — กัน circular import
+            cid = (a.get("connection_id") or "").strip()
+            prompt = (a.get("prompt") or "").strip()
+            if not cid or not prompt:
+                raise ToolError("ต้องระบุ connection_id และ prompt")
+            try:
+                return connections.chat(pr, cid, [{"role": "user", "content": prompt}])
+            except connections.ConnectionError as e:
+                raise ToolError(f"เรียก connection ไม่สำเร็จ: {e}")
+
+        reg["http_get"] = lambda a: http_get(a.get("url", ""))
+        reg["call_connection"] = _call_connection
     return reg

@@ -81,6 +81,23 @@ class SkillsStoreTest(unittest.TestCase):
         self.assertEqual(raw["schema_version"], skills_store.SCHEMA_VERSION)
         self.assertIsInstance(raw["records"], list)
 
+    def test_tools_net_default_false(self):
+        skill = skills_store.add(self.root, "S", "p")
+        self.assertFalse(skill["tools_net"])
+        up = skills_store.update(self.root, skill["id"], {"tools_net": True})
+        self.assertTrue(up["tools_net"])
+
+    def test_migration_v2_to_v3_backfills_tools_net(self):
+        # ไฟล์ v2 (มี mode/max_steps/tools_write แต่ยังไม่มี tools_net) → โหลดแล้ว backfill
+        old = {"schema_version": 2, "records": [{
+            "id": "skl-v2", "name": "V2", "system_prompt": "p", "connection_id": "",
+            "model": "", "temperature": None, "mode": "agent", "max_steps": 6, "tools_write": False}]}
+        (self.root / skills_store.STORE_FILE).write_text(json.dumps(old), encoding="utf-8")
+        skills = skills_store.list_skills(self.root)
+        self.assertFalse(skills[0]["tools_net"])
+        raw = json.loads((self.root / skills_store.STORE_FILE).read_text(encoding="utf-8"))
+        self.assertEqual(raw["schema_version"], skills_store.SCHEMA_VERSION)   # = 3
+
     def test_old_bare_list_file_migrates_on_load(self):
         # จำลองไฟล์เก่า (ก่อนมี field โหมด agent) เป็น list เปล่า ๆ แบบ v1
         old = [{"id": "skl-old", "name": "Legacy", "system_prompt": "เก่า",
@@ -235,6 +252,32 @@ class BotsAgentModeTest(unittest.TestCase):
         bot = self._agent_bot()
         with self.assertRaises(bots.BotError):
             bots.run(self.root, bot["id"], "x", workspace="../../etc")
+
+    def test_agent_tools_net_http_get_wired_and_guarded(self):
+        # skill tools_net=True → agent มี http_get; ยิง URL ภายใน → โดนด่าน SSRF (observation)
+        backend = _ScriptedBackend([
+            '{"thought":"ลองดึง","tool":"http_get","args":{"url":"http://127.0.0.1/"}}',
+            '{"thought":"โดนบล็อก","final":"เข้าไม่ได้"}',
+        ])
+        connections._backend_for = lambda rec: backend
+        skill = skills_store.add(self.root, "NetAgent", "คุณคือ agent", connection_id=self.conn["id"],
+                                 model="m", mode="agent", tools_net=True)
+        bot = bots.add(self.root, "NetBot", skill["id"])
+        res = bots.run(self.root, bot["id"], "ดึงหน้าเว็บ")
+        self.assertEqual(res["steps"][0]["tool"], "http_get")
+        self.assertIn("[tool error]", res["steps"][0]["observation"])   # SSRF ปฏิเสธ
+
+    def test_agent_without_tools_net_has_no_http_get(self):
+        backend = _ScriptedBackend([
+            '{"tool":"http_get","args":{"url":"http://example.com/"}}',
+            '{"final":"จบ"}',
+        ])
+        connections._backend_for = lambda rec: backend
+        skill = skills_store.add(self.root, "NoNet", "p", connection_id=self.conn["id"],
+                                 model="m", mode="agent")   # tools_net ไม่เปิด
+        bot = bots.add(self.root, "NoNetBot", skill["id"])
+        res = bots.run(self.root, bot["id"], "x")
+        self.assertIn("ไม่รู้จักเครื่องมือ", res["steps"][0]["observation"])   # http_get ไม่มี
 
     def test_agent_tools_write_creates_pending_approval(self):
         # P6: skill tools_write → agent เสนอเขียนไฟล์ → เกิดคำขออนุมัติ (ยังไม่เขียนจริง)

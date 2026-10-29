@@ -188,13 +188,15 @@ def run(project_root, bot_id: str, user_input: str, model: str = "",
                                            options=skills_store.options_for(skill))
         # tools_write → เปิด tool 'เสนอ' (P6): เขียนไฟล์/รันคำสั่งต้องรอคนอนุมัติที่ /dev
         approvals_root = project_root if skill.get("tools_write") else None
+        # tools_net → เปิด tool เครือข่าย (http_get/call_connection) — opt-in ผิวสัมผัสสูง
+        net_ctx = {"project_root": project_root} if skill.get("tools_net") else None
         try:
             res = agent_core.run(
                 project_root, user_input, workspace=str(ws),
                 model=use_model or agent_core.DEFAULT_MODEL,
                 max_steps=int(skill.get("max_steps") or skills_store.DEFAULT_MAX_STEPS),
                 approvals_root=approvals_root, generate_fn=gen,
-                extra_system=skill.get("system_prompt", ""))
+                extra_system=skill.get("system_prompt", ""), net_ctx=net_ctx)
         except connections.ConnectionError as e:
             raise BotError(f"สมองตอบไม่ได้: {e}") from e
         _bump_run(project_root, bot_id)
