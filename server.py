@@ -53,6 +53,7 @@ from app import feature_flags  # noqa: E402  (ศูนย์กลางเป�
 from app.agent import jobs as agent_jobs  # noqa: E402  (คิวงาน agent — ให้ n8n/automation ป้อนงาน)
 from app.agent import approvals as agent_approvals  # noqa: E402  (P6: ด่านอนุมัติก่อนทำสิ่งย้อนไม่ได้)
 from app import connections  # noqa: E402  (ทะเบียนต่อสมอง AI ภายนอก — Console)
+from app import conn_usage  # noqa: E402  (นับ token/ค่าใช้จ่ายต่อ connection — Observability)
 from app import skills_store  # noqa: E402  (Skills: prompt+สมองสำเร็จรูป ใช้ซ้ำได้)
 from app import bots  # noqa: E402  (Bot: skill + run endpoint ให้ automation เรียก)
 from sysmanager.monitor import collect as _collect, Analyzer as _Analyzer  # noqa: E402
@@ -237,6 +238,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._handle_skills_list()
             elif parsed.path == "/api/bots":
                 self._handle_bots_list()
+            elif parsed.path == "/api/connections/usage":
+                self._handle_connections_usage()
             else:
                 self._send_json(404, {"error": "not found"})
 
@@ -446,6 +449,12 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             if self._require("ADMIN") is None:
                 return
             self._send_json(200, {"connections": connections.list_connections(project_root)})
+
+        def _handle_connections_usage(self):
+            # Observability: นับ requests/tokens/cost ต่อ connection (ประมาณการ) — ADMIN+
+            if self._require("ADMIN") is None:
+                return
+            self._send_json(200, {"usage": conn_usage.summary(project_root)})
 
         def _handle_connections_create(self):
             if self._require("ADMIN") is None:

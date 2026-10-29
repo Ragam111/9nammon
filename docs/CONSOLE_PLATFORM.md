@@ -89,6 +89,19 @@ bot ที่ skill เป็นโหมด `agent` จะคืน `steps[]` (
 
 ---
 
+## Usage metering ต่อ connection (Observability แบบ TokenMe)
+
+แท็บ **Usage** ใน `/console` โชว์ requests / tokens / ค่าใช้จ่ายประมาณการ ต่อสมอง (connection)
+
+- `app/conn_usage.py` (SQLite `conn_usage.db`) บันทึกทุกครั้งที่เรียกสมอง — จุดเดียวใน
+  `connections.chat()` + `chat_stream()` → ครอบ **Playground + Bots + ทุก step ของ agent**
+- `GET /api/connections/usage` (ADMIN) → สรุปต่อ connection + รวมทั้งหมด
+
+**ซื่อตรง (สำคัญ):** token เป็น **ค่าประมาณ** (heuristic ~chars/4) และ cost เป็นประมาณการ
+(`PRICE_PER_1K_TOKENS`) — **ไม่ใช่** ตัวเลขที่ provider เรียกเก็บจริง. เพราะ backend ปัจจุบัน
+คืนแค่ข้อความ (ทิ้ง field `usage` ของ API) และ stream ส่วนใหญ่ไม่ส่ง usage กลับ. ใช้เทียบ
+ปริมาณ/ประมาณค่าใช้จ่ายได้ ถ้าวันหลัง backend คืน usage แท้ ก็ส่งเข้า `record_usage()` ตรง ๆ แทนได้
+
 ## Schema versioning + migration (upgrade ปลอดภัย)
 
 ไฟล์ store (`connections.json` / `skills.json` / `bots.json`) ถูกห่อใน envelope มีเลขเวอร์ชัน:
