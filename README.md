@@ -4,17 +4,24 @@
 
 ตัวติดตั้ง AI Coding Assistant แบบฟรี รันด้วย Ollama บนเครื่อง (Windows 10/11, AMD64)
 
-## 📥 ดาวน์โหลด .exe ไฟล์เดียว (แนะนำที่สุด)
+## 📥 แนะนำที่สุด: `LCA-Desktop.exe` — ก้อนเดียวจริง (ไม่ต้องลง Python)
 
-ไปที่ [**หน้า Releases**](https://github.com/Ragam111/9nammon/releases) → โหลด **`TokenLCAlimit.exe`** → ดับเบิลคลิก → GUI โผล่ → เลือกโฟลเดอร์ → กด "ติดตั้ง" → แถบวิ่งจนเขียวเต็ม → Close พร้อมใช้งาน
+ไปที่ [**หน้า Releases**](https://github.com/Ragam111/9nammon/releases) → โหลด **`LCA-Desktop.exe`** (~10 MB) → ดับเบิลคลิก → หน้าต่างแชตเปิดเลย (เหมือน ChatGPT/Claude Desktop)
 
-- ไฟล์เดียวประมาณ ~15 MB (รวม Python runtime + GUI)
-- ติดตั้งเองลงใน `%LOCALAPPDATA%\LocalCodeAssistant` (ไม่ต้อง admin)
-- **ตรวจพื้นที่ดิสก์อัตโนมัติก่อนติดตั้ง** (ต้องมี ≥ 300 MB) — ถ้าไม่พอ แสดง error ชัดเจน ไม่ต้องรอ error กลางคัน
-- ต้องมี **Python 3.10+** และ **Ollama** บนเครื่อง (ตัว .exe เป็น installer ไม่ได้ฝัง runtime)
+- ✅ **ก้อนเดียวจริง** — ฝัง Python runtime + server + app assets ทั้งหมด (pyinstaller `--onefile --add-data`)
+- ✅ ไม่กระจายไฟล์ ไม่ต้อง extract zip ไม่ต้องลง Python
+- ✅ ต้องมีแค่ **Ollama** (โหมด local — ข้อมูลไม่ออกเครื่อง) หรือ **API key** ที่ `/console` (โหมด cloud — ไม่ต้องลง Ollama)
+- 🔒 bind `127.0.0.1` — ข้อมูลเก็บที่ `%LOCALAPPDATA%\LocalCodeAssistant\data`
 
-> ❗ **ถ้าดาวน์โหลด zip แล้วแตกไฟล์เอง** และเจอ **"Not enough space on the disk"** จาก WinRAR —
-> ให้ลบไฟล์เก่าใน `Downloads`/`Desktop` ก่อน หรือใช้ `.exe` installer แทน (จัดการพื้นที่เองได้ดีกว่า)
+## 🔧 ทางเลือก: `TokenLCAlimit.exe` — ตัวติดตั้ง GUI (ต้องมี Python)
+
+ถ้ามี Python 3.10+ อยู่แล้ว + อยากติดตั้งแบบระบบ (ใช้ CLI/server เองได้) → โหลด **`TokenLCAlimit.exe`** (~12 MB) → ดับเบิลคลิก → GUI → เลือกโฟลเดอร์ → ติดตั้ง
+
+- ตรวจพื้นที่ดิสก์อัตโนมัติ (รวม TEMP folder — v0.1.1 bug fix) — fail-fast ถ้าดิสก์เต็ม
+- ติดตั้งลง `%LOCALAPPDATA%\LocalCodeAssistant\` (ไม่ต้อง admin)
+- ⚠️ ต้องมี **Python 3.10+** และ **Ollama** บนเครื่อง
+
+> ❗ **ถ้าดาวน์โหลด zip แล้วแตกไฟล์เอง** และเจอ **"Not enough space on the disk"** จาก WinRAR — ลบไฟล์ใน `Downloads`/`Desktop` ก่อน หรือใช้ `LCA-Desktop.exe` แทน (ไม่ต้อง extract เลย)
 
 ## ⚡ ติดตั้งออนไลน์ บรรทัดเดียว (ถ้าไม่อยากโหลด .exe)
 

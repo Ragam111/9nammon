@@ -8,9 +8,10 @@ echo ============================================
 echo   ติดตั้ง Local Code Assistant (LCA) v0.1.0
 echo ============================================
 echo.
-echo ** แนะนำ: มี .exe ไฟล์เดียวให้โหลดด้วยนะ **
+echo ** แนะนำที่สุด: LCA-Desktop.exe (ก้อนเดียวจริง ไม่ต้องลง Python) **
 echo    https://github.com/Ragam111/9nammon/releases/latest
-echo    (ดับเบิลคลิก TokenLCAlimit.exe แทนการแตก zip)
+echo    ดับเบิลคลิก LCA-Desktop.exe =^> หน้าต่างแชตเปิดเลย (10 MB)
+echo    (TokenLCAlimit.exe นี้สำหรับคนมี Python แล้วอยากติดตั้งแบบระบบ)
 echo.
 echo กำลังรันตัวติดตั้งแบบสคริปต์ (zip แตกแล้ว)...
 echo.

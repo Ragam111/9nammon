@@ -6,7 +6,13 @@ Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไ�
 
 ## [0.1.1] — 2026-10-29 (Bug fixes — ready-for-use, not beta)
 
-ตามที่ user สั่ง: "0.1.1 เป็นตัวพร้อมใช้งาน ไม่ใช่เบต้า" — bug hunt + fix:
+ตามที่ user สั่ง: "0.1.1 เป็นตัวพร้อมใช้งาน ไม่ใช่เบต้า" + "ทำให้ดาวน์โหลดเป็นก้อนเดียวกัน"
+
+### Changed (v0.1.1 docs/UX)
+- **Promote `LCA-Desktop.exe` เป็น primary download** ใน README, `/install`, install.bat/.ps1 banners
+  - เดิม `TokenLCAlimit.exe` ขึ้นก่อน (เป็น installer — ยังต้องมี Python)
+  - ใหม่: `LCA-Desktop.exe` ขึ้นก่อน (ก้อนเดียวจริง — ฝัง Python runtime มาด้วย)
+- เพิ่ม `docs/BUNDLING.md` — อธิบายเทียบ 2 ชนิดของ .exe + roadmap option A/B/C
 
 ### Fixed (v0.1.1 bugs)
 - **installer_gui.py `check_free_disk` ไม่ครอบ TEMP**: ของเดิมเช็คแค่ `install_dir`
