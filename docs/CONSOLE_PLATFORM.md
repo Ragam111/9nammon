@@ -89,6 +89,27 @@ bot ที่ skill เป็นโหมด `agent` จะคืน `steps[]` (
 
 ---
 
+## Schema versioning + migration (upgrade ปลอดภัย)
+
+ไฟล์ store (`connections.json` / `skills.json` / `bots.json`) ถูกห่อใน envelope มีเลขเวอร์ชัน:
+
+```json
+{ "schema_version": 2, "records": [ ... ] }
+```
+
+`app/store_schema.py` (ใช้ซ้ำได้ทุก store) จัดการ upgrade ให้อัตโนมัติ:
+- ไฟล์เก่าที่เป็น **list เปล่า ๆ** (ก่อนมี framework) = baseline **v1** — อ่านได้ปกติ
+- ตอนโหลด: detect เวอร์ชัน → รัน migration ทีละสเต็ปจนถึง current → ถ้าอัปเกรดก็เขียนกลับ (persist)
+- **ไม่ downgrade** ไฟล์ที่เขียนด้วยโค้ดใหม่กว่า (กันข้อมูลหาย)
+- ไฟล์พัง → degrade เป็นว่าง ไม่ crash
+
+ตัวอย่างจริง: `skills.json` อยู่ที่ **v2** — migration `v1→v2` เติม field โหมด agent
+(`mode`/`max_steps`/`tools_write`) ให้ record เก่าที่สร้างก่อนมีโหมด agent โดยไม่ต้องแก้มือ
+
+**เพิ่ม migration ใหม่:** เขียนฟังก์ชัน `records -> records` ต่อท้าย `MIGRATIONS` แล้วบวก
+`SCHEMA_VERSION` ของ store นั้น — index 0 = v1→v2, index 1 = v2→v3, ... (รองรับ **เพิ่ม/ตัด/
+เปลี่ยนชื่อ field** ได้จริง ไม่ใช่แค่ `.get(default)` ตอนอ่าน)
+
 ## ทำไมออกแบบแบบนี้
 
 - **เต้ารับมาตรฐาน:** connection แค่จำค่าที่ต้องใช้ แล้วส่งต่อให้ `model_backend` ที่มีอยู่
