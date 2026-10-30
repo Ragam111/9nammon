@@ -4,6 +4,24 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [0.1.2] — 2026-10-30 (SSL cert hotfix)
+
+**Hotfix:** user เจอ installer_gui.py แสดง error ตอนรันบน Windows:
+`[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate`
+
+### Fixed
+- **installer_gui.py `_download_zip()` fallback 2 ชั้น** (bug fix)
+  - 1. `urllib.request.urlretrieve()` — ปกติ (ตรวจ cert ครบ)
+  - 2. `curl.exe` (Windows 10+ มีมาเอง — ใช้ CA ของระบบ update ถี่กว่า Python bundled)
+  - ทั้ง 2 fail → RuntimeError + ชี้วิธีแก้ (ติดตั้ง Python ใหม่ หรือ `pip install --upgrade certifi`)
+- **Root cause:** Python stdlib urllib ใช้ bundled CA — Windows installations บางเวอร์ชัน
+  ไม่มี update → cert chain ตรวจไม่ผ่านกับ GitHub cert ปัจจุบัน
+
+### Tests
++3 เทส DownloadZipTest (urllib success, curl fallback, both-fail raises with recovery msg)
+
+---
+
 ## [0.1.1] — 2026-10-29 (Bug fixes — ready-for-use, not beta)
 
 ตามที่ user สั่ง: "0.1.1 เป็นตัวพร้อมใช้งาน ไม่ใช่เบต้า" + "ทำให้ดาวน์โหลดเป็นก้อนเดียวกัน"
