@@ -18,6 +18,37 @@ class ResourceRootTest(unittest.TestCase):
         # ปกติ (ไม่ได้ถูกแพ็กเป็น .exe) → รากไฟล์ = โฟลเดอร์ของ server.py
         self.assertEqual(server._resource_root(), Path(server.__file__).resolve().parent)
 
+
+class FirstRunTest(unittest.TestCase):
+    """v0.1.2+: _is_first_run เช็ค connections.json เพื่อ redirect ไป /console"""
+
+    def test_no_connections_file_is_first_run(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertTrue(lca_app._is_first_run(Path(tmp)))
+
+    def test_empty_connections_is_first_run(self):
+        import json
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            (p / "connections.json").write_text(
+                json.dumps({"schema_version": 1, "records": []}), encoding="utf-8")
+            self.assertTrue(lca_app._is_first_run(p))
+
+    def test_has_connection_not_first_run(self):
+        import json
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            (p / "connections.json").write_text(
+                json.dumps({"schema_version": 1, "records": [{"id": "c1"}]}),
+                encoding="utf-8")
+            self.assertFalse(lca_app._is_first_run(p))
+
+    def test_corrupted_json_treated_as_first_run(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            (p / "connections.json").write_text("NOT JSON", encoding="utf-8")
+            self.assertTrue(lca_app._is_first_run(p))
+
     def test_frozen_uses_meipass(self):
         # จำลอง pyinstaller: sys.frozen + sys._MEIPASS → ใช้ path นั้น
         def _restore():
