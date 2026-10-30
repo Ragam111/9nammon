@@ -54,7 +54,7 @@ concept จริงหลายอัน — doc นี้แปลงมัน
 - **`app/config_manager.py`** → `get_key()`/`set_key()` : อ่าน/เขียน config.json ต่อโปรเจกต์
 - **`server.py`** → `call_ollama()`, `/api/metrics` (ADMIN) ส่ง snapshot+verdict+findings+lca สด
 - **`app/dataset_store.py`** → เก็บตัวอย่างไว้เทรน (= ฝั่ง self-improve)
-- **ตรรกะเลือกโมเดลตาม RAM** — ตอนนี้อยู่ใน `install.ps1`/`install.sh` (ฝังตอนติดตั้ง
+- **ตรรกะเลือกโมเดลตาม RAM** — ตอนนี้อยู่ใน `install.ps1` (ฝังตอนติดตั้ง
   ครั้งเดียว) ยังไม่ได้ตัดสินใจ "ตอนรัน" ตาม RAM ว่างจริง ← จุดที่ต้องยกมาทำใหม่
 
 **สรุป: เรามีตา (monitor) และสมองรับรู้ (lca_context) แล้ว — ขาด "ก้านสมอง" ที่เอา

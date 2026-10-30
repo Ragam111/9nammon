@@ -225,10 +225,10 @@ Build อัตโนมัติ: `.github/workflows/build-exe.yml` (Windows ru
 | ไฟล์ | หน้าที่ |
 |---|---|
 | `local_coder.py` | ตัว CLI (`lca`) — ผู้ช่วยโค้ดในเทอร์มินัล |
-| `server.py` | เปิดหน้าเว็บ (`lca-web`) — Chat UI ที่ `127.0.0.1:8420` |
+| `server.py` | เปิดหน้าเว็บ (`start-lca.bat`) — Chat UI ที่ `127.0.0.1:8420` |
 | `installer_gui.py` | ตัวติดตั้ง GUI (`TokenLCAlimit.exe`) — แถบเขียว + Desktop icon |
-| `install.ps1` / `install.sh` | ติดตั้งบน Windows / Linux-macOS-WSL (ก๊อป app/+sysmanager, สร้างคำสั่ง lca) |
-| `install_online.ps1` | ติดตั้งออนไลน์บรรทัดเดียว (ดึง main.zip จาก GitHub) |
+| `lca_app.py` | **แอปเดสก์ท็อป** (`LCA-Desktop.exe`) — ฝัง Python + server แล้ว เปิดใช้ได้เลย |
+| `install.ps1` | ติดตั้งบน Windows (ก๊อป app/+sysmanager, สร้างคำสั่ง lca, ตั้ง tray) |
 | `update.ps1` | อัปเดต (recursive, ไม่แตะ config.json/db/agent_workspace ของผู้ใช้) |
 | `uninstall.ps1` | ถอน (ลบเฉพาะไฟล์โปรแกรม) |
 | `Dockerfile` | รันที่ไหนก็ได้ (คลาวด์/เซิร์ฟเวอร์) |

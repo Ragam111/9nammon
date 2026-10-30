@@ -4,6 +4,30 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [0.1.5] — 2026-10-30 (docs cleanup — stale refs ไฟล์ที่ลบใน v0.1.3)
+
+ตามที่ user สั่ง: "PR TOdo ให้อัพเดท file แก้ อัพเดทงานตลอดและ pr วนลูปดูทางจริงทำงานยังไง"
+
+### Fixed (docs stale refs)
+- **`docs/APP_WALKTHROUGH.md` ตารางไฟล์**: ลบ row `install.sh` และ `install_online.ps1` (ลบใน v0.1.3)
+  - เพิ่ม row `lca_app.py` (`LCA-Desktop.exe`) ที่หายไปในตาราง
+  - เปลี่ยน `lca-web` → `start-lca.bat` + ยืนยัน port 8420
+- **`docs/GO_ONLINE_FREE.md` section WSL**: `bash install.sh` → `pip install -r requirements.txt`
+  (`install.sh` ลบไปแล้ว; `pip install` ตรงกว่าสำหรับ Linux/WSL)
+- **`docs/RESOURCE_MANAGER_DESIGN.md`**: `install.ps1/install.sh` → `install.ps1`
+  (install.sh ลบไปแล้ว)
+- **`install.ps1`** comment: `lca-web` → `start-lca`
+
+### Not changed (ตั้งใจ)
+- **`SKILL.md`** `windows-package/install.sh` refs — เป็นบันทึก design history (dir ไม่มีจริงแล้ว)
+- **`docs/*` `curl ... ollama.com/install.sh`** — เป็น Ollama's install.sh (external, ไม่ใช่ของเรา)
+- **`CHANGELOG.md`** entries ของ v0.1.3 Removed section — เป็น record ประวัติ
+
+### Fixed (PR #102 followup)
+- CHANGELOG example curl URL ที่พิมพ์ port ผิด `9000` → `8420`
+
+---
+
 ## [0.1.4] — 2026-10-30 (version endpoint — QA/support observability)
 
 ตามที่ user สั่ง: "PR TOdo ให้อัพเดท file แก้ อัพเดทงานตลอดและ pr วนลูปดูทางจริงทำงานยังไง"
@@ -11,7 +35,7 @@ Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไ�
 ### Added
 - **`GET /api/version`** (public, ไม่ auth) — คืน `{version, python, name}` อ่าน `VERSION` file
   - ใช้ตอน support/QA/debug: ลูกค้าแจ้งเวอร์ชันปัจจุบันได้โดยไม่ต้องเปิด terminal
-  - ตัวอย่าง: `curl http://localhost:9000/api/version` → `{"version":"0.1.4","python":"3.11.9","name":"LCA (Local Code Assistant)"}`
+  - ตัวอย่าง: `curl http://localhost:8420/api/version` → `{"version":"0.1.4","python":"3.11.9","name":"LCA (Local Code Assistant)"}`
   - ไม่คืน commit sha / build id (ไม่ลับแต่ไม่จำเป็น)
   - อยู่ใน schedule allowlist — ลูกค้าดูเวอร์ชันได้ตลอดแม้ server ปิดตามตาราง
 

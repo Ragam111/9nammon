@@ -123,7 +123,7 @@ $AppDestDir = Join-Path $InstallDir "app"
 if (-not (Test-Path $AppDestDir)) { New-Item -ItemType Directory -Path $AppDestDir | Out-Null }
 Copy-Item -Path (Join-Path $ScriptRoot "app\*") -Destination $AppDestDir -Recurse -Force
 
-# sysmanager\ — จำเป็นสำหรับ lca-web (server.py import sysmanager.sysinfo / sysmanager.monitor)
+# sysmanager\ — จำเป็นสำหรับ start-lca (server.py import sysmanager.sysinfo / sysmanager.monitor)
 if (Test-Path (Join-Path $ScriptRoot "sysmanager")) {
     $SysDestDir = Join-Path $InstallDir "sysmanager"
     if (Test-Path $SysDestDir) { Remove-Item $SysDestDir -Recurse -Force }
