@@ -48,7 +48,7 @@ curl -fsSL https://ollama.com/install.sh | sh
 ollama pull qwen2.5-coder:1.5b
 
 git clone https://github.com/Ragam111/9nammon.git && cd 9nammon
-bash install.sh          # ก๊อป app/ + sysmanager/ ครบ สร้างคำสั่ง lca / lca-web
+pip install -r requirements.txt   # ลง deps (จริงๆ มีแค่ psutil เป็น non-stdlib)
 
 # รันเป็น server (ตั้ง token เสมอเมื่อเปิดออกนอกเครื่อง)
 export LCA_HOST=0.0.0.0 LCA_TOKEN="รหัสลับยาว ๆ"
