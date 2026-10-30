@@ -52,7 +52,7 @@ try {
 # ไฟล์เดี่ยวที่ root ของแพ็กเกจ (ข้ามอันที่ไม่มีแบบไม่ error)
 $rootFiles = @(
     "local_coder.py", "server.py", "requirements.txt",
-    "lca.bat", "lca-web.bat", "start-lca.bat", "lca-desktop.bat",
+    "lca.bat", "start-lca.bat", "lca-desktop.bat", "lca-tray.bat", "lca-tray.ps1",
     "install.ps1", "uninstall.ps1"
 )
 foreach ($f in $rootFiles) {

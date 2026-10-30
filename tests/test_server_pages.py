@@ -311,7 +311,7 @@ class ServerPagesTest(unittest.TestCase):
         st, ctype, _, body = self._get("/install")
         self.assertEqual(st, 200)
         self.assertIn("text/html", ctype)
-        self.assertIn(b"install_online.ps1", body)   # มีคำสั่งติดตั้งออนไลน์
+        self.assertIn(b"install.ps1", body)   # มีคำสั่งติดตั้งออนไลน์ (install.ps1 รองรับทั้ง 2 role)
         self.assertIn(b"archive/refs/heads/main.zip", body)   # มีปุ่มดาวน์โหลด zip
 
     def test_dev_page_has_approvals_panel(self):

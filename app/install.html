@@ -85,12 +85,12 @@
       <div class="tab" data-os="nix">Linux / macOS / WSL</div>
     </div>
     <div id="cmd-win">
-      <div class="cmd" id="c1">powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercontent.com/Ragam111/9nammon/main/install_online.ps1 | iex"<button class="copy" data-target="c1">คัดลอก</button></div>
+      <div class="cmd" id="c1">powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercontent.com/Ragam111/9nammon/main/install.ps1 | iex"<button class="copy" data-target="c1">คัดลอก</button></div>
       <p class="muted">แปะบรรทัดเดียวใน PowerShell — ดาวน์โหลด + แตกไฟล์ + ติดตั้งให้อัตโนมัติ</p>
     </div>
     <div id="cmd-nix" hidden>
-      <div class="cmd" id="c2">git clone https://github.com/Ragam111/9nammon.git && cd 9nammon && bash install.sh<button class="copy" data-target="c2">คัดลอก</button></div>
-      <p class="muted">หรือดาวน์โหลด zip ด้านล่างแล้วรัน <code>bash install.sh</code></p>
+      <div class="cmd" id="c2">git clone https://github.com/Ragam111/9nammon.git && cd 9nammon && pip install -r requirements.txt && python server.py . --port 8420<button class="copy" data-target="c2">คัดลอก</button></div>
+      <p class="muted">สำหรับ Linux/macOS/WSL — รัน server ตรง (ไม่มี .exe path)</p>
     </div>
     <div class="row" style="margin-top:8px">
       <a class="btn" href="https://github.com/Ragam111/9nammon/archive/refs/heads/main.zip">⬇ ดาวน์โหลด .zip</a>
@@ -109,7 +109,7 @@
 
   <div class="card">
     <h2><span class="step">3</span>เปิดใช้งาน</h2>
-    <div class="cmd" id="c4">lca-web C:\path\to\project     # หรือ:  python server.py . --port 8420<button class="copy" data-target="c4">คัดลอก</button></div>
+    <div class="cmd" id="c4">start-lca.bat     # หรือ:  python server.py . --port 8420<button class="copy" data-target="c4">คัดลอก</button></div>
     <p class="muted">แล้วเปิดเบราว์เซอร์ที่ <code>http://127.0.0.1:8420</code> — เริ่มแชทได้เลย</p>
   </div>
 
