@@ -66,13 +66,31 @@ def open_app_window(url: str) -> None:
         pass
 
 
+def _is_first_run(root) -> bool:
+    """v0.1.2+: first-run = ยังไม่มี connections.json หรือมีแต่ว่าง →
+    เปิดหน้า /console ให้ตั้งสมองก่อน (เหมือน Claude Desktop ขอ API key ครั้งแรก)"""
+    conn_file = Path(root) / "connections.json"
+    if not conn_file.exists():
+        return True
+    try:
+        import json
+        data = json.loads(conn_file.read_text(encoding="utf-8"))
+        records = data.get("records", []) if isinstance(data, dict) else data
+        return not records
+    except (OSError, ValueError):
+        return True
+
+
 def main() -> int:
     root = data_dir()
     httpd, port = build_server(root)
-    url = f"http://127.0.0.1:{port}/"
+    # LCA Chat first-run flow: ถ้ายังไม่มี connection → เปิดหน้า /console ก่อน
+    # (user เห็นหน้าตั้งสมอง AI ทันที เหมือน Claude Desktop ถาม API key ครั้งแรก)
+    path = "/console" if _is_first_run(root) else "/"
+    url = f"http://127.0.0.1:{port}{path}"
     t = threading.Thread(target=httpd.serve_forever, daemon=True)
     t.start()
-    print(f"[LCA Desktop] กำลังทำงานที่ {url}  (ข้อมูลอยู่ที่ {root})")
+    print(f"[LCA Chat] กำลังทำงานที่ {url}  (ข้อมูลอยู่ที่ {root})")
     time.sleep(1)                    # ให้ server พร้อมก่อนเปิดหน้าต่าง
     open_app_window(url)
     try:

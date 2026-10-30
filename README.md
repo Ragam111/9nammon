@@ -4,14 +4,17 @@
 
 ตัวติดตั้ง AI Coding Assistant แบบฟรี รันด้วย Ollama บนเครื่อง (Windows 10/11, AMD64)
 
-## 📥 แนะนำที่สุด: `LCA-Desktop.exe` — ก้อนเดียวจริง (ไม่ต้องลง Python)
+## 📥 แนะนำที่สุด: `LCA-Desktop.exe` — LCA Chat ก้อนเดียว เหมือน Claude Desktop
 
-ไปที่ [**หน้า Releases**](https://github.com/Ragam111/9nammon/releases) → โหลด **`LCA-Desktop.exe`** (~10 MB) → ดับเบิลคลิก → หน้าต่างแชตเปิดเลย (เหมือน ChatGPT/Claude Desktop)
+ไปที่ [**หน้า Releases**](https://github.com/Ragam111/9nammon/releases) → โหลด **`LCA-Desktop.exe`** (~10 MB) → ดับเบิลคลิก → **แชตได้เลย**
 
-- ✅ **ก้อนเดียวจริง** — ฝัง Python runtime + server + app assets ทั้งหมด (pyinstaller `--onefile --add-data`)
+- ✅ **ก้อนเดียวจริง** — ฝัง Python runtime + server + app assets (pyinstaller `--onefile --add-data`)
 - ✅ ไม่กระจายไฟล์ ไม่ต้อง extract zip ไม่ต้องลง Python
-- ✅ ต้องมีแค่ **Ollama** (โหมด local — ข้อมูลไม่ออกเครื่อง) หรือ **API key** ที่ `/console` (โหมด cloud — ไม่ต้องลง Ollama)
+- ✅ **First-run wizard** — ครั้งแรกเปิดจะไปหน้า `/console` ให้ตั้งสมอง (API key หรือ Ollama) → ครั้งที่ 2+ เปิดหน้าแชตตรง (เหมือน Claude Desktop ขอ API key ครั้งแรก)
+- ✅ Cloud mode (OpenAI/TokenMe/vLLM) หรือ Local mode (Ollama — ข้อมูลไม่ออกเครื่อง)
 - 🔒 bind `127.0.0.1` — ข้อมูลเก็บที่ `%LOCALAPPDATA%\LocalCodeAssistant\data`
+
+> 📖 คู่มือ advanced users: [`docs/LCA_CHAT.md`](docs/LCA_CHAT.md) — เทียบกับ Claude Desktop + API access + bot workflows
 
 ## 🔧 ทางเลือก: `TokenLCAlimit.exe` — ตัวติดตั้ง GUI (ต้องมี Python)
 
