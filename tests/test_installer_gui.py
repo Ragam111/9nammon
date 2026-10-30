@@ -46,9 +46,14 @@ class InstallerLogicTest(unittest.TestCase):
         import shutil
         shutil.copy2(self.fake_zip, dest)
 
+    def _fake_download_zip(self, url, dest):
+        import shutil
+        shutil.copy2(self.fake_zip, dest)
+        return "urllib"
+
     def test_install_copies_program_and_reaches_100(self):
         seen = []
-        with mock.patch.object(installer_gui.urllib.request, "urlretrieve", self._fake_urlretrieve):
+        with mock.patch.object(installer_gui, "_download_zip", self._fake_download_zip):
             installer_gui.do_install(str(self.install_dir), make_desktop_icon=False,
                                      progress_cb=lambda p, m: seen.append(p))
         # ไฟล์โปรแกรมถูกคัดลอกครบ
@@ -61,7 +66,7 @@ class InstallerLogicTest(unittest.TestCase):
         self.assertEqual(seen[-1], 100)
 
     def test_install_copies_tray_files(self):
-        with mock.patch.object(installer_gui.urllib.request, "urlretrieve", self._fake_urlretrieve):
+        with mock.patch.object(installer_gui, "_download_zip", self._fake_download_zip):
             installer_gui.do_install(str(self.install_dir), make_desktop_icon=False,
                                      progress_cb=lambda p, m: None)
         self.assertTrue((self.install_dir / "lca-tray.bat").exists())
@@ -70,7 +75,7 @@ class InstallerLogicTest(unittest.TestCase):
     def test_desktop_icon_created_when_requested(self):
         desktop = self.base / "Desktop"
         desktop.mkdir()
-        with mock.patch.object(installer_gui.urllib.request, "urlretrieve", self._fake_urlretrieve), \
+        with mock.patch.object(installer_gui, "_download_zip", self._fake_download_zip), \
              mock.patch.dict(installer_gui.os.environ, {"USERPROFILE": str(self.base)}):
             installer_gui.do_install(str(self.install_dir), make_desktop_icon=True,
                                      progress_cb=lambda p, m: None)
@@ -81,7 +86,7 @@ class InstallerLogicTest(unittest.TestCase):
     def test_desktop_icon_use_tray_points_to_tray_bat(self):
         desktop = self.base / "Desktop"
         desktop.mkdir()
-        with mock.patch.object(installer_gui.urllib.request, "urlretrieve", self._fake_urlretrieve), \
+        with mock.patch.object(installer_gui, "_download_zip", self._fake_download_zip), \
              mock.patch.dict(installer_gui.os.environ, {"USERPROFILE": str(self.base)}):
             installer_gui.do_install(str(self.install_dir), make_desktop_icon=True,
                                      progress_cb=lambda p, m: None, use_tray=True)
@@ -211,6 +216,58 @@ class CopyManifestTest(unittest.TestCase):
     def test_essential_files_in_copy_list(self):
         self.assertIn("server.py", installer_gui.COPY_FILES)
         self.assertIn("start-lca.bat", installer_gui.COPY_FILES)
+
+
+class DownloadZipTest(unittest.TestCase):
+    """bug fix v0.1.2: SSL cert fail → fallback curl → fallback unverified"""
+
+    def test_urllib_success_returns_urllib(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = Path(tmp) / "out.zip"
+
+            def fake_urlretrieve(url, path):
+                Path(path).write_bytes(b"PK\x03\x04fakezip")
+            with mock.patch.object(installer_gui.urllib.request, "urlretrieve",
+                                   fake_urlretrieve):
+                method = installer_gui._download_zip("https://example.com/x.zip", dest)
+            self.assertEqual(method, "urllib")
+
+    def test_ssl_fail_falls_back_to_curl(self):
+        """ถ้า urllib fail (SSL cert) → ต้องลอง curl ก่อน unverified"""
+        import ssl as ssl_module
+
+        def ssl_fail(url, path):
+            raise ssl_module.SSLError("CERTIFICATE_VERIFY_FAILED")
+
+        def fake_curl_run(cmd, capture_output, timeout):
+            # cmd = ["curl", "-fsSL", "--output", dest, url] → เขียน file ให้
+            dest_idx = cmd.index("--output") + 1
+            Path(cmd[dest_idx]).write_bytes(b"PK\x03\x04curldata")
+            m = mock.MagicMock()
+            m.returncode = 0
+            return m
+
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = Path(tmp) / "out.zip"
+            with mock.patch.object(installer_gui.urllib.request, "urlretrieve", ssl_fail), \
+                 mock.patch.object(installer_gui.shutil, "which", return_value="/usr/bin/curl"), \
+                 mock.patch.object(installer_gui.subprocess, "run", fake_curl_run):
+                # Path.exists ต้องคืน True สำหรับ curl path
+                with mock.patch("pathlib.Path.exists", return_value=True):
+                    method = installer_gui._download_zip("https://x.com/y.zip", dest)
+            self.assertEqual(method, "curl")
+
+    def test_both_fail_raises_with_helpful_message(self):
+        """ทั้ง urllib และ curl fail → RuntimeError + ข้อความชี้วิธีแก้"""
+        def ssl_fail(url, path):
+            raise OSError("ssl error")
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = Path(tmp) / "out.zip"
+            with mock.patch.object(installer_gui.urllib.request, "urlretrieve", ssl_fail), \
+                 mock.patch.object(installer_gui.shutil, "which", return_value=None):
+                with self.assertRaises(RuntimeError) as cm:
+                    installer_gui._download_zip("https://x.com/y.zip", dest)
+            self.assertIn("certifi", str(cm.exception))  # มี recovery message
 
 
 class CheckFreeDiskTest(unittest.TestCase):

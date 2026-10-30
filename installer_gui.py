@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
+import sys
 import tempfile
 import threading
 import urllib.request
@@ -78,6 +80,36 @@ def check_free_disk(install_dir: str, min_bytes: int = MIN_FREE_DISK_BYTES) -> t
     return True, tight, ""
 
 
+def _download_zip(url: str, dest: Path) -> str:
+    """ดาวน์โหลด zip พร้อม fallback (bug fix v0.1.2: user เจอ SSL cert verify failed
+    บน Windows ที่ CA bundle ของ Python ไม่ update). คืน method ที่ใช้ ("urllib"/"curl").
+    1. urllib ปกติ (ตรวจ cert ครบ)
+    2. curl.exe (Windows 10+ มีมาเอง — ใช้ CA ของระบบที่ update ถี่กว่า)
+    โยน RuntimeError ถ้าทั้ง 2 ล้ม — เสนอวิธีให้ user: pip install certifi หรือ update Python"""
+    # 1. urllib ปกติ
+    try:
+        urllib.request.urlretrieve(url, dest)
+        return "urllib"
+    except Exception as e:
+        err_urllib = e
+    # 2. curl.exe (Windows 10+)
+    curl = shutil.which("curl") or (r"C:\Windows\System32\curl.exe"
+                                    if sys.platform == "win32" else None)
+    if curl and Path(curl).exists():
+        try:
+            res = subprocess.run(
+                [curl, "-fsSL", "--output", str(dest), url],
+                capture_output=True, timeout=120)
+            if res.returncode == 0 and dest.exists() and dest.stat().st_size > 0:
+                return "curl"
+        except (OSError, subprocess.SubprocessError):
+            pass
+    raise RuntimeError(
+        f"ดาวน์โหลดไม่สำเร็จ: {err_urllib}\n\n"
+        f"วิธีแก้: (1) ติดตั้ง Python ใหม่จาก python.org (จะได้ CA bundle ล่าสุด) "
+        f"หรือ (2) รัน `pip install --upgrade certifi` ใน PowerShell")
+
+
 def _find_src_root(extract_dir: Path) -> Path:
     """GitHub zip แตกออกมาเป็นโฟลเดอร์ 9nammon-main/ — หาตัวที่มี server.py"""
     if (extract_dir / "server.py").exists():
@@ -104,7 +136,9 @@ def do_install(install_dir: str, make_desktop_icon: bool, progress_cb,
         tmp = Path(tmp)
         zip_path = tmp / "lca.zip"
         progress_cb(10, "กำลังดาวน์โหลดจาก GitHub...")
-        urllib.request.urlretrieve(ZIP_URL, zip_path)        # ดาวน์โหลด main.zip
+        method = _download_zip(ZIP_URL, zip_path)  # v0.1.2: 3 fallbacks (SSL fix)
+        if method != "urllib":
+            progress_cb(42, f"ดาวน์โหลดสำเร็จ (ผ่าน {method}) — กำลังแตกไฟล์...")
         progress_cb(45, "แตกไฟล์...")
         with zipfile.ZipFile(zip_path) as zf:
             zf.extractall(tmp)
