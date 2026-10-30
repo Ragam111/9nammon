@@ -1,10 +1,13 @@
 """test_lca_app.py — LCA Desktop (แอปก้อนเดียว): resource root ตอน frozen + build_server"""
 
 import http.client
+import io
+import subprocess
 import sys
 import tempfile
 import threading
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -104,6 +107,61 @@ class BuildServerTest(unittest.TestCase):
             finally:
                 httpd.shutdown()
                 httpd.server_close()
+
+
+class VersionFlagTest(unittest.TestCase):
+    """`--version` CLI flag ต้องตรงกับ VERSION file และ /api/version endpoint"""
+
+    def test_lca_app_version_flag(self):
+        # เรียก lca_app.py --version → stdout ขึ้นเวอร์ชันแล้ว exit 0
+        root = Path(__file__).resolve().parent.parent
+        result = subprocess.run(
+            [sys.executable, str(root / "lca_app.py"), "--version"],
+            capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("LCA Desktop", result.stdout)
+        # ต้องมี version string (X.Y.Z หรือ unknown)
+        self.assertTrue(any(c.isdigit() for c in result.stdout) or "unknown" in result.stdout)
+
+    def test_server_version_flag(self):
+        # เรียก server.py --version → ต้องมี "LCA" + version + python version
+        root = Path(__file__).resolve().parent.parent
+        result = subprocess.run(
+            [sys.executable, str(root / "server.py"), "--version"],
+            capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("LCA", result.stdout)
+        self.assertIn("python", result.stdout)
+
+
+class ReadVersionTest(unittest.TestCase):
+    """server.read_version() helper — shared ระหว่าง /api/version กับ --version CLI"""
+
+    def test_reads_version_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            (p / "VERSION").write_text("9.9.9\n", encoding="utf-8")
+            self.assertEqual(server.read_version(p), "9.9.9")
+
+    def test_fallback_no_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(server.read_version(Path(tmp)), "unknown")
+
+    def test_fallback_empty_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            (p / "VERSION").write_text("", encoding="utf-8")
+            self.assertEqual(server.read_version(p), "unknown")
+
+    def test_strips_whitespace(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            (p / "VERSION").write_text("  0.1.5  \n\n", encoding="utf-8")
+            self.assertEqual(server.read_version(p), "0.1.5")
+
+    def test_default_root_resource_root(self):
+        # ไม่ส่ง root → ใช้ _resource_root() = ที่อยู่ server.py (มี VERSION อยู่จริง)
+        self.assertNotEqual(server.read_version(), "")
 
 
 if __name__ == "__main__":

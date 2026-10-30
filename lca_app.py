@@ -19,6 +19,7 @@ r"""lca_app.py — LCA Desktop: แอปก้อนเดียว (bundle ด
 
 from __future__ import annotations
 
+import argparse
 import os
 import subprocess
 import sys
@@ -82,6 +83,17 @@ def _is_first_run(root) -> bool:
 
 
 def main() -> int:
+    # Parse CLI: --version แสดงแล้วออก (ตรงกับ /api/version)
+    parser = argparse.ArgumentParser(
+        prog="LCA-Desktop",
+        description="LCA Desktop — Local Code Assistant แอปก้อนเดียว")
+    parser.add_argument(
+        "--version", action="version",
+        version=f"LCA Desktop {server.read_version()} (python "
+                f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro})",
+        help="แสดงเวอร์ชันแล้วออก")
+    parser.parse_args()
+
     root = data_dir()
     httpd, port = build_server(root)
     # LCA Chat first-run flow: ถ้ายังไม่มี connection → เปิดหน้า /console ก่อน

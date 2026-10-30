@@ -4,6 +4,35 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [0.1.6] — 2026-10-30 (`--version` CLI flag — ตรงกับ `/api/version`)
+
+ตามที่ user สั่ง: "**ดูทางจริงทำงานยังไง**" — ผู้ใช้ต้องเช็กเวอร์ชันจาก
+command line ได้ตรงกันกับ endpoint `/api/version`
+
+### Added
+- **`server.py --version`** → `LCA <ver> (python X.Y.Z)` แล้ว exit 0
+- **`lca_app.py --version`** → `LCA Desktop <ver> (python X.Y.Z)` แล้ว exit 0
+- **`server.read_version(root=None)`** — module-level helper อ่าน VERSION file
+  (ถ้า root=None ใช้ `_resource_root()` — รองรับ frozen bundle ด้วย)
+- สอดคล้อง: `--version` CLI ใช้ `read_version()` ตัวเดียวกับ `/api/version` endpoint
+  → ไม่มี drift ระหว่างสองช่องทาง
+
+### Tests
++7 ใน `test_lca_app.py`:
+- `VersionFlagTest` ×2 — `python server.py --version` และ `python lca_app.py --version`
+  คืน exit 0 + stdout ขึ้นเวอร์ชัน (subprocess ของจริง)
+- `ReadVersionTest` ×5 — reads VERSION file, fallback no file, fallback empty,
+  strip whitespace, default root = resource_root
+
+**837 tests pass** (จาก 830 → +7)
+
+### Rationale
+ก่อนหน้านี้ user เช็กเวอร์ชันได้แค่ `curl ... /api/version` (ต้องรัน server ก่อน)
+ตอนนี้: `LCA-Desktop.exe --version` ได้เลยไม่ต้องรัน → support/debug ง่ายขึ้น
++ ไม่ต้องเปิด GUI/browser ก็เห็น (dev + sysadmin workflow)
+
+---
+
 ## [0.1.5] — 2026-10-30 (docs cleanup — stale refs ไฟล์ที่ลบใน v0.1.3)
 
 ตามที่ user สั่ง: "PR TOdo ให้อัพเดท file แก้ อัพเดทงานตลอดและ pr วนลูปดูทางจริงทำงานยังไง"
