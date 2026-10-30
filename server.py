@@ -71,6 +71,20 @@ def _resource_root() -> Path:
 
 APP_DIR = _resource_root() / "app"
 
+
+def read_version(root: Path | None = None) -> str:
+    """อ่าน VERSION file. ใช้ร่วมกันระหว่าง --version CLI กับ /api/version endpoint.
+    root=None → อ่านจาก resource_root (ที่อยู่ของ server.py / bundle)"""
+    if root is None:
+        root = _resource_root()
+    try:
+        f = root / "VERSION"
+        if f.exists():
+            return f.read_text(encoding="utf-8").strip() or "unknown"
+    except OSError:
+        pass
+    return "unknown"
+
 # ตารางหน้าเว็บ (web) ทั้งหมดในระบบ — route -> (ไฟล์ใน app/, content-type, cache?)
 # เพิ่มหน้าใหม่ = เพิ่ม 1 บรรทัดที่นี่ + วางไฟล์ใน app/ (ไม่ต้องเขียน method serve ใหม่ทุกหน้า)
 # ทุกหน้าเสิร์ฟ shell ได้โดยไม่ต้อง auth — ข้อมูลจริงถูก gate ที่ /api/* อีกชั้น
@@ -233,16 +247,9 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             """เวอร์ชันของ LCA ที่กำลังรันอยู่ (public, ไม่ auth) — ช่วย QA/support/debug
             คืน version จาก VERSION file + Python version. ถ้าไม่พบ → fallback "unknown".
             ไม่คืน commit sha / build id — repo URL ไม่ใช่ secret แต่ก็ไม่เปิดเผย build detail
-            โดยไม่จำเป็น"""
-            version = "unknown"
-            try:
-                version_file = project_root / "VERSION"
-                if version_file.exists():
-                    version = version_file.read_text(encoding="utf-8").strip() or "unknown"
-            except OSError:
-                pass
+            โดยไม่จำเป็น. ใช้ read_version() ร่วมกับ --version CLI (ดู main())"""
             self._send_json(200, {
-                "version": version,
+                "version": read_version(project_root),
                 "python": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
                 "name": "LCA (Local Code Assistant)",
             })
@@ -1685,6 +1692,11 @@ def resolve_server_config(args, env=None):
 
 def main():
     parser = argparse.ArgumentParser(description="Backend server สำหรับ Local Code Assistant web UI")
+    parser.add_argument(
+        "--version", action="version",
+        version=f"LCA {read_version()} (python {sys.version_info.major}."
+                f"{sys.version_info.minor}.{sys.version_info.micro})",
+        help="แสดงเวอร์ชันแล้วออก (ตรงกับ GET /api/version)")
     parser.add_argument("project_dir", type=str, help="โฟลเดอร์โปรเจกต์ (ใช้กับ todo)")
     parser.add_argument("--host", type=str, default="127.0.0.1",
                          help="bind address — ใช้ 127.0.0.1 เท่านั้นถ้าไม่ต้องการเปิดให้เครื่องอื่นเข้าถึง "
