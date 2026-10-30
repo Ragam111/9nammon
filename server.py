@@ -186,7 +186,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
 
         # เส้นทาง "เปิดเสมอ" ที่ schedule gate ไม่ปิด — ให้ลูกค้าเช็คสถานะ/health ได้ตลอด
         _SCHEDULE_ALLOWLIST = (
-            "/api/health", "/api/status", "/", "/console", "/web", "/install",
+            "/api/health", "/api/status", "/api/version",
+            "/", "/console", "/web", "/install",
             "/app.css", "/favicon.ico",
         )
 
@@ -228,6 +229,24 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             คืน state (open/closed), เวลาเปลี่ยนสถานะถัดไป, และข้อความอ่านง่าย"""
             self._send_json(200, schedule_gate.status(project_root))
 
+        def _handle_version(self):
+            """เวอร์ชันของ LCA ที่กำลังรันอยู่ (public, ไม่ auth) — ช่วย QA/support/debug
+            คืน version จาก VERSION file + Python version. ถ้าไม่พบ → fallback "unknown".
+            ไม่คืน commit sha / build id — repo URL ไม่ใช่ secret แต่ก็ไม่เปิดเผย build detail
+            โดยไม่จำเป็น"""
+            version = "unknown"
+            try:
+                version_file = project_root / "VERSION"
+                if version_file.exists():
+                    version = version_file.read_text(encoding="utf-8").strip() or "unknown"
+            except OSError:
+                pass
+            self._send_json(200, {
+                "version": version,
+                "python": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+                "name": "LCA (Local Code Assistant)",
+            })
+
         # ---------- View: serve index.html ----------
         def do_GET(self):
             parsed = urlparse(self.path)
@@ -243,6 +262,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._handle_health()
             elif parsed.path == "/api/status":
                 self._handle_status()
+            elif parsed.path == "/api/version":
+                self._handle_version()
             elif parsed.path == "/api/sysinfo":
                 self._handle_sysinfo()
             elif parsed.path == "/api/metrics":

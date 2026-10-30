@@ -83,6 +83,32 @@ class ServerHealthTest(unittest.TestCase):
         self.assertEqual(net["mode"], "local")
         self.assertIsInstance(net["auth_required"], bool)
 
+    def test_version_endpoint_public(self):
+        # /api/version public ไม่ต้อง auth — ให้ QA/support/debug ดูได้
+        st, data = self._get("/api/version")
+        self.assertEqual(st, 200)
+        self.assertIn("version", data)
+        self.assertIn("python", data)
+        self.assertEqual(data["name"], "LCA (Local Code Assistant)")
+
+    def test_version_reads_version_file(self):
+        # เขียน VERSION file ลง project_root ชั่วคราว แล้วเช็กว่า endpoint อ่าน
+        (Path(self._tmp.name) / "VERSION").write_text("9.9.9\n", encoding="utf-8")
+        _, data = self._get("/api/version")
+        self.assertEqual(data["version"], "9.9.9")
+
+    def test_version_fallback_when_no_file(self):
+        # ไม่มี VERSION file → fallback "unknown" ไม่ raise
+        _, data = self._get("/api/version")
+        self.assertEqual(data["version"], "unknown")
+
+    def test_version_python_shape(self):
+        # python version ต้องเป็น "X.Y.Z"
+        _, data = self._get("/api/version")
+        parts = data["python"].split(".")
+        self.assertEqual(len(parts), 3)
+        self.assertTrue(all(p.isdigit() for p in parts))
+
     def test_chat_auto_scales_model_when_omitted(self):
         # ไม่ระบุ model -> server เลือกให้ตาม RAM (resource_budget) = โมเดล qwen ตัวใดตัวหนึ่ง
         st, data = self._post("/api/chat", {"messages": [{"role": "user", "content": "hi"}]})

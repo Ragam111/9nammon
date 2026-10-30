@@ -4,6 +4,26 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [0.1.4] — 2026-10-30 (version endpoint — QA/support observability)
+
+ตามที่ user สั่ง: "PR TOdo ให้อัพเดท file แก้ อัพเดทงานตลอดและ pr วนลูปดูทางจริงทำงานยังไง"
+
+### Added
+- **`GET /api/version`** (public, ไม่ auth) — คืน `{version, python, name}` อ่าน `VERSION` file
+  - ใช้ตอน support/QA/debug: ลูกค้าแจ้งเวอร์ชันปัจจุบันได้โดยไม่ต้องเปิด terminal
+  - ตัวอย่าง: `curl http://localhost:9000/api/version` → `{"version":"0.1.4","python":"3.11.9","name":"LCA (Local Code Assistant)"}`
+  - ไม่คืน commit sha / build id (ไม่ลับแต่ไม่จำเป็น)
+  - อยู่ใน schedule allowlist — ลูกค้าดูเวอร์ชันได้ตลอดแม้ server ปิดตามตาราง
+
+### Tests
++4 เทส `test_server_health.py` (shape, อ่าน VERSION file, fallback "unknown", python version shape)
+
+### Rationale
+Observability-first: เวลา user เจอ bug ที่หน้าแอป → ขอ `/api/version` ก่อน
+กันคำถาม "เวอร์ชันไหน" รบกวนทุกบั๊ก report + ง่ายต่อ smoke test ใน CI
+
+---
+
 ## [0.1.3] — 2026-10-30 (file cleanup — consolidation)
 
 ตามที่ user สั่ง: "ลบไฟล์ที่กระจาย รวบรวมให้ติดตั้งง่าย"
