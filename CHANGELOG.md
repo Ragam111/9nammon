@@ -4,6 +4,35 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [0.1.3] — 2026-10-30 (file cleanup — consolidation)
+
+ตามที่ user สั่ง: "ลบไฟล์ที่กระจาย รวบรวมให้ติดตั้งง่าย"
+
+### Removed (ไฟล์ซ้ำซ้อน)
+- **`install.sh`** — Linux installer, overlap กับ `pip install -r requirements.txt && python server.py`
+- **`install_online.ps1`** — ซ้ำกับ `install.ps1` + banner แล้ว (banner ชี้ `.exe` ก็อยู่ใน `install.ps1`)
+- **`lca-web.bat`** — ซ้ำกับ `start-lca.bat` (ทั้งคู่รัน `server.py`; `start-lca.bat` ดีกว่าเพราะเด้ง browser ให้)
+
+### Changed
+- `install.ps1` ไม่สร้าง `lca-web.bat` อีกต่อไป (ลบ Set-Content block + ปรับ echo message)
+- `installer_gui.py` COPY_FILES ลบ `lca-web.bat`
+- `update.ps1` lift ลบ `lca-web.bat` + เพิ่ม `lca-tray.bat` + `lca-tray.ps1` (ที่ลืมใส่)
+- README + install.html: ลิงก์ one-liner ชี้ `install.ps1` แทน `install_online.ps1`
+- README + install.html: `lca-web` → `start-lca.bat`
+
+### หลังปรับ (ไฟล์ที่เหลือใน root)
+- Build targets: `installer_gui.py`, `lca_app.py`
+- Core: `server.py`, `local_coder.py`
+- Install: `install.bat`, `install.ps1`
+- Launcher: `lca.bat` (CLI), `start-lca.bat`, `lca-desktop.bat`, `lca-tray.bat`, `lca-tray.ps1`
+- Maintenance: `uninstall.ps1`, `update.ps1`
+- Dirs: `app/`, `sysmanager/`, `docs/`, `tests/`, `scripts/`
+- Meta: `README.md`, `CHANGELOG.md`, `VERSION`, `requirements.txt`, `.gitignore`, `Dockerfile`
+
+**ไฟล์เก่าหายไป 3 ตัว** — surface area ลดลง, no scattering
+
+---
+
 ## [0.1.2] — 2026-10-30 (SSL cert hotfix)
 
 **Hotfix:** user เจอ installer_gui.py แสดง error ตอนรันบน Windows:

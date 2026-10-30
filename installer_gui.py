@@ -34,7 +34,7 @@ APP_NAME = "Local Code Assistant"
 MIN_FREE_DISK_BYTES = 300 * 1024 * 1024
 # ของที่ต้องคัดลอกจากซอร์สที่แตกออกมาไปยังโฟลเดอร์ติดตั้ง
 COPY_DIRS = ("app", "sysmanager")
-COPY_FILES = ("server.py", "local_coder.py", "lca.bat", "lca-web.bat", "start-lca.bat",
+COPY_FILES = ("server.py", "local_coder.py", "lca.bat", "start-lca.bat",
               "lca-desktop.bat", "lca-tray.bat", "lca-tray.ps1",
               "install.ps1", "requirements.txt", "README.md")
 

@@ -1,6 +1,6 @@
 # Local Code Assistant (LCA) — Windows Package
 
-**Version:** 0.1.2 (SSL cert hotfix 2026-10-30) · 822 tests pass · [CHANGELOG](CHANGELOG.md)
+**Version:** 0.1.3 (file consolidation 2026-10-30) · 826 tests pass · [CHANGELOG](CHANGELOG.md)
 
 ตัวติดตั้ง AI Coding Assistant แบบฟรี รันด้วย Ollama บนเครื่อง (Windows 10/11, AMD64)
 
@@ -31,13 +31,13 @@
 เปิด **PowerShell** แล้วแปะบรรทัดนี้ (ดาวน์โหลด + แตกไฟล์ + ติดตั้งให้อัตโนมัติ):
 
 ```powershell
-powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercontent.com/Ragam111/9nammon/main/install_online.ps1 | iex"
+powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercontent.com/Ragam111/9nammon/main/install.ps1 | iex"
 ```
 
 จากนั้นดึงโมเดล (ครั้งเดียว): `ollama pull qwen2.5-coder:1.5b` แล้วเปิดใช้งานได้เลย
 
 ## มีอะไรให้ใช้บ้าง
-- **แชตช่วยเขียนโค้ด** — CLI (`lca`) หรือหน้าเว็บ Chat UI (`lca-web` → `http://127.0.0.1:8420`), ตอบแบบสตรีมทีละคำ
+- **แชตช่วยเขียนโค้ด** — CLI (`lca`) หรือเปิดหน้าเว็บด้วย `start-lca.bat` / `lca-desktop.bat` → `http://127.0.0.1:8420`, ตอบแบบสตรีมทีละคำ
 - **ผู้ใช้หลายคน + สิทธิ์ (RBAC)** — ลูกน้อง login ได้, แอดมินเข้าผ่าน "รหัสไททัน" (master token) = CEO
 - **พื้นที่ส่วนตัว/บริษัท (spaces)** — แยกข้อมูลต่อคน/ทีม ไม่ปนกัน
 - **คลัสเตอร์หลายเครื่อง** — รวม health ที่เดียว + ส่งงานไปทำที่เครื่องที่พร้อม (cluster forward)
@@ -114,11 +114,11 @@ ollama pull qwen2.5-coder:1.5b
 ```
 lca C:\path\to\your\project
 ```
-หรือเปิดหน้าเว็บ Chat UI:
+หรือเปิดหน้าเว็บ Chat UI (ดับเบิลคลิก):
 ```
-lca-web C:\path\to\your\project
+start-lca.bat     — เปิด server + browser ที่ 127.0.0.1:8420
+lca-desktop.bat   — เปิดในหน้าต่างแอป (Edge/Chrome --app mode)
 ```
-แล้วเปิดเบราว์เซอร์ที่ `http://127.0.0.1:8420`
 
 ## แนะนำ Terminal setup (ไม่บังคับ)
 
@@ -157,7 +157,7 @@ powershell -ExecutionPolicy Bypass -File uninstall.ps1
 
 ## หมายเหตุด้านความปลอดภัย
 
-- `lca-web` เปิด server ที่ `127.0.0.1` (เฉพาะเครื่องนี้) เป็นค่าเริ่มต้นเท่านั้น
+- `start-lca.bat`/`lca-desktop.bat` เปิด server ที่ `127.0.0.1` (เฉพาะเครื่องนี้) เป็นค่าเริ่มต้นเท่านั้น
 - ถ้าต้องการให้มือถือ/เครื่องอื่นใน Wi-Fi เดียวกันเข้าถึงได้ ต้องรัน
   `server.py --host <IP ของเครื่องนี้ใน LAN> --token <รหัสลับที่ตั้งเอง>` เอง
   (ห้ามเปิดโดยไม่ตั้ง token — ดูรายละเอียดใน `SKILL.md` ของโปรเจกต์หลัก)

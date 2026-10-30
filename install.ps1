@@ -153,14 +153,6 @@ $pythonCmd "$InstallDir\local_coder.py" --model $modelChoice %*
 "@
 Set-Content -Path $LauncherPath -Value $LauncherContent -Encoding ASCII
 
-$WebLauncherPath = Join-Path $InstallDir "lca-web.bat"
-$WebLauncherContent = @"
-@echo off
-REM lca-web.bat — เปิดหน้าเว็บ Chat UI (ต้องระบุโฟลเดอร์โปรเจกต์เป็น argument แรก)
-$pythonCmd "$InstallDir\server.py" %*
-"@
-Set-Content -Path $WebLauncherPath -Value $WebLauncherContent -Encoding ASCII
-
 # ตัวดับเบิลคลิก: เปิดเซิร์ฟเวอร์ + เด้งเบราว์เซอร์ให้อัตโนมัติ (ผู้ใช้ไม่ต้องพิมพ์อะไร)
 $StartLauncherPath = Join-Path $InstallDir "start-lca.bat"
 $StartLauncherContent = @"
@@ -194,7 +186,7 @@ echo เปิด LCA Desktop แล้ว — ปิดหน้าต่าง
 "@
 Set-Content -Path $DesktopLauncherPath -Value $DesktopLauncherContent -Encoding UTF8
 
-Write-Host "[ok] สร้าง launcher แล้ว: lca.bat (CLI), lca-web.bat, start-lca.bat, lca-desktop.bat (โหมดแอป)"
+Write-Host "[ok] สร้าง launcher แล้ว: lca.bat (CLI), start-lca.bat, lca-desktop.bat (โหมดแอป), lca-tray.bat (tray)"
 
 # ---------- ขั้นตอน 6: เพิ่ม InstallDir เข้า PATH ผู้ใช้ (ถ้ายังไม่มี) ----------
 $currentPath = [Environment]::GetEnvironmentVariable("Path", "User")
@@ -216,6 +208,6 @@ if ($hasOllama) {
 }
 Write-Host "3. วิธีง่ายสุด: ดับเบิลคลิก start-lca.bat ที่ $InstallDir" -ForegroundColor Green
 Write-Host "   (เปิดเซิร์ฟเวอร์ + เด้งเบราว์เซอร์หน้าแชทให้อัตโนมัติ)"
-Write-Host "   หรือใช้ terminal: lca C:\path\to\project  /  lca-web C:\path\to\project"
+Write-Host "   หรือใช้ terminal: lca C:\path\to\project"
 # เปิดโฟลเดอร์ติดตั้งให้ผู้ใช้เห็น start-lca.bat ได้ทันที
 try { Start-Process explorer.exe $InstallDir } catch {}
