@@ -20,7 +20,13 @@ htmlcov/
 .DS_Store
 Thumbs.db
 .idea/
-.vscode/
+# Share the workspace launch/tasks/settings/extensions. Ignore other .vscode files.
+# (.vscode/ as a directory rule cannot be re-included; ignore the contents instead.)
+.vscode/*
+!.vscode/launch.json
+!.vscode/tasks.json
+!.vscode/settings.json
+!.vscode/extensions.json
 
 # LCA runtime / secrets (Rule 23 — ห้าม commit secret เด็ดขาด)
 # gitignore ไม่ตัดคอมเมนต์ท้ายบรรทัด — ถ้าเขียน path แล้วตามด้วย # มันจะไม่ match

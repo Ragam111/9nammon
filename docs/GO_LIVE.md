@@ -19,7 +19,19 @@ ollama pull qwen2.5-coder:1.5b      # โหลดโมเดล (เครื�
 ```bash
 ./scripts/serve.sh
 ```
-เข้า `http://127.0.0.1:8420` ได้เลยเป็น CEO (local mode ไม่ต้องตั้ง token — ปลอดภัยเพราะ bind 127.0.0.1)
+เปิด `http://127.0.0.1:8420` ได้จากเบราว์เซอร์บนเครื่องนี้. เซิร์ฟเวอร์สุ่ม **session token** ใหม่ทุกครั้งที่เปิด
+แล้วฝังให้หน้าเว็บเอง (เทอร์มินัลพิมพ์ค่าเดียวกันสำหรับ `curl` / header `X-Auth-Token`).
+ไม่ได้ตั้ง token แล้วไม่ได้สิทธิ์ CEO อีกต่อไป — กันเว็บอื่นยิงเข้า `127.0.0.1`.
+
+### คำขอที่เซิร์ฟเวอร์ปฏิเสธ (2026-11-03)
+- **Host** ต้องเป็น `127.0.0.1:<พอร์ต>`, `localhost:<พอร์ต>` หรือ `[::1]:<พอร์ต>`
+  (ถ้า bind ออกนอก loopback ให้อนุญาตชื่อนั้นเพิ่ม — bind `0.0.0.0` รับชื่อจริงของเครื่องบนพอร์ตที่ฟัง เพราะบังคับ token อยู่แล้ว)
+- **Origin** บน POST/PUT/PATCH/DELETE และ websocket upgrade ต้อง same-origin. ไม่มี Origin ได้เฉพาะไคลเอนต์ที่ไม่ใช่เบราว์เซอร์ (curl/CLI) และต้องมี token. ไม่เปิด CORS
+- `GET /api/version` และ `GET /api/health` ยังเป็น public (ไม่มี token, path, หรือข้อมูลผู้ใช้). ฟิลด์ `python` คงไว้สำหรับ support
+
+Tunnel เข้า server ที่ bind `127.0.0.1` แบบไม่ตั้ง token จะโดน Host/Origin ปฏิเสธ เพราะเบราว์เซอร์ส่งชื่อสาธารณะ.
+ทางที่แนะนำ: รัน `LCA_HOST=0.0.0.0` + `LCA_TOKEN` (รับ Host ที่ไม่มีพอร์ตหลัง proxy/tunnel และเทียบ Origin กับ Host
+โดยไม่สนพอร์ต) หรือระบุชื่อใน `LCA_ALLOWED_HOSTS` (ชื่อพวกนี้ไม่ได้ session token อัตโนมัติ). ดู docs/DEPLOY.md
 
 ## ระดับ 2 — เปิดให้คนในบ้าน/ออฟฟิศ (วง Wi-Fi/LAN เดียวกัน)
 ```bash
@@ -36,6 +48,7 @@ ollama pull qwen2.5-coder:1.5b      # โหลดโมเดล (เครื�
 cloudflared tunnel --url http://localhost:8420   # ได้ URL https ชั่วคราวให้คนนอกเข้า
 ```
 - tunnel (Cloudflare/ngrok) ให้ **HTTPS + ซ่อน IP บ้าน** — ปลอดภัยกว่าเปิดพอร์ตเอง
+- tunnel ใช้ได้เมื่อรัน `LCA_HOST=0.0.0.0` + `LCA_TOKEN` (หรือใส่ชื่อ tunnel ใน `LCA_ALLOWED_HOSTS`) — ดูหมายเหตุด้านบน
 - ยังต้อง bootstrap + ออกคีย์ + คุมโควตาเหมือนเดิม
 - ถ้าจะจริงจังระยะยาว ค่อยย้ายไป VPS/คลาวด์ (ตอนนั้นเครื่อง 8GB จะเป็นคอขวด — ดู docs/ROADMAP.md เรื่องอัป RAM/GPU)
 

@@ -6,9 +6,23 @@
   "use strict";
   var KEY = "lca_key";
 
+  // session ที่เซิร์ฟเวอร์ฝังในหน้า หรือ fragment #lca_token= — ไม่เขียนทับ key ที่ผู้ใช้บันทึก
+  function launchToken() {
+    if (w.__LCA_SESSION_TOKEN) return String(w.__LCA_SESSION_TOKEN);
+    try {
+      var h = (w.location && w.location.hash) || "";
+      var m = h.match(/(?:^#|&)lca_token=([^&]+)/);
+      return m ? decodeURIComponent(m[1]) : "";
+    } catch (e) { return ""; }
+  }
+
   w.lca = {
     getKey: function () {
-      try { return localStorage.getItem(KEY) || ""; } catch (e) { return ""; }
+      try {
+        var stored = localStorage.getItem(KEY) || "";
+        if (stored) return stored;
+      } catch (e) { /* storage ปิด — ใช้ session ของการเปิดครั้งนี้ */ }
+      return launchToken();
     },
     setKey: function (v) {
       try {
@@ -32,7 +46,7 @@
     },
 
     // ถาม server ว่า key ปัจจุบันคือใคร — คืน {username,role,tier} หรือ null ถ้าไม่ผ่าน
-    // หมายเหตุ: โหมด local (ไม่ตั้ง token ที่ server) จะคืน CEO เสมอแม้ไม่ได้วาง key
+    // โหมด local ที่ไม่ได้ตั้ง token: หน้าเว็บส่ง session token ที่เซิร์ฟเวอร์ฝังให้ แล้วได้สิทธิ์ CEO
     whoami: async function () {
       try {
         var res = await fetch("/api/me", { headers: this.authHeaders() });
