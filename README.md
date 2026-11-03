@@ -150,7 +150,7 @@ code .
 
 | Run and Debug / Run Task | คำสั่งจริง |
 |---|---|
-| LCA Server (web UI :8420) | `python server.py <โฟลเดอร์> --host 127.0.0.1 --port 8420` |
+| LCA Server (web UI :8420) | `python server.py` (โปรเจกต์ = โฟลเดอร์ปัจจุบัน; ระบุเองได้ `python server.py <โฟลเดอร์>`) — พิมพ์ลิงก์ `http://127.0.0.1:8420/chat#lca_token=…` ให้คลิก |
 | LCA Desktop (`lca_app.py`) | `python lca_app.py` (ไม่มี argument; `--version` ได้) |
 | LCA CLI (`local_coder.py`) | `python local_coder.py <โฟลเดอร์> --model qwen2.5-coder:3b` |
 | Installer GUI | `python installer_gui.py` |

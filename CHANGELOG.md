@@ -11,6 +11,10 @@ Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไ�
 หลังจากนั้นพิมพ์ `lca-update` ได้เลย.
 
 ### ติดตั้งและอัปเดตคำสั่งเดียว
+- **`python server.py` เฉยๆ ใช้ได้แล้ว** — `project_dir` ไม่บังคับ (ค่าเริ่มต้น = โฟลเดอร์ปัจจุบัน;
+  เดิมขึ้น `error: the following arguments are required: project_dir`). ตอนเปิดพิมพ์ลิงก์เต็มที่คลิกได้
+  `http://127.0.0.1:8420/chat#lca_token=…` (เข้าหน้าแชทพร้อม session token เลย; token ที่ผู้ใช้ตั้งเองไม่ถูกพิมพ์ลง URL).
+- ติดตั้งแล้วคอมไพล์ `.pyc` ล่วงหน้า (`python -m compileall`) — เปิดครั้งแรกบนเครื่อง HDD เร็วขึ้น.
 - **ไม่ปัก commit ในตัวติดตั้งอีกแล้ว** (#106 เคยปักไว้ที่ `93f1ca8`). ทุก release
   `scripts/release_assets.py --upload v<VERSION>` สร้าง `lca-source.zip` ด้วย `git archive`
   + `lca-source.zip.sha256` แล้วแนบเข้า Release (ปฏิเสธถ้า tag ไม่ตรง `VERSION`).

@@ -217,6 +217,11 @@ $ErrorActionPreference = $prevEap
 if ($pipCode -eq 0) { Write-Host "[ok] dependency พร้อม" }
 else { Write-Host "[warn] pip ไม่สำเร็จ (exit $pipCode) — รันเอง: $pythonCmd -m pip install psutil" -ForegroundColor Yellow }
 
+# คอมไพล์ .pyc ล่วงหน้า — เปิดครั้งแรกบนเครื่อง HDD เร็วขึ้น (ไม่ต้องคอมไพล์ ~200 โมดูลตอนสตาร์ท); best-effort
+$ErrorActionPreference = "Continue"
+& $pythonCmd -m compileall -q -j 0 (Join-Path $InstallDir "server.py") (Join-Path $InstallDir "lca_app.py") (Join-Path $InstallDir "local_coder.py") (Join-Path $InstallDir "app") (Join-Path $InstallDir "sysmanager") 2>&1 | Out-Null
+$ErrorActionPreference = $prevEap
+
 Set-Content -Path $VersionFile -Value $CurrentVersion -Encoding UTF8
 Set-Content -Path $ModelFile -Value $Model -Encoding UTF8
 
