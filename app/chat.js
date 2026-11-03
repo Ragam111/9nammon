@@ -42,7 +42,15 @@
     }
     return text.slice(0, n) + "…";
   }
+  // Session token from /app.js (server-injected or #lca_token=), or the saved key.
+  // Every /api/* call needs it since the localhost CSRF guard (#107).
+  function authed(extra) {
+    const base = window.lca && typeof window.lca.headers === "function" ? window.lca.headers() : {};
+    return Object.assign(base, extra || {});
+  }
   async function api(path, opts) {
+    opts = Object.assign({}, opts || {});
+    opts.headers = authed(opts.headers);
     const res = await fetch(path, opts);
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -412,7 +420,7 @@
         const history = S.ephemeralLog.map((m) => ({ role: m.role, content: m.content }));
         const resp = await fetch("/api/chat/stream", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: authed({ "Content-Type": "application/json" }),
           body: JSON.stringify({ provider: picked.provider, model: picked.model, messages: history }),
           signal: ctrl.signal,
         });
@@ -456,7 +464,7 @@
     try {
       const resp = await fetch("/api/chat/stream", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authed({ "Content-Type": "application/json" }),
         body: JSON.stringify({
           provider: picked.provider,
           model: picked.model,

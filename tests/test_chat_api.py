@@ -64,6 +64,8 @@ class ChatApiTest(unittest.TestCase):
         self.patch = mock.patch("app.providers.chat", chat)
         self.patch.start()
         handler = server.make_handler(self.root, None)
+        # No master token: the server mints a per-launch session token (#107).
+        self.auth = {"X-Auth-Token": handler.session_token}
         self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
         self.port = self.httpd.server_address[1]
         self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
@@ -79,7 +81,7 @@ class ChatApiTest(unittest.TestCase):
         import http.client
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=timeout)
         body = json.dumps(payload).encode("utf-8")
-        conn.request("POST", path, body=body, headers={"Content-Type": "application/json"})
+        conn.request("POST", path, body=body, headers={"Content-Type": "application/json", **self.auth})
         resp = conn.getresponse()
         raw = resp.read().decode("utf-8")
         conn.close()
@@ -88,11 +90,28 @@ class ChatApiTest(unittest.TestCase):
     def _get(self, path):
         import http.client
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
-        conn.request("GET", path)
+        conn.request("GET", path, headers=self.auth)
         resp = conn.getresponse()
         raw = resp.read().decode("utf-8")
         conn.close()
         return resp.status, json.loads(raw) if raw else {}
+
+    def test_chat_page_carries_session_token_and_api_requires_it(self):
+        import http.client
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("GET", "/chat")
+        resp = conn.getresponse()
+        html = resp.read().decode("utf-8")
+        conn.close()
+        self.assertEqual(resp.status, 200)
+        self.assertIn("__LCA_SESSION_TOKEN", html)
+        self.assertLess(html.index('src="/app.js"'), html.index('src="/chat.js"'))
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("GET", "/api/chat/conversations")
+        resp = conn.getresponse()
+        resp.read()
+        conn.close()
+        self.assertEqual(resp.status, 401)
 
     def test_provider_is_per_request_and_can_switch_mid_conversation(self):
         st, created = self._post("/api/chat/conversations", {"title": "สลับค่าย"})
@@ -234,7 +253,7 @@ class ChatApiTest(unittest.TestCase):
                 body=json.dumps({
                     "conversation_id": cid, "content": "ถาม", "provider": "ollama", "model": "qwen",
                 }).encode(),
-                headers={"Content-Type": "application/json"},
+                headers={"Content-Type": "application/json", **self.auth},
             )
             resp = conn.getresponse()
             self.assertEqual(resp.status, 200)
