@@ -53,7 +53,7 @@ pyinstaller --onefile --windowed --name TokenLCAlimit installer_gui.py
 1. ดาวน์โหลด `TokenLCAlimit.exe`
 2. ดับเบิลคลิก → GUI
 3. เลือกโฟลเดอร์ติดตั้ง
-4. **ดาวน์โหลด zip ของ commit ที่ปักไว้** (ตรวจ SHA-256 ก่อน) → extract → copy ไป install_dir
+4. **ดาวน์โหลด `lca-source.zip` ของ Release ล่าสุด** (ตรวจกับ `lca-source.zip.sha256` ก่อน) → extract → copy ไป install_dir
 5. ต้องมี Python 3.10+ บนเครื่อง (ตัว installer ไม่ฝัง Python ของ server)
 
 ## เทียบตรงๆ

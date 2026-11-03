@@ -1,8 +1,32 @@
 # Local Code Assistant (LCA) — Windows Package
 
-**Version:** 0.1.6 (`--version` CLI 2026-10-30) · 837 tests pass · [CHANGELOG](CHANGELOG.md)
+**Version:** 0.2.0 (2026-11-03) · [CHANGELOG](CHANGELOG.md)
 
 ตัวติดตั้ง AI Coding Assistant แบบฟรี รันด้วย Ollama บนเครื่อง (Windows 10/11, AMD64)
+
+## 🚀 เริ่มเร็ว (Windows 10/11)
+
+เปิด **PowerShell** แล้ววางทีละบรรทัด — โหลด Release ล่าสุด + ตรวจ SHA-256 ให้เอง
+
+**ติดตั้ง**
+```powershell
+powershell -ExecutionPolicy Bypass -c "iex ((irm https://raw.githubusercontent.com/Ragam111/9nammon/main/install.ps1) -replace '^\uFEFF')"
+```
+
+**อัปเดต** (เก็บข้อมูลเดิม, migrate ฐานข้อมูล, เปิดแอปกลับให้)
+```powershell
+lca-update
+```
+ครั้งแรกที่อัปจาก 0.1.x (ยังไม่มี `lca-update`) ใช้:
+```powershell
+powershell -ExecutionPolicy Bypass -c "iex ((irm https://raw.githubusercontent.com/Ragam111/9nammon/main/update.ps1) -replace '^\uFEFF')"
+```
+
+ต้องมี Python 3.10+ ก่อน · โหมด local ต้องมี [Ollama](https://ollama.com/download/windows) ·
+เครื่อง RAM 8GB ตัวติดตั้งจะถามว่าจะจูน Ollama ไหม (`scripts/setup-ollama.ps1`)
+
+*Quick start (EN): run the two lines above in PowerShell — install, then `lca-update` to update.
+Both download the latest GitHub Release and check its SHA-256 before installing.*
 
 ## 📥 แนะนำที่สุด: `LCA-Desktop.exe` — LCA Chat ก้อนเดียว เหมือน Claude Desktop
 
@@ -25,16 +49,6 @@
 - ⚠️ ต้องมี **Python 3.10+** และ **Ollama** บนเครื่อง
 
 > ❗ **ถ้าดาวน์โหลด zip แล้วแตกไฟล์เอง** และเจอ **"Not enough space on the disk"** จาก WinRAR — ลบไฟล์ใน `Downloads`/`Desktop` ก่อน หรือใช้ `LCA-Desktop.exe` แทน (ไม่ต้อง extract เลย)
-
-## ⚡ ติดตั้งออนไลน์ บรรทัดเดียว (ถ้าไม่อยากโหลด .exe)
-
-เปิด **PowerShell** แล้วแปะบรรทัดนี้ (ดาวน์โหลด + แตกไฟล์ + ติดตั้งให้อัตโนมัติ):
-
-```powershell
-powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercontent.com/Ragam111/9nammon/main/install.ps1 | iex"
-```
-
-จากนั้นดึงโมเดล (ครั้งเดียว): `ollama pull qwen2.5-coder:1.5b` แล้วเปิดใช้งานได้เลย
 
 ## มีอะไรให้ใช้บ้าง
 - **แชตช่วยเขียนโค้ด** — CLI (`lca`) หรือเปิดหน้าเว็บด้วย `start-lca.bat` / `lca-desktop.bat` → `http://127.0.0.1:8420`, ตอบแบบสตรีมทีละคำ
@@ -176,12 +190,13 @@ powershell -ExecutionPolicy Bypass -File uninstall.ps1
 
 ## อัปเดต
 
-1. ดาวน์โหลดแพ็กเกจเวอร์ชันใหม่มาทับโฟลเดอร์นี้
-2. รัน:
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File update.ps1
-   ```
-อัปเดตเฉพาะไฟล์โปรแกรม ไม่ลบไฟล์งานของคุณ
+```powershell
+lca-update
+```
+หรือดับเบิลคลิก `lca-update.bat` ในโฟลเดอร์ที่ติดตั้ง. ขั้นตอน: โหลด Release ล่าสุด → ตรวจ SHA-256 →
+ปิด LCA ที่เปิดอยู่ → ทับเฉพาะไฟล์โปรแกรม → migrate ฐานข้อมูล (มี backup) → เปิดกลับ.
+ไม่แตะ `%LOCALAPPDATA%\LocalCodeAssistant\data` และไฟล์ในโปรเจกต์ของคุณ.
+ออฟไลน์: แตก `lca-source.zip` แล้วรัน `update.ps1 -Package <โฟลเดอร์ที่แตก>`.
 
 ## หมายเหตุด้านความปลอดภัย
 
