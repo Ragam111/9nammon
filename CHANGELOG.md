@@ -4,18 +4,51 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
-## [Unreleased] — 2026-11-03 (CLI แชท: เลื่อนขึ้นอ่านระหว่างโมเดลตอบแล้วจอไม่เด้ง/แชทไม่หลุด)
+## [0.2.0] — 2026-11-03 (ติดตั้ง/อัปเดตคำสั่งเดียว · Chat Hub · กัน CSRF บน localhost · เก็บ key แบบเข้ารหัส)
+
+รวมทุกอย่างที่ merge วันที่ 2026-11-03 (#105–#111) + ระบบติดตั้ง/อัปเดตใหม่.
+อัปเดตจาก 0.1.x: รัน one-liner ของ `update.ps1` ใน README ครั้งเดียว (update.ps1 รุ่นเก่ายังโหลดเองไม่เป็น)
+หลังจากนั้นพิมพ์ `lca-update` ได้เลย.
+
+### ติดตั้งและอัปเดตคำสั่งเดียว
+- **`python server.py` เฉยๆ ใช้ได้แล้ว** — `project_dir` ไม่บังคับ (ค่าเริ่มต้น = โฟลเดอร์ปัจจุบัน;
+  เดิมขึ้น `error: the following arguments are required: project_dir`). ตอนเปิดพิมพ์ลิงก์เต็มที่คลิกได้
+  `http://127.0.0.1:8420/chat#lca_token=…` (เข้าหน้าแชทพร้อม session token เลย; token ที่ผู้ใช้ตั้งเองไม่ถูกพิมพ์ลง URL).
+- ติดตั้งแล้วคอมไพล์ `.pyc` ล่วงหน้า (`python -m compileall`) — เปิดครั้งแรกบนเครื่อง HDD เร็วขึ้น.
+- **ไม่ปัก commit ในตัวติดตั้งอีกแล้ว** (#106 เคยปักไว้ที่ `93f1ca8`). ทุก release
+  `scripts/release_assets.py --upload v<VERSION>` สร้าง `lca-source.zip` ด้วย `git archive`
+  + `lca-source.zip.sha256` แล้วแนบเข้า Release (ปฏิเสธถ้า tag ไม่ตรง `VERSION`).
+  `install.ps1`, `update.ps1`, `TokenLCAlimit.exe` โหลดจาก `releases/latest/download/`
+  → ตรวจ SHA-256 → ไม่ตรง = ลบทิ้ง ไม่ติดตั้ง. ตั้ง `LCA_RELEASE_URL` เพื่อชี้ไป Release/mirror อื่นได้.
+- **`install.ps1`** รันแบบ one-liner (`irm … | iex`) ได้จริง (เดิมพังเพราะไม่มีไฟล์ข้างสคริปต์):
+  โหลด Release เองแล้วติดตั้ง. เพิ่ม `-InstallDir`, `-Model`, `-Yes`, `-TuneOllama`, `-Update`.
+  อ่านเลขเวอร์ชันจาก `VERSION` (เดิม hardcode 0.1.0), ติดตั้ง `requirements.txt`, คัดลอก
+  `lca_app.py`, `VERSION`, `scripts\` ที่เดิมตกหล่น.
+- **`update.ps1` คำสั่งเดียว / `lca-update`**: หาโฟลเดอร์ติดตั้ง → โหลด + ตรวจ SHA-256 →
+  ปิด LCA ที่เปิดอยู่ (server / tray / desktop) → ติดตั้งทับแบบเงียบ (เก็บโมเดลเดิม) →
+  `scripts/migrate.py` (migration SQLite เฉพาะ `.db` ที่มีอยู่, มี backup) → เปิดกลับแบบเดิม.
+  ไม่แตะ `%LOCALAPPDATA%\LocalCodeAssistant\data` และไฟล์ในโปรเจกต์. `-Package` ใช้แพ็กเกจที่แตกไว้ (ออฟไลน์).
+- **`scripts/setup-ollama.ps1`** (ตัวเลือก): จูน Ollama สำหรับ i3/RAM 8GB/HDD —
+  ตัวติดตั้งถามเมื่อ RAM ≤ 12GB หรือสั่ง `-TuneOllama`.
+- `.gitattributes`: `.bat` เป็น CRLF ตอน checkout/archive; zip ของ Release ไม่มี `tests/`, `.github/`, `.vscode/`.
+
+#### Tests
+`tests/test_install_update.py`: บล็อกดาวน์โหลดเหมือนกันทั้งสองสคริปต์, BOM, รายการไฟล์,
+release_assets.py (zip+sha256, ไม่มี tests/, tag ต้องตรง VERSION), VERSION ตรง CHANGELOG, parse ทุก `.ps1` ด้วย `pwsh`,
+sidecar checksum ตรง/ไม่ตรง, migrate.py (ไม่สร้าง db ใหม่, เก็บแถวเดิม, exit code). +22 → **1053 passed**.
+
+### CLI แชท: เลื่อนขึ้นอ่านระหว่างโมเดลตอบแล้วจอไม่เด้ง/แชทไม่หลุด (#111)
 
 ตามที่ user แจ้ง: "ใน PowerShell cmd terminal เลื่อนดู model ตอบคำถามห้องแชทหลุด"
 
-### Fixed
+#### Fixed
 - `local_coder.py` สตรีมคำตอบแบบ append-only: เลิกใช้ spinner เธรดที่เขียน `\r` ทุก 0.15 วิ
   และ print+flush ทุก token (conhost ดึง viewport กลับล่างทุกครั้งที่มี output)
   → สถานะ "กำลังคิด" เขียน/ลบครั้งเดียว, flush ไม่ถี่กว่า 0.25 วิ
 - Ctrl+C ระหว่างตอบ = หยุดคำตอบนั้น (เก็บส่วนที่ได้) ไม่ปิดโปรแกรม; Ctrl+C ตอนถาม y/n แก้ไฟล์ = ยกเลิก
 - Ollama ล่ม/หลุดกลางคัน = แจ้ง error แล้วกลับ prompt (เดิม `sys.exit(1)` ทิ้งทั้งแชท)
 
-### Added
+#### Added
 - `--stream-mode auto|live|quiet`, `--no-stream`, env `LCA_STREAM_MODE`, คำสั่ง `/stream`:
   quiet = ไม่เขียนลงจอระหว่างตอบ (ความคืบหน้าขึ้นที่ title bar) แล้วพิมพ์ทีเดียวตอนเสร็จ;
   auto = quiet บนหน้าต่าง cmd/PowerShell แบบเก่า (ไม่มี `WT_SESSION`/`TERM_PROGRAM`/`TERM`), live ที่อื่น
@@ -23,9 +56,9 @@ Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไ�
 - บันทึกแชททุกข้อความ `<data_dir>/cli_sessions/*.jsonl` (`app/cli_session.py`), `--resume`, `--no-save`
 - `app/cli_render.py` (stdlib) + `tests/test_cli_render.py` (18 tests)
 
-## [Unreleased] — 2026-11-03 (Chat Hub conversations, provider routing, Thai chat page)
+### Chat Hub conversations, provider routing, Thai chat page (#110)
 
-### Added
+#### Added
 - **`/api/chat` and `/api/chat/stream`** call `app.providers` when the request
   names a `provider`. The model is chosen on that request. A `conversation_id`
   reloads the shared transcript, so the next turn can name a different provider.
@@ -51,24 +84,21 @@ Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไ�
 - Chat skills with `mode=chat` are seeded into `personas` once. Dataset
   samples are copied only when `CHAT_IMPORT_SAMPLES` is `1`/`true`/`yes`.
 
-### Fixed
+#### Fixed
 - `/chat` loads `/app.js` and sends the per-launch session token on every
   `/api/chat/*` call, so the page works behind the #107 request guard
   (guard code unchanged).
 
-### Tests
+#### Tests
 +20 in `tests/test_chat_store.py`, `tests/test_chat_api.py`, and
 `tests/test_chat_page.py` (mocked providers, no network, no real keys).
 +17 after merging main: `tests/test_provider_locality.py` (localhost,
 127.0.0.1, ::1, LAN IP, remote host, look-alikes), LAN compare runs in
 parallel, `/chat` carries the session token. Full suite: **1013 passed**.
 
-### Not changed
-- `VERSION` stays 0.1.6.
+### Chat Hub provider adapters (#109)
 
-## [Unreleased] — 2026-11-03 (Chat Hub provider adapters)
-
-### Added
+#### Added
 - **Chat provider adapters** (`app/providers/`) on top of `app/model_backend.py`.
   One transcript (`system` / `user` / `assistant` text) can continue on another
   provider. Stdlib HTTP only (`urllib`, `json`, `http.client`, `ssl`) — no
@@ -84,19 +114,16 @@ parallel, `/chat` carries the session token. Full suite: **1013 passed**.
 - API keys: `config_manager.get_key`, and `app.secrets.reveal` when that module
   is importable (PR #108, not on main yet). Keys are not logged.
 
-### Tests
+#### Tests
 +79 in `tests/test_providers.py` (mocked HTTP, no network). Full suite: **916 passed**.
 
-### Not changed
-- `VERSION` stays 0.1.6.
+#### Not changed
 - `model_backend.generate` / `generate_stream` and their callers, including
   `server.py` (request-guard work is PR #107).
 
-## [Unreleased] — 2026-11-03 (API keys sealed at rest)
+### API keys sealed at rest (#108)
 
-ไม่ขยับเลข `VERSION` (ยัง 0.1.6)
-
-### Added
+#### Added
 - **`app/secret_store.py`** — เก็บ API key / token / password นอกไฟล์ config แบบ plaintext
   - Windows: `CryptProtectData` / `CryptUnprotectData` ผ่าน ctypes, scope CurrentUser
     (`CRYPTPROTECT_UI_FORBIDDEN` และไม่ตั้ง `CRYPTPROTECT_LOCAL_MACHINE`)
@@ -105,7 +132,7 @@ parallel, `/chat` carries the session token. Full suite: **1013 passed**.
     คำเตือนไม่พิมพ์ค่าความลับ
 - เทส `tests/test_secret_store.py` จำลอง DPAPI บน Linux
 
-### Changed
+#### Changed
 - `config.json`, `connections.json`, และ `config_versions.json`: ค่าที่เป็น credential
   ถูกเปลี่ยนเป็นตัวชี้ `$lca_secret_ref` ตอนอ่าน ถ้าเข้ารหัสไม่ได้ ค่าเดิมยังอยู่
 - snapshot ของ config ไม่เก็บค่าความลับอีกต่อไป — เก็บ ref ที่ชี้สำเนาใน `secrets.bin`
@@ -125,7 +152,7 @@ parallel, `/chat` carries the session token. Full suite: **1013 passed**.
 - ชื่อที่ลงท้าย `_TOKEN(S)` แต่เป็นตัวเลขตั้งค่า (`MAX_TOKENS`, `MIN_`/`NUM_`/`TOTAL_`…,
   `PRICE_PER_1K_TOKENS`, คำว่า LIMIT/COUNT/PER/BUDGET/CONTEXT ฯลฯ) ไม่ถูก seal — เก็บ plaintext แก้มือได้
 
-### Security
+#### Security
 - ไม่ log ค่า API key. อ่าน blob ไม่ได้จะไม่ลบ entry ใน `secrets.bin`
 - ลบสำเนาที่ seal ไว้เมื่อเจ้าของหายไป:
   - `connections.remove()` (และ connection ที่ถูกตัดเกิน `MAX_RECORDS`) ลบ `conn:<id>`
@@ -133,12 +160,12 @@ parallel, `/chat` carries the session token. Full suite: **1013 passed**.
     (ยกเว้น entry ที่ `config.json` หลัง rollback หรือเวอร์ชันที่เหลือยังชี้อยู่)
   - `set_key(KEY, "")` ลบ `config:KEY` และสำเนา `snapshot:*:KEY` ทุกเวอร์ชัน
 
-### Tests
+#### Tests
 - `python3 -m unittest discover -s tests` — **862 passed** (837 เดิม + 25 ใน `tests/test_secret_store.py`)
 
-## [Unreleased] — 2026-11-03 (localhost CSRF / DNS rebinding guard)
+### localhost CSRF / DNS rebinding guard (#107)
 
-### Security — 2026-11-03
+#### Security — 2026-11-03
 
 - **กัน CSRF / DNS rebinding บน loopback** (`server.py` พอร์ต 8420)
   - Host allowlist: `127.0.0.1:<port>`, `localhost:<port>`, `[::1]:<port>`
@@ -159,35 +186,33 @@ parallel, `/chat` carries the session token. Full suite: **1013 passed**.
 - **กัน clickjacking**: หน้า HTML ส่ง `X-Frame-Options: DENY` + `Content-Security-Policy: frame-ancestors 'none'`
 - docs: `DEPLOY.md` §1/§2a + ตาราง env, `GO_ONLINE_FREE.md` เส้นทาง A/C, `GO_LIVE.md` หมายเหตุ tunnel
 
-### Tests
+#### Tests
 - +17 (`tests/test_server_request_guard.py` และ `launch_url` ใน `test_lca_app.py`)
 - +15 (`tests/test_server_proxy_hosts.py` — Host ไม่มีพอร์ตบน wildcard, Origin เว็บอื่น 403,
   `LCA_ALLOWED_HOSTS`, header กัน iframe)
 
-## [Unreleased] — 2026-11-03 (installer SHA-256 verify)
+### installer SHA-256 verify (#106)
 
-### Security
+#### Security
 - **ตัวติดตั้งตรวจ SHA-256 ของไฟล์ที่ดาวน์โหลด** (`installer_gui.py`)
   - `verify_sha256()` อ่านไฟล์ทีละ chunk ผ่าน `hashlib.sha256`
   - ช่อง urllib อัปเดต hash ไปพร้อมกับเขียนสตรีม; ช่อง curl ตรวจไฟล์ที่เซฟแล้วด้วย helper เดียวกัน
   - hash ไม่ตรง → ลบไฟล์ทิ้ง แล้วโยน `ChecksumMismatch` (ไม่แตก zip ต่อ และไม่ fallback ไปช่องทางอื่น)
-- **ปัก commit แทน `refs/heads/main.zip`**
+- **ปัก commit แทน `refs/heads/main.zip`** (0.2.0 เลิกปักแล้ว — ตรวจกับ `lca-source.zip.sha256` ของ Release แทน)
   - URL แบบ latest ไม่มี SHA-256 คงที่ (ไบต์เปลี่ยนทุก push) และ GitHub ไม่ได้เผยแพร่ `.sha256` ของ source archive — จึงไม่ใส่ hash ที่เดา
   - `PINNED_COMMIT` = `93f1ca8de37543af528b33c8620347cf10865c5c` (HEAD ของ main ตอนเพิ่มการตรวจ)
   - `ZIP_SHA256` = `d03326baa16f1555b1d0089e46884a0f0ddf249e3b2b4976f77854313fe5ef8d`
     คำนวณจากไฟล์ที่ดาวน์โหลดจริงจาก URL นั้นเมื่อ 2026-11-03 (curl สองครั้งได้ digest เดียวกัน, 518881 ไบต์)
     — **ไม่ใช่** checksum ที่ upstream ประกาศ
 
-### Tests
+#### Tests
 +3 (`837` → `840`) ใน `tests/test_sha256_verify.py` และ `tests/test_installer_gui.py`:
 - `VerifySha256Test` — match คืน digest และเก็บไฟล์, mismatch ลบไฟล์แล้ว raise
 - `DownloadZipTest.test_urllib_mismatch_deletes_file_and_skips_curl`
 
-## [Unreleased] — 2026-11-03 (VS Code workspace + SKILL.md install path)
+### VS Code workspace + SKILL.md install path (#105)
 
-ไม่ bump เวอร์ชัน — ยังเป็น 0.1.6 จนกว่าจะมี release
-
-### Added
+#### Added
 - **`.vscode/`** (`launch.json`, `tasks.json`, `settings.json`, `extensions.json`)
   ให้รัน เทส ลิงต์ และดีบัก LCA ใน VS Code บน Windows
   - launch: `server.py <dir> --host 127.0.0.1 --port 8420`, `lca_app.py`,
@@ -196,7 +221,7 @@ parallel, `/chat` carries the session token. Full suite: **1013 passed**.
   - `files.eol` เป็น LF — repo เก็บไฟล์เป็น LF (`git ls-files --eol`)
 - **README** ส่วน "Develop in VS Code"
 
-### Fixed
+#### Fixed
 - **`SKILL.md`**: ไม่ชี้ `install.sh`, `install_online.ps1`, `lca-web` / `lca-web.bat`
   ที่ลบใน v0.1.3 (#101) แล้ว
   - Windows: `install.bat` / `install.ps1` (one-liner เดิม), เปิดเว็บด้วย `start-lca.bat`

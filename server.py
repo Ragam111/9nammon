@@ -1971,6 +1971,22 @@ def resolve_server_config(args, env=None):
     return {"host": host, "port": port, "token": token}
 
 
+def startup_url(cfg: dict, handler_cls) -> str:
+    """URL เต็มที่พิมพ์ตอนเปิดเซิร์ฟเวอร์ — เปิดหน้าแชทตรง (/chat) และแนบ session token
+    ที่สุ่มเองไว้ใน fragment (#lca_token=) ซึ่งเบราว์เซอร์ไม่ส่งออกไปกับ request.
+    bind 0.0.0.0/:: → แสดง 127.0.0.1 (คลิกจากเครื่องนี้ได้); IPv6 ใส่ [] ให้.
+    ถ้าผู้ใช้ตั้ง token เอง จะไม่พิมพ์ token ลง URL (ผู้ใช้รู้ค่าอยู่แล้ว)"""
+    host = cfg.get("host") or ""
+    if host in ("0.0.0.0", "::", ""):
+        host = "127.0.0.1"
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+    url = f"http://{host}:{cfg['port']}/chat"
+    if getattr(handler_cls, "session_token_auto", False) and getattr(handler_cls, "session_token", None):
+        url += "#lca_token=" + handler_cls.session_token
+    return url
+
+
 def main():
     parser = argparse.ArgumentParser(description="Backend server สำหรับ Local Code Assistant web UI")
     parser.add_argument(
@@ -1978,7 +1994,9 @@ def main():
         version=f"LCA {read_version()} (python {sys.version_info.major}."
                 f"{sys.version_info.minor}.{sys.version_info.micro})",
         help="แสดงเวอร์ชันแล้วออก (ตรงกับ GET /api/version)")
-    parser.add_argument("project_dir", type=str, help="โฟลเดอร์โปรเจกต์ (ใช้กับ todo)")
+    parser.add_argument("project_dir", type=str, nargs="?", default=".",
+                         help="โฟลเดอร์โปรเจกต์ (ใช้กับ todo) — ไม่ใส่ = โฟลเดอร์ปัจจุบัน "
+                              "(พิมพ์แค่ `python server.py` ได้เลย)")
     parser.add_argument("--host", type=str, default="127.0.0.1",
                          help="bind address — ใช้ 127.0.0.1 เท่านั้นถ้าไม่ต้องการเปิดให้เครื่องอื่นเข้าถึง "
                               "(cloud: ตั้ง env LCA_HOST=0.0.0.0)")
@@ -2014,15 +2032,15 @@ def main():
         httpd = ThreadingHTTPServer((cfg["host"], cfg["port"]), handler_cls)
     print(f"=== Local Assistant Server ===")
     print(f"โปรเจกต์: {project_root}")
+    url = startup_url(cfg, handler_cls)
+    # บรรทัด URL เต็ม (คลิกได้ใน Windows Terminal/VS Code) — มี /chat และ #lca_token= ให้แล้ว
+    print(f"เปิดเบราว์เซอร์ที่: {url}")
     if handler_cls.session_token_auto:
         # CLI ต้องเห็นค่านี้ครั้งเดียว — หน้าเว็บได้ค่าเดียวกันฝังใน HTML / fragment
-        shown_host = "127.0.0.1" if cfg["host"] in ("0.0.0.0", "::", "") else cfg["host"]
-        print(f"เปิดเบราว์เซอร์ที่: http://{shown_host}:{cfg['port']}/#lca_token={handler_cls.session_token}")
         print("[auth] ไม่ได้ตั้ง token — สุ่ม session token สำหรับการเปิดครั้งนี้")
         print("[auth] หน้าเว็บได้รับ token เอง; curl/CLI ส่ง header X-Auth-Token ตามค่านี้")
         print(f"[auth] X-Auth-Token: {handler_cls.session_token}")
     else:
-        print(f"เปิดเบราว์เซอร์ที่: http://{cfg['host']}:{cfg['port']}")
         print("[auth] ต้องใส่ header X-Auth-Token เพื่อเรียก API")
     try:
         httpd.serve_forever()
