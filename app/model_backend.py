@@ -31,10 +31,11 @@ import urllib.request
 from pathlib import Path
 from typing import Optional
 
-# ให้ import local_coder (repo root) ได้ ไม่ว่าถูกเรียกจากไหน
+# ให้ import app.* ได้ ไม่ว่าถูกเรียกจากไหน (repo root)
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from local_coder import call_ollama, get_tuning_options, OLLAMA_URL  # noqa: E402
+# ไม่ import local_coder (ทั้ง CLI) — ใช้ส่วนกลางที่เบากว่า
+from app.ollama_client import call_ollama, get_tuning_options, OLLAMA_URL  # noqa: E402
 from app import config_manager  # noqa: E402
 
 DEFAULT_OPENAI_BASE = "http://127.0.0.1:8000/v1"

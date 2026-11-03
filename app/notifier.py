@@ -118,7 +118,7 @@ def notify(project_root: Path, event: str, text: str,
     return result
 
 
-# ---------- Adapter interface (ตระกูลเดียวกับ model_backend / storage_backend / auth_backend) ----------
+# ---------- Adapter interface (แบบเดียวกับ model_backend: เลือก impl จาก config) ----------
 # ของ 3 ช่อง (discord/email) ด้านบนพิสูจน์แล้วว่าใช้ได้ — เราไม่รื้อ แค่ครอบ "เต้ารับมาตรฐาน"
 # ให้ผู้เรียกใช้ interface เดียว แล้วช่องใหม่ (LINE, Slack, webhook กลาง ฯลฯ) เสียบเองได้
 

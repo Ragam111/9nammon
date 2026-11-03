@@ -21,17 +21,16 @@ from __future__ import annotations
 
 import argparse
 import os
-import subprocess
 import sys
 import threading
 import time
-import webbrowser
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import server  # noqa: E402  (ฝังมาด้วยตอน bundle)
+from app.launch_ui import open_app_window  # noqa: E402,F401  (ใช้ร่วมกับ server.py --open app)
 
 DEFAULT_PORT = 8420
 
@@ -62,20 +61,6 @@ def build_server(root, preferred_port: int = DEFAULT_PORT, host: str = "127.0.0.
     httpd.lca_session_token = handler.session_token
     httpd.lca_session_auto = handler.session_token_auto
     return httpd, httpd.server_address[1]
-
-
-def open_app_window(url: str) -> None:
-    """เปิดเป็นหน้าต่างแอป (ไม่มี address bar) — Edge/Chrome --app; fallback เบราว์เซอร์ปกติ"""
-    for exe in ("msedge", "chrome", "chromium"):
-        try:
-            subprocess.Popen([exe, f"--app={url}"])
-            return
-        except OSError:
-            continue
-    try:
-        webbrowser.open(url)
-    except Exception:   # pragma: no cover - เปิดเบราว์เซอร์ไม่ได้ก็ไม่ควร crash
-        pass
 
 
 def _is_first_run(root) -> bool:

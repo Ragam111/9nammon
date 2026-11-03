@@ -135,8 +135,6 @@ HTTP (ThreadingHTTPServer, stdlib)
 │   ├── cluster_store  : ทะเบียน node + health aggregator + ecosystem settings
 │   ├── support/finance/history/dataset/todo ...
 └── adapters (ตระกูลเดียวกัน, 2 impl ต่อตัว, เลือกด้วย config)
-    ├── storage_backend : Local | Memory
-    ├── auth_backend    : Local | Static
     └── notifier        : MultiChannel(Discord/email) | Null
 ```
 
@@ -154,7 +152,7 @@ footprint (วัด):  │   fits = footprint + HEADROOM(1.2GB) ≤ avail
 ### 6.4 Data flow: ลูกค้ายิง API
 ```
 client ──X-API-Key──► /api/chat
-  → auth_backend: key ถูกไหม + org_store.has_quota?  (ไม่พอ → 429)
+  → server._require: key ถูกไหม + org_store.has_quota?  (ไม่พอ → 429)
   → pick_model (ถ้าไม่ระบุ model)
   → model_backend.generate (Ollama CPU / cloud)
   → usage_store.record (units/cost ต่อ key)

@@ -30,7 +30,7 @@ from typing import Optional
 from urllib.parse import urlparse, parse_qs
 
 sys.path.insert(0, str(Path(__file__).parent))
-from local_coder import get_system_prompt  # noqa: E402
+from app.ollama_client import get_system_prompt  # noqa: E402  (ไม่ดึงทั้ง CLI local_coder ตอนบูต)
 from app.todo_store import load_todos, add_todo, toggle_todo, delete_todo  # noqa: E402
 from app import org_store  # noqa: E402  (ระบบองค์กร: user/role/api key/quota)
 from sysmanager.sysinfo import get_system_info  # noqa: E402  (spec เครื่องสำหรับ dev view)
@@ -1971,6 +1971,19 @@ def resolve_server_config(args, env=None):
     return {"host": host, "port": port, "token": token}
 
 
+def launch_ui_url(cfg: dict, handler_cls) -> Optional[str]:
+    """URL ที่ ``--open`` เปิดให้ — เฉพาะ bind loopback (เครื่องนี้) เท่านั้น.
+    session token ที่สุ่มเองไปอยู่ใน fragment (#lca_token=) ซึ่งเบราว์เซอร์ไม่ส่งให้ใคร"""
+    host = cfg.get("host") or ""
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        return None
+    shown = "[::1]" if host == "::1" else "127.0.0.1"
+    url = f"http://{shown}:{cfg['port']}/chat"
+    if getattr(handler_cls, "session_token_auto", False) and getattr(handler_cls, "session_token", None):
+        url += "#lca_token=" + handler_cls.session_token
+    return url
+
+
 def main():
     parser = argparse.ArgumentParser(description="Backend server สำหรับ Local Code Assistant web UI")
     parser.add_argument(
@@ -1987,6 +2000,9 @@ def main():
     parser.add_argument("--token", type=str, default=None,
                          help="auth token — บังคับใส่ถ้า bind ไม่ใช่ 127.0.0.1 (ตาม Rule ข้อ 12); "
                               "cloud ตั้ง env LCA_TOKEN ได้")
+    parser.add_argument("--open", choices=("none", "browser", "app"), default="none",
+                         help="เปิดหน้าเว็บให้หลัง bind พอร์ตแล้ว: browser = เบราว์เซอร์ปกติ, "
+                              "app = หน้าต่างแอป Edge/Chrome --app (start-lca.bat / lca-desktop.bat ใช้)")
     args = parser.parse_args()
 
     project_root = Path(args.project_dir).resolve()
@@ -2024,6 +2040,12 @@ def main():
     else:
         print(f"เปิดเบราว์เซอร์ที่: http://{cfg['host']}:{cfg['port']}")
         print("[auth] ต้องใส่ header X-Auth-Token เพื่อเรียก API")
+    ui_url = launch_ui_url(cfg, handler_cls)
+    if args.open != "none" and ui_url:
+        import threading
+        from app import launch_ui
+        # เปิดหลัง bind แล้ว (คำขอแรกรอใน backlog) — ไม่ต้องเดาเวลารอ และได้พอร์ตจริงเสมอ
+        threading.Thread(target=launch_ui.open_ui, args=(ui_url, args.open), daemon=True).start()
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

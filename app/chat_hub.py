@@ -119,7 +119,7 @@ def _http_status(exc) -> int:
 
 def _fallback_system(lang: str) -> str:
     try:
-        from local_coder import get_system_prompt
+        from app.ollama_client import get_system_prompt
         return get_system_prompt(lang or "th")
     except Exception:
         return ""

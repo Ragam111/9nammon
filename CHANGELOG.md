@@ -4,6 +4,23 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [Unreleased] — 2026-11-03 (cleanup: ลบโค้ดที่ไม่มีใครใช้ · launcher ไม่ต้องเดาเวลา · server บูตเบาขึ้น)
+
+- **`server.py --open browser|app`** เปิดเบราว์เซอร์/หน้าต่างแอปเอง *หลัง* bind พอร์ตแล้ว
+  (ได้พอร์ตจริงแม้ 8420 ไม่ว่าง; เฉพาะ bind loopback). `start-lca.bat` เลิกใช้ `timeout /t 3`
+  (เครื่อง HDD ช้ากว่า 3 วิ → หน้า error); `lca-desktop.bat` = `start-lca.bat --app` (ไม่ซ้ำโค้ด).
+  ทางเข้าเดิมทุกตัว (`lca.bat`, `start-lca.bat`, `lca-desktop.bat`, `lca-tray.bat`) ยังอยู่.
+- **`app/launch_ui.py`** ใหม่ — `open_app_window` ที่เคยอยู่ใน `lca_app.py` ใช้ร่วมกัน.
+- **`app/ollama_client.py`** ใหม่ — `call_ollama`, system prompt, tuning ย้ายออกจาก `local_coder.py`
+  (ชื่อเดิม re-export ไว้). server ไม่ import CLI ทั้งตัวตอนบูตอีกแล้ว → ไม่มีโมดูลซ้ำสองชื่อ
+  (`config_manager` กับ `app.config_manager` คนละ instance), โหลดโมดูลน้อยลง ~10 ตัว.
+- **`keys.py` ใช้ `app/secret_store.py` จริง** — เดิมพยายาม import `app.secrets` ที่ไม่มีอยู่
+  (ไม่ใช่ store ที่ UI เขียน). เพิ่มเทส round-trip.
+- **ลบ `app/auth_backend.py`, `app/storage_backend.py`** (+ เทส) — ไม่มีโค้ด production เรียกใช้;
+  auth จริงอยู่ที่ `_require()` ใน `server.py` จุดเดียว. แก้เอกสารที่บอกผิดว่า server ใช้ `auth_backend`.
+- `local_coder.__version__` อ่านจาก `VERSION` (เดิม hardcode 0.0.2); `lca-tray.ps1` ใส่ UTF-8 BOM
+  (มีภาษาไทย — PowerShell 5.1 อ่านเพี้ยนถ้าไม่มี).
+
 ## [Unreleased] — 2026-11-03 (CLI แชท: เลื่อนขึ้นอ่านระหว่างโมเดลตอบแล้วจอไม่เด้ง/แชทไม่หลุด)
 
 ตามที่ user แจ้ง: "ใน PowerShell cmd terminal เลื่อนดู model ตอบคำถามห้องแชทหลุด"
