@@ -14,7 +14,7 @@ always false.
 
 Stdlib HTTP only (``urllib``, ``json``, ``http.client``, ``ssl``). Keys come
 from the constructor or ``keys.lookup_secret`` (``config_manager.get_key``,
-then ``app.secrets`` when PR #108 is present). This package does not replace
+then ``app.secret_store``). This package does not replace
 ``model_backend.generate``; existing server and agent callers stay on that path.
 """
 

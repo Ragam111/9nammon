@@ -98,7 +98,7 @@
 
 - **`org_store.py`** — ทะเบียนผู้ใช้ + บทบาท (RBAC): `CEO > ADMIN > USER`. เก็บ user/รหัส(แฮช)/
   API key/โควตา. "รหัสไททัน" (master token) = CEO. เปิดเครื่องใหม่ยังไม่มีใคร → สร้าง CEO คนแรกได้.
-- **`auth_backend.py`** — เต้ารับตรวจตัวตน (ปลั๊กอินได้) ที่ `_require()` ใน server.py เรียกใช้.
+- **ตรวจตัวตน** อยู่ใน `_require()` ของ `server.py` จุดเดียว (master token / session token / API key ใน `org_store`).
 - **การแยกข้อมูล**: ทุกโมดูลที่เก็บข้อมูลผู้ใช้ **ผูกข้อมูลกับตัวตนที่ผ่าน `_require` แล้ว** ไม่ใช่ค่าที่
   หน้าเว็บส่งมา → ผู้ใช้ A อ่าน/ลบได้เฉพาะของตัวเอง. ตัวอย่างชัดสุดคือ `space_store.py`
   (พื้นที่ private = เจ้าของ/สมาชิกเท่านั้น, shared = ทั้งทีม) และ `usage_store.py` (นับใช้งานต่อ key).
@@ -120,12 +120,12 @@
 | `context_manager.py` | ตัด/จัดประวัติสนทนาให้พอดี context ของโมเดล |
 
 ### 5.2 ผู้ใช้ / สิทธิ์ / การคิดเงิน
-`org_store`(ผู้ใช้+RBAC) · `auth_backend`(ตรวจตัวตน) · `usage_store`(นับใช้งานต่อ key) ·
+`org_store`(ผู้ใช้+RBAC) · `usage_store`(นับใช้งานต่อ key) ·
 `finance_ledger`(บันทึกเงิน record-only) · `rate_limit`(จำกัด request ต่อ IP) · `folder_trust`(ขออนุญาตก่อนแตะโฟลเดอร์)
 
 ### 5.3 ข้อมูล/เนื้อหาของผู้ใช้
 `space_store`(พื้นที่ส่วนตัว/บริษัท) · `todo_store`(งานที่ต้องทำ) · `history_store`(snapshot+error log) ·
-`support_store`(ตั๋วปัญหา) · `dataset_store`(เก็บคู่สนทนาไว้เทรน — ปิดเป็นค่าเริ่มต้น) · `storage_backend`(เต้ารับที่เก็บ)
+`support_store`(ตั๋วปัญหา) · `dataset_store`(เก็บคู่สนทนาไว้เทรน — ปิดเป็นค่าเริ่มต้น)
 
 ### 5.4 ตั้งค่า / กัน incident
 `config_manager`(อ่าน/เขียน config.json ที่ gitignored) · `config_versions`(snapshot+rollback config) ·
@@ -242,7 +242,7 @@ Build อัตโนมัติ: `.github/workflows/build-exe.yml` (Windows ru
 1. **แชทให้ได้ก่อน**: `server.py` (รับ HTTP + route เดียว `/api/chat`) + `index.html` + `model_backend` → คุย Ollama ได้
 2. **สตรีมคำตอบ**: เพิ่ม `/api/chat/stream` (SSE) ให้คำตอบไหลทีละคำ
 3. **เลือกโมเดลอัตโนมัติ + ยามคุมงาน**: `resource_budget` + `admission` (เครื่องเล็กไม่ค้าง)
-4. **ผู้ใช้ + ล็อกอิน + แยกข้อมูล**: `org_store` + `auth_backend` + `_require()` → แล้วค่อยเก็บข้อมูลต่อผู้ใช้
+4. **ผู้ใช้ + ล็อกอิน + แยกข้อมูล**: `org_store` + `_require()` → แล้วค่อยเก็บข้อมูลต่อผู้ใช้
 5. **พื้นที่/ประวัติ/ตั๋ว**: `space_store` / `history_store` / `support_store` (ทุกอันผูก key กับตัวตน)
 6. **แอดมิน + ตั้งค่า + กัน incident**: `dev.html` + `feature_flags` + `config_versions`(rollback) + `watchdog`
 7. **คลัสเตอร์**: `cluster_store` → `cluster_router` → `cluster_forward` (หลายเครื่องช่วยกัน)
@@ -258,7 +258,7 @@ Build อัตโนมัติ: `.github/workflows/build-exe.yml` (Windows ru
 
 ## 10. แผนที่ไว ๆ — "อยากแก้เรื่องนี้ ดูไฟล์ไหน"
 - แชทตอบผิด/ช้า → `model_backend`, `resource_budget`, `context_manager`
-- ล็อกอิน/สิทธิ์/ข้อมูลรั่ว → `org_store`, `auth_backend`, `_require()` ใน `server.py`, `space_store`
+- ล็อกอิน/สิทธิ์/ข้อมูลรั่ว → `org_store`, `_require()` ใน `server.py`, `space_store`
 - เพิ่ม endpoint ใหม่ → `server.py` (เพิ่ม route + `_handle_*`) + โมดูล `app/` ใหม่ + เทส
 - ต่อสมอง AI ใหม่ / แก้ connection → `connections.py` + `console.html`
 - สร้าง skill/bot ใหม่ → `skills_store.py` / `bots.py` + ดู `CONSOLE_PLATFORM.md`

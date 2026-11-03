@@ -1,4 +1,4 @@
-# lca-tray.ps1 — LCA Tray App (Windows): วางไอคอนลง system tray ลูกศรบน taskbar
+﻿# lca-tray.ps1 — LCA Tray App (Windows): วางไอคอนลง system tray ลูกศรบน taskbar
 #
 # ไอเดีย (ตามที่ user สั่ง): หลังติดตั้งเสร็จ แอปอยู่ใน tray เหมือน Discord/Steam —
 #   คลิกไอคอน → เปิดหน้าต่างแอป, คลิกขวา → เมนู (เปิดคอนโซล / ดู logs / ออก).

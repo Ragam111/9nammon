@@ -865,6 +865,25 @@ class KeyLookupTest(unittest.TestCase):
         self.assertEqual(box["req"].get_header("X-api-key"), "from-config-key")
         self.assertNotIn("from-config-key", box["url"])
 
+    def test_default_secrets_module_is_secret_store(self):
+        from app import secret_store
+        from app.providers import keys
+        self.assertIs(keys.load_secrets_module(), secret_store)
+
+    def test_entry_only_in_secret_store_is_found_by_default(self):
+        from app import secret_store
+        secret_store.store(self.root, secret_store.config_entry_name("GEMINI_API_KEY"), "sealed-only")
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("GEMINI_API_KEY", None)
+            os.environ.pop("GOOGLE_API_KEY", None)
+            self.assertEqual(lookup_secret(self.root, ("GEMINI_API_KEY",)), "sealed-only")
+
+    def test_sealed_config_key_round_trips_with_default_store(self):
+        config_manager.set_key(self.root, "XAI_API_KEY", "sealed-xai")
+        raw = (self.root / "config.json").read_text(encoding="utf-8")
+        self.assertNotIn("sealed-xai", raw)
+        self.assertEqual(lookup_secret(self.root, ("XAI_API_KEY",)), "sealed-xai")
+
     def test_env_is_used_when_config_is_empty(self):
         with mock.patch.dict(os.environ, {"XAI_API_KEY": "from-env-key"}):
             found = lookup_secret(self.root, ("XAI_API_KEY",), secrets_module=False)

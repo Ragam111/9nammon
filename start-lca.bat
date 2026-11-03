@@ -1,16 +1,15 @@
 @echo off
 chcp 65001 >nul
 REM start-lca.bat — ดับเบิลคลิกเพื่อเปิด Local Code Assistant (ไม่ต้องพิมพ์อะไร)
-REM เปิดเซิร์ฟเวอร์ที่ 127.0.0.1:8420 แล้วเด้งเบราว์เซอร์ไปหน้าแชทให้อัตโนมัติ
+REM server.py --open browser เปิดเบราว์เซอร์ให้เองหลังพร้อม (ไม่เดาเวลา ได้พอร์ตจริงแม้ 8420 ไม่ว่าง)
+REM โหมดหน้าต่างแอป: lca-desktop.bat (= ไฟล์นี้ + --open app)
 title Local Code Assistant
+set "LCA_OPEN=browser"
+if /i "%~1"=="--app" set "LCA_OPEN=app"
 echo ============================================
-echo   Local Code Assistant
-echo   กำลังเปิด... http://127.0.0.1:8420
-echo   (ปิดหน้าต่างนี้เพื่อหยุดใช้งาน)
+echo   Local Code Assistant  (ปิดหน้าต่างนี้เพื่อหยุดใช้งาน)
 echo ============================================
-REM รอ 3 วิให้เซิร์ฟเวอร์ตั้งตัว แล้วเปิดเบราว์เซอร์
-start "" cmd /c "timeout /t 3 >nul & start http://127.0.0.1:8420/"
-python "%~dp0server.py" "%USERPROFILE%" --port 8420
+python "%~dp0server.py" "%USERPROFILE%" --port 8420 --open %LCA_OPEN%
 echo.
 echo เซิร์ฟเวอร์ปิดแล้ว
 pause
