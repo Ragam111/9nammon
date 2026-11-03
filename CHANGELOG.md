@@ -4,6 +4,49 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [Unreleased] — 2026-11-03 (Chat Hub conversations, provider routing, Thai chat page)
+
+### Added
+- **`/api/chat` and `/api/chat/stream`** call `app.providers` when the request
+  names a `provider`. The model is chosen on that request. A `conversation_id`
+  reloads the shared transcript, so the next turn can name a different provider.
+  Requests that name neither a provider nor a conversation stay on
+  `model_backend` (including cluster forward).
+- **SQLite migration `0010_chat_hub`** (`app/migrations/0010_chat_hub.sql`).
+  No `app/migrations` files existed, so 0010 was free. A new database moves
+  from `user_version` 0 to 10. Thai/English search is Python character bigrams
+  in contentless FTS5 (`app/chat_search.py`).
+- **Branch, regenerate, and compare** (`POST /api/chat/branch`, `/regen`,
+  `/compare`). Compare runs cloud targets together and local targets one at a
+  time through `admission`.
+- **Local vs cloud by endpoint host** (`app/providers/locality.py`). A target
+  is local only when its `base_url` host is `localhost`, `127.0.0.1` or `::1`
+  (`[::1]`). Ollama / OpenAI-compatible on a LAN IP (e.g. `192.168.1.5`),
+  another hostname, or a tunnel counts as cloud: no admission gate, runs in
+  parallel in compare, and the `/chat` picker shows it as cloud. Vendor APIs
+  (Anthropic, OpenAI, Gemini, xAI) are always cloud.
+- **Chat page `/chat`** (`app/chat.html`, `app/chat.css`, `app/chat.js`).
+  Vanilla JS, no framework. IBM Plex Sans Thai and IBM Plex Mono are subset
+  to woff2 under `app/fonts/` and served locally (OFL). The subset is renamed
+  to LCA Sans / LCA Mono because "IBM Plex" is a Reserved Font Name.
+- Chat skills with `mode=chat` are seeded into `personas` once. Dataset
+  samples are copied only when `CHAT_IMPORT_SAMPLES` is `1`/`true`/`yes`.
+
+### Fixed
+- `/chat` loads `/app.js` and sends the per-launch session token on every
+  `/api/chat/*` call, so the page works behind the #107 request guard
+  (guard code unchanged).
+
+### Tests
++20 in `tests/test_chat_store.py`, `tests/test_chat_api.py`, and
+`tests/test_chat_page.py` (mocked providers, no network, no real keys).
++17 after merging main: `tests/test_provider_locality.py` (localhost,
+127.0.0.1, ::1, LAN IP, remote host, look-alikes), LAN compare runs in
+parallel, `/chat` carries the session token. Full suite: **1013 passed**.
+
+### Not changed
+- `VERSION` stays 0.1.6.
+
 ## [Unreleased] — 2026-11-03 (Chat Hub provider adapters)
 
 ### Added
