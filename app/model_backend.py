@@ -13,6 +13,11 @@
   OPENAI_API_KEY  = <key หรือว่าง>
 
 stdlib ล้วน (urllib/socket/json) — ไม่เพิ่ม dependency
+
+ชั้นแชทหลายค่าย (Anthropic / OpenAI / Gemini / xAI / Ollama / OpenAI-compatible)
+อยู่ที่ ``app.providers`` — ``chat`` / ``stream`` / ``list_models`` บนรูปแบบข้อความ
+เดียวกัน. โมดูลนี้ยังเป็นทางที่ server และ agent เรียก ``generate`` /
+``generate_stream``. ผู้เรียกเดิมไม่ถูกเปลี่ยนให้คืน usage หรือ cost.
 """
 
 from __future__ import annotations

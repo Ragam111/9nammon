@@ -4,6 +4,32 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [Unreleased] — 2026-11-03 (Chat Hub provider adapters)
+
+### Added
+- **Chat provider adapters** (`app/providers/`) on top of `app/model_backend.py`.
+  One transcript (`system` / `user` / `assistant` text) can continue on another
+  provider. Stdlib HTTP only (`urllib`, `json`, `http.client`, `ssl`) — no
+  Anthropic, OpenAI, or Google SDK.
+  - Providers: Anthropic Messages, OpenAI Chat Completions and Responses,
+    Google Gemini, xAI, Ollama, and any OpenAI-compatible `base_url`.
+  - `chat`, `stream` (text deltas over SSE or Ollama NDJSON), `list_models`.
+  - Usage from the provider response, with a 4-characters-per-token estimate
+    when a count is missing.
+  - USD cost estimate from an editable table in `app/providers/pricing.py`.
+    Figures are configurable defaults with the public page they were copied
+    from. Unknown models stay `None`. `authoritative` is always false.
+- API keys: `config_manager.get_key`, and `app.secrets.reveal` when that module
+  is importable (PR #108, not on main yet). Keys are not logged.
+
+### Tests
++79 in `tests/test_providers.py` (mocked HTTP, no network). Full suite: **916 passed**.
+
+### Not changed
+- `VERSION` stays 0.1.6.
+- `model_backend.generate` / `generate_stream` and their callers, including
+  `server.py` (request-guard work is PR #107).
+
 ## [Unreleased] — 2026-11-03 (API keys sealed at rest)
 
 ไม่ขยับเลข `VERSION` (ยัง 0.1.6)
