@@ -19,9 +19,18 @@ Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไ�
     และแอปเดสก์ท็อปเปิดด้วย fragment `#lca_token=`. `server.py` พิมพ์ค่าให้ CLI
   - ตั้ง token เอง: พฤติกรรมเดิม (master token = CEO, API key / role เหมือนเดิม) และไม่ฝัง token ลงหน้า
 - **`GET /api/version` ยัง public** — ไม่มี secret. คงฟิลด์ `python` ไว้สำหรับ support
+- **ใช้ได้หลัง proxy HTTPS / tunnel** (Render, HF Spaces, Docker, cloudflared): เมื่อ bind `0.0.0.0` / `::`
+  (บังคับ token) รับ Host ที่ไม่มีพอร์ต หรือ `:80` / `:443` / พอร์ตที่ฟัง และเทียบ Origin กับชื่อใน Host
+  โดยไม่สนพอร์ต. Origin เว็บอื่นยังตอบ 403. loopback เข้มเหมือนเดิม
+- **`LCA_ALLOWED_HOSTS`** (คั่นด้วยจุลภาค) — allow-list ชื่อ host เพิ่ม. ชื่อ loopback ถูกตัดออก (คลายไม่ได้)
+  และหน้าเว็บที่เปิดผ่านชื่อเหล่านี้ไม่ได้ session token อัตโนมัติ
+- **กัน clickjacking**: หน้า HTML ส่ง `X-Frame-Options: DENY` + `Content-Security-Policy: frame-ancestors 'none'`
+- docs: `DEPLOY.md` §1/§2a + ตาราง env, `GO_ONLINE_FREE.md` เส้นทาง A/C, `GO_LIVE.md` หมายเหตุ tunnel
 
 ### Tests
-- +17 (`tests/test_server_request_guard.py` และ `launch_url` ใน `test_lca_app.py`) — **854 tests pass** (จาก 837)
+- +17 (`tests/test_server_request_guard.py` และ `launch_url` ใน `test_lca_app.py`)
+- +15 (`tests/test_server_proxy_hosts.py` — Host ไม่มีพอร์ตบน wildcard, Origin เว็บอื่น 403,
+  `LCA_ALLOWED_HOSTS`, header กัน iframe)
 
 ## [0.1.6] — 2026-10-30 (`--version` CLI flag — ตรงกับ `/api/version`)
 

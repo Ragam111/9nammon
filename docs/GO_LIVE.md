@@ -29,8 +29,9 @@ ollama pull qwen2.5-coder:1.5b      # โหลดโมเดล (เครื�
 - **Origin** บน POST/PUT/PATCH/DELETE และ websocket upgrade ต้อง same-origin. ไม่มี Origin ได้เฉพาะไคลเอนต์ที่ไม่ใช่เบราว์เซอร์ (curl/CLI) และต้องมี token. ไม่เปิด CORS
 - `GET /api/version` และ `GET /api/health` ยังเป็น public (ไม่มี token, path, หรือข้อมูลผู้ใช้). ฟิลด์ `python` คงไว้สำหรับ support
 
-Tunnel เข้า loopback (`cloudflared --url http://localhost:8420`) จะโดน Host/Origin ปฏิเสธ
-เพราะเบราว์เซอร์ส่งชื่อสาธารณะ ไม่ใช่ loopback. ต้องมีรายชื่อ host ที่อนุญาตเพิ่มภายหลังถ้าจะเปิดทางนี้.
+Tunnel เข้า server ที่ bind `127.0.0.1` แบบไม่ตั้ง token จะโดน Host/Origin ปฏิเสธ เพราะเบราว์เซอร์ส่งชื่อสาธารณะ.
+ทางที่แนะนำ: รัน `LCA_HOST=0.0.0.0` + `LCA_TOKEN` (รับ Host ที่ไม่มีพอร์ตหลัง proxy/tunnel และเทียบ Origin กับ Host
+โดยไม่สนพอร์ต) หรือระบุชื่อใน `LCA_ALLOWED_HOSTS` (ชื่อพวกนี้ไม่ได้ session token อัตโนมัติ). ดู docs/DEPLOY.md
 
 ## ระดับ 2 — เปิดให้คนในบ้าน/ออฟฟิศ (วง Wi-Fi/LAN เดียวกัน)
 ```bash
@@ -47,7 +48,7 @@ Tunnel เข้า loopback (`cloudflared --url http://localhost:8420`) จะ�
 cloudflared tunnel --url http://localhost:8420   # ได้ URL https ชั่วคราวให้คนนอกเข้า
 ```
 - tunnel (Cloudflare/ngrok) ให้ **HTTPS + ซ่อน IP บ้าน** — ปลอดภัยกว่าเปิดพอร์ตเอง
-- **ตอนนี้คำขอจาก tunnel โดน 403** เพราะ Host/Origin เป็นชื่อสาธารณะ ไม่ใช่ loopback (ดูหมายเหตุด้านบน). อย่าใช้ทางนี้จนกว่าจะมี allowlist ของชื่อ tunnel
+- tunnel ใช้ได้เมื่อรัน `LCA_HOST=0.0.0.0` + `LCA_TOKEN` (หรือใส่ชื่อ tunnel ใน `LCA_ALLOWED_HOSTS`) — ดูหมายเหตุด้านบน
 - ยังต้อง bootstrap + ออกคีย์ + คุมโควตาเหมือนเดิม
 - ถ้าจะจริงจังระยะยาว ค่อยย้ายไป VPS/คลาวด์ (ตอนนั้นเครื่อง 8GB จะเป็นคอขวด — ดู docs/ROADMAP.md เรื่องอัป RAM/GPU)
 

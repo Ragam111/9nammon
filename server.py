@@ -151,27 +151,63 @@ def _allowed_host_names(bind_host: str) -> set:
     return names
 
 
-def host_header_allowed(host_header: str, listen_port: int, bind_host: str = "127.0.0.1") -> bool:
+# พอร์ตที่ reverse proxy / tunnel (Render, HF Spaces, cloudflared) ส่งมาใน Host ได้
+_PROXY_PORTS = frozenset({80, 443})
+
+
+def parse_allowed_hosts(value: Optional[str]) -> frozenset:
+    """แปลง LCA_ALLOWED_HOSTS (คั่นด้วยจุลภาค) เป็นชุดชื่อ host ตัวพิมพ์เล็ก
+
+    รับ `name`, `name:port`, `[v6]` หรือ `[v6]:port` — เก็บแค่ชื่อ (พอร์ตไม่ถูกใช้)
+    ค่าที่ว่าง/ผิดรูปแบบ ข้ามไป. ชื่อ loopback ถูกตัดออก — loopback ต้องเข้มเสมอ
+    (พอร์ตตรง + http) ไม่ให้ allow-list คลายลง
+    """
+    names = set()
+    for item in (value or "").split(","):
+        name, _port = _split_host_header(item)
+        if name and "/" not in name and "@" not in name and name not in _LOOPBACK_NAMES:
+            names.add(name)
+    return frozenset(names)
+
+
+def env_allowed_hosts() -> frozenset:
+    return parse_allowed_hosts(os.environ.get("LCA_ALLOWED_HOSTS"))
+
+
+def host_header_allowed(host_header: str, listen_port: int, bind_host: str = "127.0.0.1",
+                        allowed_hosts: Optional[frozenset] = None) -> bool:
     """Host ต้องเป็น loopback:<port> (และชื่อที่ bind ไว้ ถ้าไม่ใช่ loopback)
 
-    bind 0.0.0.0/:: อนุญาตทุกชื่อบนพอร์ตที่ฟัง — ไคลเอนต์ LAN ส่ง IP จริง
-    และโหมดนี้บังคับ token อยู่แล้ว (Rule 12). พอร์ตต้องตรงเสมอ
+    - bind 0.0.0.0/:: (บังคับ token แล้ว — Rule 12): ทุกชื่อ, พอร์ตว่าง/พอร์ตที่ฟัง/80/443
+      เพราะหลัง proxy HTTPS (Render, HF Spaces, Docker, cloudflared) Host ไม่มีพอร์ต
+    - ชื่อใน LCA_ALLOWED_HOSTS: พอร์ตว่าง/พอร์ตที่ฟัง/80/443
+    - นอกนั้น (loopback): เข้มเหมือนเดิม — ชื่อ loopback และพอร์ตต้องตรง
     """
     name, port = _split_host_header(host_header)
-    if not name or port is None or port != int(listen_port):
+    if not name:
         return False
+    if allowed_hosts is None:
+        allowed_hosts = env_allowed_hosts()
+    relaxed_port = port is None or port == int(listen_port) or port in _PROXY_PORTS
     if _normalize_bind_host(bind_host) in _WILDCARD_BINDS:
-        return True
+        return relaxed_port
+    if name in allowed_hosts:
+        return relaxed_port
+    if port is None or port != int(listen_port):
+        return False
     return name in _allowed_host_names(bind_host)
 
 
 def origin_header_allowed(origin: str, listen_port: int, bind_host: str = "127.0.0.1",
-                          host_header: Optional[str] = None) -> bool:
+                          host_header: Optional[str] = None,
+                          allowed_hosts: Optional[frozenset] = None) -> bool:
     """Origin ที่เบราว์เซอร์ส่งมาต้องเป็น same-origin ของเซิร์ฟเวอร์นี้
 
     ไม่มี Origin ไม่ได้เรียกฟังก์ชันนี้ (CLI ผ่านได้ที่ชั้นบน). `null` = ปฏิเสธ
-    loopback รับเฉพาะ http://loopback:<port>. bind แบบ wildcard รับ Origin
-    ที่ host ตรงกับ Host header (คนเปิดหน้าจาก IP จริงใน LAN)
+    - ชื่อใน LCA_ALLOWED_HOSTS: ผ่าน (http/https, ไม่สนพอร์ต)
+    - bind แบบ wildcard: loopback ต้องพอร์ตตรง; ชื่ออื่นต้องตรงกับชื่อใน Host
+      โดยไม่เทียบพอร์ต (https:443 หลัง proxy ↔ เซิร์ฟเวอร์ฟัง 8420)
+    - loopback: เข้มเหมือนเดิม — http://loopback:<port>
     """
     raw = (origin or "").strip()
     if not raw or raw.lower() == "null":
@@ -183,18 +219,25 @@ def origin_header_allowed(origin: str, listen_port: int, bind_host: str = "127.0
         return False
     if parsed.path not in ("", "/"):
         return False
-    oport = parsed.port
+    try:
+        oport = parsed.port
+    except ValueError:
+        return False
     if oport is None:
         oport = 443 if parsed.scheme == "https" else 80
-    if oport != int(listen_port):
-        return False
     oname = parsed.hostname.lower()
+    if allowed_hosts is None:
+        allowed_hosts = env_allowed_hosts()
+    if oname in allowed_hosts:
+        return True
     bind = _normalize_bind_host(bind_host)
     if bind in _WILDCARD_BINDS:
         if oname in _LOOPBACK_NAMES:
-            return True
-        hname, hport = _split_host_header(host_header or "")
-        return bool(hname) and hport == int(listen_port) and oname == hname
+            return oport == int(listen_port)
+        hname, _hport = _split_host_header(host_header or "")
+        return bool(hname) and oname == hname
+    if oport != int(listen_port):
+        return False
     if parsed.scheme != "http":
         return False
     return oname in _allowed_host_names(bind_host)
@@ -230,6 +273,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
     # ไม่ได้ตั้ง token = โหมด local. ห้ามเปิดสิทธิ์ CEO ให้ทุก request —
     # สุ่ม session token ต่อการเปิดโปรเซส แล้วให้ UI/CLI ส่งกลับมา
     session_token_auto = not bool(auth_token)
+    # LCA_ALLOWED_HOSTS อ่านครั้งเดียวตอนสร้าง handler
+    allowed_hosts = env_allowed_hosts()
     if not auth_token:
         auth_token = secrets.token_urlsafe(32)
     # limiter เดียวใช้ร่วมทุก thread ของ server นี้ (in-memory ต่อ process)
@@ -303,13 +348,14 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             ไม่ใส่ CORS header (ไม่เปิดให้เว็บอื่นอ่านหรือยิงแบบข้าม origin)
             """
             host_hdr = self.headers.get("Host")
-            if not host_header_allowed(host_hdr, self._listen_port(), bind_host):
+            if not host_header_allowed(host_hdr, self._listen_port(), bind_host,
+                                       allowed_hosts):
                 self._send_json(403, {"error": "forbidden — Host ไม่ได้รับอนุญาต"})
                 return False
             if request_needs_origin_check(self.command, self.headers):
                 origin = self.headers.get("Origin")
                 if origin is not None and not origin_header_allowed(
-                        origin, self._listen_port(), bind_host, host_hdr):
+                        origin, self._listen_port(), bind_host, host_hdr, allowed_hosts):
                     self._send_json(403, {"error": "forbidden — Origin ไม่ตรงกับเซิร์ฟเวอร์นี้"})
                     return False
             return True
@@ -317,6 +363,11 @@ def make_handler(project_root: Path, auth_token: Optional[str],
         def _inject_session_token(self, body: bytes, content_type: str) -> bytes:
             # ฝังเฉพาะ session ที่สุ่มให้ — ไม่ฝัง master token ที่ผู้ใช้ตั้ง (ของถาวร)
             if not session_token_auto or "text/html" not in content_type:
+                return body
+            # ฝังเฉพาะเมื่อเปิดจากชื่อ loopback — ชื่อใน LCA_ALLOWED_HOSTS (เช่น tunnel)
+            # ต้องวาง token/API key เอง ไม่แจก session ให้คนนอก
+            hname, _hport = _split_host_header(self.headers.get("Host") or "")
+            if hname not in _LOOPBACK_NAMES:
                 return body
             snippet = _session_bootstrap_snippet(auth_token)
             idx = body.lower().find(b"</head>")
@@ -1092,6 +1143,10 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             self.send_response(200)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
+            if "text/html" in content_type:
+                # หน้าที่มี session token ห้ามถูกฝังใน iframe ของเว็บอื่น (clickjacking)
+                self.send_header("X-Frame-Options", "DENY")
+                self.send_header("Content-Security-Policy", "frame-ancestors 'none'")
             if cache:
                 # asset ที่ไม่ค่อยเปลี่ยน (css/js) — ให้ browser cache ลดภาระเครื่องอ่อน
                 self.send_header("Cache-Control", "public, max-age=3600")
