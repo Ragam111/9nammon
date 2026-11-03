@@ -4,6 +4,28 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [Unreleased] — 2026-11-03 (VS Code workspace + SKILL.md install path)
+
+ไม่ bump เวอร์ชัน — ยังเป็น 0.1.6 จนกว่าจะมี release
+
+### Added
+- **`.vscode/`** (`launch.json`, `tasks.json`, `settings.json`, `extensions.json`)
+  ให้รัน เทส ลิงต์ และดีบัก LCA ใน VS Code บน Windows
+  - launch: `server.py <dir> --host 127.0.0.1 --port 8420`, `lca_app.py`,
+    `local_coder.py <dir> --model qwen2.5-coder:3b`, `installer_gui.py`
+  - task หลักตรง CI: `python -m unittest discover -s tests`
+  - `files.eol` เป็น LF — repo เก็บไฟล์เป็น LF (`git ls-files --eol`)
+- **README** ส่วน "Develop in VS Code"
+
+### Fixed
+- **`SKILL.md`**: ไม่ชี้ `install.sh`, `install_online.ps1`, `lca-web` / `lca-web.bat`
+  ที่ลบใน v0.1.3 (#101) แล้ว
+  - Windows: `install.bat` / `install.ps1` (one-liner เดิม), เปิดเว็บด้วย `start-lca.bat`
+  - Linux/macOS: `pip install -r requirements.txt` แล้ว `python server.py <dir>`
+- **`docs/APP_WALKTHROUGH.md`**: `install*.ps1/sh` → `install.ps1` + `install.bat`
+
+---
+
 ## [0.1.6] — 2026-10-30 (`--version` CLI flag — ตรงกับ `/api/version`)
 
 ตามที่ user สั่ง: "**ดูทางจริงทำงานยังไง**" — ผู้ใช้ต้องเช็กเวอร์ชันจาก
