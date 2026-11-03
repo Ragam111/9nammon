@@ -4,6 +4,25 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [Unreleased] — 2026-11-03 (CLI แชท: เลื่อนขึ้นอ่านระหว่างโมเดลตอบแล้วจอไม่เด้ง/แชทไม่หลุด)
+
+ตามที่ user แจ้ง: "ใน PowerShell cmd terminal เลื่อนดู model ตอบคำถามห้องแชทหลุด"
+
+### Fixed
+- `local_coder.py` สตรีมคำตอบแบบ append-only: เลิกใช้ spinner เธรดที่เขียน `\r` ทุก 0.15 วิ
+  และ print+flush ทุก token (conhost ดึง viewport กลับล่างทุกครั้งที่มี output)
+  → สถานะ "กำลังคิด" เขียน/ลบครั้งเดียว, flush ไม่ถี่กว่า 0.25 วิ
+- Ctrl+C ระหว่างตอบ = หยุดคำตอบนั้น (เก็บส่วนที่ได้) ไม่ปิดโปรแกรม; Ctrl+C ตอนถาม y/n แก้ไฟล์ = ยกเลิก
+- Ollama ล่ม/หลุดกลางคัน = แจ้ง error แล้วกลับ prompt (เดิม `sys.exit(1)` ทิ้งทั้งแชท)
+
+### Added
+- `--stream-mode auto|live|quiet`, `--no-stream`, env `LCA_STREAM_MODE`, คำสั่ง `/stream`:
+  quiet = ไม่เขียนลงจอระหว่างตอบ (ความคืบหน้าขึ้นที่ title bar) แล้วพิมพ์ทีเดียวตอนเสร็จ;
+  auto = quiet บนหน้าต่าง cmd/PowerShell แบบเก่า (ไม่มี `WT_SESSION`/`TERM_PROGRAM`/`TERM`), live ที่อื่น
+- `/last` เปิดคำตอบล่าสุดด้วย pager ในตัว (Enter ต่อ / q ออก), `/last raw`
+- บันทึกแชททุกข้อความ `<data_dir>/cli_sessions/*.jsonl` (`app/cli_session.py`), `--resume`, `--no-save`
+- `app/cli_render.py` (stdlib) + `tests/test_cli_render.py` (18 tests)
+
 ## [0.1.6] — 2026-10-30 (`--version` CLI flag — ตรงกับ `/api/version`)
 
 ตามที่ user สั่ง: "**ดูทางจริงทำงานยังไง**" — ผู้ใช้ต้องเช็กเวอร์ชันจาก

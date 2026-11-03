@@ -26,7 +26,13 @@ local_coder.py — AI Coding Assistant บน Terminal สไตล์ Aider
     /todo add <ข้อความ>   เพิ่ม todo ใหม่
     /todo done <id>        ทำเครื่องหมายว่าเสร็จแล้ว/ยังไม่เสร็จ (toggle)
     /todo del <id>          ลบ todo
+    /last [raw]     เปิดคำตอบล่าสุดอ่านทีละหน้า (Enter ต่อ, q ออก)
+    /stream live|quiet|auto   live = ทยอยแสดง, quiet = แสดงทีเดียวตอนเสร็จ
+                    (เลื่อนขึ้นอ่านระหว่างโมเดลตอบได้โดยจอไม่เด้ง)
     /exit           ออกจากโปรแกรม
+
+ระหว่างโมเดลตอบ: Ctrl+C = หยุดคำตอบนั้น (แชทไม่ปิด) · ประวัติบันทึกที่
+<data_dir>/cli_sessions/*.jsonl · --resume โหลดแชทล่าสุดของโปรเจกต์กลับมา
 """
 
 import argparse
@@ -37,7 +43,6 @@ import re
 import shutil
 import subprocess
 import sys
-import threading
 import urllib.request
 from datetime import datetime
 from pathlib import Path
@@ -52,6 +57,8 @@ import tavily_search  # noqa: E402
 from config_manager import get_key, set_key, prompt_for_key  # noqa: E402
 from folder_trust import ensure_trusted  # noqa: E402
 from context_manager import build_auto_context  # noqa: E402
+import cli_render  # noqa: E402
+import cli_session  # noqa: E402
 
 
 # ============================================================
@@ -260,12 +267,18 @@ def call_ollama(model: str, messages: list, num_ctx: int = 8192,
         sys.exit(1)
 
 
-def call_ollama_stream(model: str, messages: list, num_ctx: int = 8192) -> str:
-    """เหมือน call_ollama() แต่ขอ response แบบ streaming (NDJSON ทีละบรรทัด) จาก Ollama
-    แล้ว print แต่ละ chunk ทันทีที่ได้รับ (ลด latency ที่ผู้ใช้รู้สึกได้ — เห็นคำตอบ
-    ทยอยขึ้นแทนรอทั้งก้อน) คืนค่าข้อความเต็มที่ประกอบจากทุก chunk เพื่อให้ apply_diff_blocks()
-    เอาไปตรวจต่อได้เหมือนเดิม — แยกจาก call_ollama() เดิมโดยตั้งใจ เพราะ server.py ยัง import
-    call_ollama() แบบ blocking อยู่ (HTTP response แบบ chunked ต้องออกแบบแยกต่างหาก ไม่ทำในรอบนี้)"""
+def stream_chat(model: str, messages: list, num_ctx: int = 8192,
+                stream_mode: str = "auto", out=None) -> tuple:
+    """ขอคำตอบแบบ streaming (NDJSON) จาก Ollama แล้วแสดงผลผ่าน cli_render.StreamRenderer
+    คืน (ข้อความเต็ม, ถูกหยุดกลางคันไหม)
+
+    แก้ปัญหา "เลื่อนขึ้นอ่านแล้วจอเด้ง/แชทหลุด" (fix/cli-scroll-stable):
+      - เดิม spinner เธรดแยกเขียน "\\r(กำลังคิด...)" ทุก 0.15 วิ + print ทุก token พร้อม flush
+        → conhost ของ Windows ดึง viewport กลับไปที่ cursor ทุกครั้งที่มี output
+      - ตอนนี้: สถานะเขียนครั้งเดียว ลบครั้งเดียว, ข้อความต่อท้ายอย่างเดียว (ไม่ redraw),
+        flush ไม่ถี่กว่า 0.25 วิ, โหมด quiet ไม่เขียนลงจอเลยจนตอบเสร็จ
+      - Ctrl+C = หยุดคำตอบนี้ (เก็บส่วนที่ได้) แต่ไม่ปิดโปรแกรม
+      - ต่อ Ollama ไม่ได้ = แจ้ง error แล้วกลับมาที่ prompt (ไม่ sys.exit ทิ้งทั้งแชท)"""
     payload = {
         "model": model,
         "messages": messages,
@@ -277,29 +290,16 @@ def call_ollama_stream(model: str, messages: list, num_ctx: int = 8192) -> str:
         data=json.dumps(payload).encode("utf-8"),
         headers={"Content-Type": "application/json"},
     )
-    full_text = []
-    first_chunk = True
-
-    # Spinner หมุนระหว่างรอ chunk แรกจาก Ollama (โมเดลอาจ "คิด" นานก่อนตอบตัวแรก) —
-    # ใช้ ASCII ธรรมดา (ไม่ใช่ unicode braille) เพื่อความชัวร์เรื่อง encoding บน
-    # terminal เก่า/codepage แปลกๆ, เธรดแยกกิน RAM ไม่กี่ KB ไม่กระทบข้อจำกัด RAM เครื่อง
-    stop_spinner = threading.Event()
-
-    def _spin():
-        frames = "|/-\\"
-        i = 0
-        while not stop_spinner.is_set():
-            print(f"\r{Color.SYSTEM}(กำลังคิด...) {frames[i % len(frames)]}{Color.RESET}", end="", flush=True)
-            i += 1
-            stop_spinner.wait(0.15)
-
-    spinner_thread = threading.Thread(target=_spin, daemon=True)
-    spinner_thread.start()
-
+    renderer = cli_render.StreamRenderer(
+        mode=cli_render.resolve_mode(stream_mode), out=out,
+        color=Color.BOT, reset=Color.RESET,
+    )
+    renderer.start()
+    interrupted = False
     try:
         with urllib.request.urlopen(req, timeout=300) as resp:
             for raw_line in resp:
-                line = raw_line.decode("utf-8").strip()
+                line = raw_line.decode("utf-8", errors="replace").strip()
                 if not line:
                     continue
                 try:
@@ -307,34 +307,28 @@ def call_ollama_stream(model: str, messages: list, num_ctx: int = 8192) -> str:
                 except json.JSONDecodeError:
                     # บรรทัดเดียวพังไม่ควรทำให้ทั้งสตรีมล้ม ข้ามแล้วไปต่อ
                     continue
-                content = chunk.get("message", {}).get("content", "")
-                if content:
-                    if first_chunk:
-                        stop_spinner.set()
-                        spinner_thread.join(timeout=1)
-                        print("\r" + " " * 24 + "\r", end="")  # เคลียร์บรรทัด spinner ทิ้ง
-                        print(f"{Color.BOT}", end="", flush=True)
-                        first_chunk = False
-                    print(content, end="", flush=True)
-                    full_text.append(content)
+                renderer.feed(chunk.get("message", {}).get("content", ""))
                 if chunk.get("done"):
                     break
-    except urllib.error.URLError as e:
-        stop_spinner.set()
-        print(f"\n[error] ต่อ Ollama ไม่ได้: {e}")
-        print("ตรวจสอบว่ารัน `ollama serve` อยู่หรือยัง")
-        sys.exit(1)
-    finally:
-        stop_spinner.set()  # กันเธรดค้างถ้าเกิด exception อื่นก่อนถึง done
+    except KeyboardInterrupt:
+        interrupted = True  # ปิด connection (ออกจาก with) → Ollama หยุด generate เอง
+    except (urllib.error.URLError, OSError) as e:
+        renderer.finish()
+        print(f"\n{Color.ERROR}[error] ต่อ Ollama ไม่ได้/หลุดระหว่างตอบ: {e}{Color.RESET}")
+        print("ตรวจสอบว่ารัน `ollama serve` อยู่หรือยัง แล้วพิมพ์คำถามใหม่ (แชทยังอยู่ ไม่ต้องเปิดใหม่)")
+        return "", False
 
-    if not first_chunk:
-        print(f"{Color.RESET}\n")
-
-    result = "".join(full_text)
-    if not result.strip():
+    result = renderer.finish(interrupted=interrupted)
+    if not result.strip() and not interrupted:
         print(f"{Color.WARN}[warn] โมเดลไม่ได้ตอบอะไรกลับมา (ลอง /status เช็ค context "
               f"หรือ /model เช็คว่า pull โมเดลไว้จริงหรือยัง){Color.RESET}")
-    return result
+    return result, interrupted
+
+
+def call_ollama_stream(model: str, messages: list, num_ctx: int = 8192,
+                       stream_mode: str = "auto") -> str:
+    """API เดิม (คืนแค่ข้อความ) — ห่อ stream_chat()"""
+    return stream_chat(model, messages, num_ctx, stream_mode)[0]
 
 
 SEARCH_PROVIDERS = {"brave": web_search, "tavily": tavily_search}
@@ -510,6 +504,14 @@ def main():
     parser.add_argument("--num-ctx", type=int, default=8192)
     parser.add_argument("--lang", type=str, choices=["th", "en"], default="th",
                          help="ภาษาที่โมเดลใช้ตอบ (ค่าเริ่มต้น: th)")
+    parser.add_argument("--stream-mode", choices=list(cli_render.MODES), default=None,
+                        help="live = ทยอยแสดง (flush ทุก 0.25 วิ), quiet = แสดงทีเดียวตอนตอบเสร็จ "
+                             "(เลื่อนอ่านได้ไม่เด้ง), auto = quiet บนหน้าต่าง cmd/PowerShell แบบเก่า "
+                             "นอกนั้น live (ค่าเริ่มต้น; ตั้งผ่าน env LCA_STREAM_MODE ได้)")
+    parser.add_argument("--no-stream", action="store_true", help="เหมือน --stream-mode quiet")
+    parser.add_argument("--resume", action="store_true",
+                        help="โหลดบทสนทนาล่าสุดของโปรเจกต์นี้กลับมาคุยต่อ")
+    parser.add_argument("--no-save", action="store_true", help="ไม่บันทึกประวัติแชทลงดิสก์")
     args = parser.parse_args()
 
     project_root = Path(args.project_dir).resolve()
@@ -525,8 +527,32 @@ def main():
     web_search_enabled = False  # switch 0/1 ตามที่คุยกัน — ปิดเป็นค่าเริ่มต้น
     history = [{"role": "system", "content": get_system_prompt(current_lang)}]
     current_model = args.model  # เก็บเป็นตัวแปรแยกเพื่อให้ /model สลับได้ระหว่างรัน
+    stream_mode = "quiet" if args.no_stream else (args.stream_mode or "auto")
+    last_answer = ""
+
+    # บันทึกทุกข้อความลงดิสก์ทันที (กันแชทหายเมื่อปิดหน้าต่าง/Ctrl+C/ไฟดับ)
+    session = None
+    if args.resume:
+        prev = cli_session.latest_session(project_root)
+        if prev:
+            restored = cli_session.load_messages(prev)
+            history.extend(restored)
+            last_answer = next((m["content"] for m in reversed(restored)
+                                if m["role"] == "assistant"), "")
+            session = cli_session.SessionLog(project_root, path=prev)  # เขียนต่อไฟล์เดิม
+            print(f"[resume] โหลด {len(restored)} ข้อความจาก {prev}")
+        else:
+            print("[resume] ยังไม่มีประวัติของโปรเจกต์นี้ — เริ่มแชทใหม่")
+    if session is None:
+        session = cli_session.SessionLog(project_root)
+    session.enabled = not args.no_save
 
     print_banner(current_model, project_root, current_lang)
+    effective = cli_render.resolve_mode(stream_mode)
+    print(f"{Color.SYSTEM}การแสดงคำตอบ: {effective} "
+          f"({'คำตอบขึ้นทีเดียวตอนเสร็จ เลื่อนอ่านได้ไม่เด้ง' if effective == 'quiet' else 'ทยอยแสดง'})"
+          f" · สลับด้วย /stream live|quiet · /last เปิดคำตอบล่าสุดแบบทีละหน้า"
+          f" · Ctrl+C ระหว่างตอบ = หยุดคำตอบ (แชทไม่ปิด){Color.RESET}\n")
 
     while True:
         try:
@@ -539,6 +565,22 @@ def main():
             continue
         if user_input == "/exit":
             break
+        if user_input in ("/last", "/last raw"):
+            if not last_answer:
+                print("[last] ยังไม่มีคำตอบในแชทนี้")
+            elif user_input == "/last raw":
+                print(last_answer + "\n")
+            else:
+                cli_render.page_text(last_answer)
+            continue
+        if user_input == "/stream" or user_input.startswith("/stream "):
+            choice = user_input[len("/stream"):].strip().lower()
+            if choice not in cli_render.MODES:
+                print(f"[stream] ตอนนี้: {cli_render.resolve_mode(stream_mode)} — ใช้ /stream live|quiet|auto")
+                continue
+            stream_mode = choice
+            print(f"[stream] ตั้งเป็น {choice} → ใช้จริง: {cli_render.resolve_mode(stream_mode)}")
+            continue
         if user_input == "/help":
             help_rows = [
                 ("/add <path>", "เพิ่มไฟล์เข้า context ด้วยตนเอง"),
@@ -547,6 +589,8 @@ def main():
                 ("/model <name>", "สลับโมเดล Ollama (ต้อง pull ไว้ก่อน)"),
                 ("/lang th|en", "สลับภาษาที่โมเดลตอบ"),
                 ("/reset", "ล้างประวัติสนทนา เริ่มนับ token ใหม่"),
+                ("/last [raw]", "เปิดคำตอบล่าสุดอ่านทีละหน้า (raw = พิมพ์ทั้งก้อน)"),
+                ("/stream live|quiet|auto", "ทยอยแสดง หรือ แสดงทีเดียวตอนเสร็จ (เลื่อนอ่านไม่เด้ง)"),
                 ("/undo", "ย้อนกลับการแก้ไฟล์ล่าสุด"),
                 ("/websearch on|off", "เปิด/ปิดการค้นเว็บจริงก่อนตอบ"),
                 ("/config set <KEY> <ค่า>", "ตั้งค่า API key (Brave/Tavily)"),
@@ -697,7 +741,7 @@ def main():
         if user_input.startswith("/"):
             typed_cmd = user_input.split()[0]
             print(f"{Color.ERROR}[error] ไม่รู้จักคำสั่ง: {typed_cmd}{Color.RESET}")
-            print(f"{Color.SYSTEM}[error] คำสั่งที่มี: /help /add /files /status /model /lang /reset /undo "
+            print(f"{Color.SYSTEM}[error] คำสั่งที่มี: /help /add /files /status /model /lang /reset /last /stream /undo "
                   f"/linear sync /archive /websearch /config set /todo list|add|done|del /exit{Color.RESET}")
             print(f"{Color.SYSTEM}[error] เช็ค syntax เช่น /todo add <ข้อความ> ต้องมีเว้นวรรคตามหลังคำสั่งย่อย{Color.RESET}")
             continue
@@ -735,17 +779,31 @@ def main():
             else user_input
         )
         history.append({"role": "user", "content": user_msg})
+        session.append("user", user_msg, model=current_model)
 
         est_before = estimate_tokens(history)
         if est_before > args.num_ctx:
             print(f"[คำเตือน] Token โดยประมาณ (~{est_before:,}) เกิน num_ctx ({args.num_ctx:,}) แล้ว "
                   f"โมเดลอาจ \"ลืม\" ข้อความช่วงต้น แนะนำ /reset ก่อนคุยต่อ")
 
-        response = call_ollama_stream(current_model, history, args.num_ctx)
+        response, interrupted = stream_chat(current_model, history, args.num_ctx, stream_mode)
+        if not response:
+            # ไม่ได้คำตอบเลย (Ollama ล่ม/กด Ctrl+C ก่อน token แรก) — ถอดคำถามออกจาก
+            # history กันส่งคำถามซ้ำซ้อนรอบหน้า (ไฟล์ session ยังเก็บคำถามไว้)
+            history.pop()
+            continue
         history.append({"role": "assistant", "content": response})
+        session.append("assistant", response, model=current_model, interrupted=interrupted)
+        last_answer = response
 
-        # ไม่ต้อง print(response) ซ้ำ เพราะ call_ollama_stream() แสดงผลระหว่างสร้างคำตอบไปแล้ว
-        apply_diff_blocks(response, project_root, files)
+        # ไม่ต้อง print(response) ซ้ำ เพราะ stream_chat() แสดงผลไปแล้ว
+        if interrupted:
+            print(f"{Color.SYSTEM}[หยุด] ไม่เสนอแก้ไฟล์จากคำตอบที่ไม่ครบ{Color.RESET}")
+            continue
+        try:
+            apply_diff_blocks(response, project_root, files)
+        except KeyboardInterrupt:
+            print("\n[ยกเลิก] ไม่แก้ไฟล์ — กลับสู่แชท")
 
 
 if __name__ == "__main__":
