@@ -29,24 +29,47 @@ Thumbs.db
 !.vscode/extensions.json
 
 # LCA runtime / secrets (Rule 23 — ห้าม commit secret เด็ดขาด)
-config.json          # API keys ของ search provider ฯลฯ
-config_versions.json # snapshot ของ config (มี secret เต็ม — ห้าม commit, Rule 23)
-org.json             # user/role/api-key store (มี hash — ถือเป็น secret)
-spaces.json          # พื้นที่ส่วนตัว/บริษัท + ข้อความ (เนื้อหาส่วนตัว ไม่ commit)
+# gitignore ไม่ตัดคอมเมนต์ท้ายบรรทัด — ถ้าเขียน path แล้วตามด้วย # มันจะไม่ match
+# API keys ของ search provider ฯลฯ
+config.json
+config.json.tmp
+# snapshot ของ config (เคยมี secret เต็ม — ห้าม commit, Rule 23)
+config_versions.json
+config_versions.json.tmp
+# user/role/api-key store (มี hash — ถือเป็น secret)
+org.json
+# พื้นที่ส่วนตัว/บริษัท + ข้อความ (เนื้อหาส่วนตัว ไม่ commit)
+spaces.json
 todos.json
 CHANGELOG_local.md
 .local_coder_backup/
-*.db          # SQLite stores (jobs.db ฯลฯ) — runtime data, ไม่ commit
+# SQLite stores (jobs.db ฯลฯ) — runtime data, ไม่ commit
+*.db
 *.sqlite3
-agent_jobs.json       # คิวงาน agent (รันไทม์ ไม่ commit)
+# คิวงาน agent (รันไทม์ ไม่ commit)
+agent_jobs.json
 agent_jobs.json.tmp
-agent_queue.txt       # คิวงาน agent แบบไฟล์ (CLI worker)
+agent_queue.txt
 agent_approvals.json
 agent_approvals.json.tmp
-connections.json      # ต่อสมอง AI ภายนอก (มี api_key — secret, Rule 23)
+# ต่อสมอง AI ภายนอก (มี api_key — secret, Rule 23)
+connections.json
 connections.json.tmp
-skills.json           # นิยาม Skills (รันไทม์ ไม่ commit)
+# API keys at rest (DPAPI blob on Windows, mode 0600 elsewhere)
+secrets.bin
+secrets.bin.tmp
+# ทะเบียน node ของคลัสเตอร์ — state ในเครื่อง ไม่ใช่ซอร์ส
+cluster.json
+# marker ยืนยันโฟลเดอร์ (folder_trust.py) — state ในเครื่อง
+.lca_trust
+# export บทสนทนาสำหรับ fine-tune (อาจมี prompt/response)
+lca_dataset.jsonl
+# STORAGE_ROOT เริ่มต้นของ storage_backend (state ในเครื่อง)
+data/
+# นิยาม Skills / Bots (รันไทม์ ไม่ commit)
+skills.json
 skills.json.tmp
-bots.json             # นิยาม Bots (รันไทม์ ไม่ commit)
+bots.json
 bots.json.tmp
-agent_workspace/      # sandbox ของ bot-agent (ไฟล์ที่ agent อ่าน/เขียน — ไม่ commit)
+# sandbox ของ bot-agent (ไฟล์ที่ agent อ่าน/เขียน — ไม่ commit)
+agent_workspace/

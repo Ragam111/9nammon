@@ -4,6 +4,50 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [Unreleased] — 2026-11-03 (API keys sealed at rest)
+
+ไม่ขยับเลข `VERSION` (ยัง 0.1.6)
+
+### Added
+- **`app/secret_store.py`** — เก็บ API key / token / password นอกไฟล์ config แบบ plaintext
+  - Windows: `CryptProtectData` / `CryptUnprotectData` ผ่าน ctypes, scope CurrentUser
+    (`CRYPTPROTECT_UI_FORBIDDEN` และไม่ตั้ง `CRYPTPROTECT_LOCAL_MACHINE`)
+  - นอก Windows: `keyring` จะถูกใช้ก็ต่อเมื่อมีชื่ออยู่ใน `requirements.txt`
+    ตอนนี้ไม่มี (มีแต่ `psutil`) จึงเก็บใน `secrets.bin` โหมด `0600` พร้อมคำเตือนหนึ่งครั้ง
+    คำเตือนไม่พิมพ์ค่าความลับ
+- เทส `tests/test_secret_store.py` จำลอง DPAPI บน Linux
+
+### Changed
+- `config.json`, `connections.json`, และ `config_versions.json`: ค่าที่เป็น credential
+  ถูกเปลี่ยนเป็นตัวชี้ `$lca_secret_ref` ตอนอ่าน ถ้าเข้ารหัสไม่ได้ ค่าเดิมยังอยู่
+- snapshot ของ config ไม่เก็บค่าความลับอีกต่อไป — เก็บ ref ที่ชี้สำเนาใน `secrets.bin`
+  เพื่อให้ rollback ยังได้ค่าเดิม โดยไม่เขียน plaintext ลงไฟล์เวอร์ชัน
+- `.gitignore`: `cluster.json`, `.lca_trust`, `secrets.bin`, `lca_dataset.jsonl`, `data/`
+  - คอมเมนต์ท้ายบรรทัดทำให้แพทเทิร์นเดิมไม่ match (gitignore ไม่ตัด `#` ท้ายบรรทัด)
+    ย้ายคอมเมนต์ไปบรรทัดของตัวเอง ไฟล์ลับเดิมเช่น `config.json` จึงถูก ignore จริง
+  - `.lca_trust` เคยถูก track (มีแต่ `trusted_at=2026-09-02T14:38:24`) — เอาออกจาก index ด้วย `git rm --cached` ไม่ได้เขียนประวัติใหม่
+  - `cluster.json` ไม่เคยถูก track
+- `docs/learn/rapid-iteration-ecosystem/SKILL.md`: เส้นทาง `app/*.html`,
+  `TokenLCAlimit.exe` เป็นผลบิลด์ของ workflow ไม่ใช่ไฟล์ใน repo,
+  และ `docs/ARCHITECTURE.md` ไม่ใช่แผน v0.0.2 ที่ยังใช้เป็นสถาปัตยกรรมปัจจุบัน
+- `app/context_manager.py`: ไม่ดึง `secrets.bin` / `connections.json` / `config_versions.json`
+  เข้า context ของโมเดล
+- ตั้งชื่อโมดูลเป็น `app/secret_store.py` (ไม่ใช่ `app/secrets.py`) — `local_coder.py` ใส่ `app/`
+  ไว้หน้า `sys.path` ถ้าชื่อ `secrets` จะบัง stdlib `secrets` ที่ `org_store` / `server` ใช้สุ่ม token
+- ชื่อที่ลงท้าย `_TOKEN(S)` แต่เป็นตัวเลขตั้งค่า (`MAX_TOKENS`, `MIN_`/`NUM_`/`TOTAL_`…,
+  `PRICE_PER_1K_TOKENS`, คำว่า LIMIT/COUNT/PER/BUDGET/CONTEXT ฯลฯ) ไม่ถูก seal — เก็บ plaintext แก้มือได้
+
+### Security
+- ไม่ log ค่า API key. อ่าน blob ไม่ได้จะไม่ลบ entry ใน `secrets.bin`
+- ลบสำเนาที่ seal ไว้เมื่อเจ้าของหายไป:
+  - `connections.remove()` (และ connection ที่ถูกตัดเกิน `MAX_RECORDS`) ลบ `conn:<id>`
+  - snapshot ที่ถูกตัดเกิน `MAX_VERSIONS` ลบ `snapshot:<vid>:*` ของมัน
+    (ยกเว้น entry ที่ `config.json` หลัง rollback หรือเวอร์ชันที่เหลือยังชี้อยู่)
+  - `set_key(KEY, "")` ลบ `config:KEY` และสำเนา `snapshot:*:KEY` ทุกเวอร์ชัน
+
+### Tests
+- `python3 -m unittest discover -s tests` — **862 passed** (837 เดิม + 25 ใน `tests/test_secret_store.py`)
+
 ## [Unreleased] — 2026-11-03 (localhost CSRF / DNS rebinding guard)
 
 ### Security — 2026-11-03
