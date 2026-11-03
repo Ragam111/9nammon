@@ -5,9 +5,13 @@
 *ย้อนกลับได้เร็ว* เมื่อปล่อยของพลาด/เจอ incident — ลดเวลาที่ลูกค้าเจอของเสีย
 
 หลักความปลอดภัย:
-- snapshot เก็บ config เต็ม (มี secret) → ไฟล์เวอร์ชันต้องอยู่ใน .gitignore เสมอ (Rule 23)
+- credential ไม่ถูกคัดลอกลงไฟล์เวอร์ชัน — snapshot เก็บ ``$lca_secret_ref``
+  ที่ชี้ค่าใน secrets.bin (DPAPI บน Windows / ไฟล์ 0600 นอก Windows)
+- ไฟล์เวอร์ชันยังอยู่ใน .gitignore (Rule 23) เพราะเคยมี secret เต็ม และยังมีตัวชี้
 - list_versions คืน *metadata เท่านั้น* (id/เวลา/label/จำนวน key) ไม่เผยค่า secret
-- rollback จะ snapshot ของปัจจุบันก่อนเสมอ → ย้อนของ rollback ได้อีก (ไม่มีทางข้อมูลหาย)
+- rollback จะ snapshot ของปัจจุบันก่อนเสมอ → ย้อนของ rollback ได้อีก
+- plaintext เก่าในไฟล์เวอร์ชันถูกย้ายเข้า secrets.bin ตอนอ่าน แล้วแทนที่ด้วย ref
+  ถ้าย้ายไม่ได้ ค่าเดิมยังอยู่ในไฟล์ ไม่ถูกทิ้ง
 
 stdlib ล้วน. เก็บเวอร์ชันล่าสุด MAX_VERSIONS อัน (วนทับของเก่าสุด)
 """
@@ -19,6 +23,11 @@ import time
 from pathlib import Path
 
 from app import config_manager
+
+try:
+    from app import secret_store
+except ImportError:  # import ตรงจากโฟลเดอร์ app/
+    import secret_store  # type: ignore
 
 VERSIONS_FILE = "config_versions.json"
 MAX_VERSIONS = 20
@@ -34,14 +43,104 @@ def _load(project_root) -> list:
         return []
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        return data if isinstance(data, list) else []
     except (OSError, json.JSONDecodeError):
         return []
+    if not isinstance(data, list):
+        return []
+    changed = False
+    for index, entry in enumerate(data):
+        if not isinstance(entry, dict):
+            continue
+        cfg = entry.get("config")
+        if not isinstance(cfg, dict):
+            continue
+        vid = entry.get("id")
+        if not isinstance(vid, str) or not vid:
+            vid = f"legacy-{index}"
+        if _seal_legacy_snapshot(project_root, vid, cfg):
+            changed = True
+    if changed:
+        try:
+            _save(project_root, data)
+        except OSError as exc:
+            print(
+                f"[config][warn] เขียน {VERSIONS_FILE} หลัง seal ไม่ได้: "
+                f"{type(exc).__name__} — ค่าเดิมยังอยู่ในไฟล์"
+            )
+    return data
 
 
 def _save(project_root, versions: list) -> None:
-    _versions_path(project_root).write_text(
-        json.dumps(versions, ensure_ascii=False, indent=2), encoding="utf-8")
+    path = _versions_path(project_root)
+    text = json.dumps(versions, ensure_ascii=False, indent=2)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    tmp.replace(path)
+
+
+def _copy_secret(project_root, preferred: str, plaintext: str) -> str | None:
+    """Copy a secret without overwriting a different existing entry.
+    None means the copy failed and the caller must keep the original value."""
+    try:
+        return secret_store.store_keeping_existing(project_root, preferred, plaintext)
+    except secret_store.SecretError as exc:
+        print(
+            f"[secrets][warn] คัดลอก {preferred} ไม่ได้: {type(exc).__name__} "
+            "— คงค่าเดิมไว้"
+        )
+        return None
+
+
+def _seal_legacy_snapshot(project_root, version_id: str, cfg: dict) -> bool:
+    """Plaintext credentials already sitting in a snapshot file → refs.
+    Does not replace a live ``config:`` entry that already exists."""
+    changed = False
+    for key_name, value in list(cfg.items()):
+        if not secret_store.is_secret_name(key_name) or not isinstance(value, str) or value == "":
+            continue
+        stored = _copy_secret(
+            project_root, secret_store.snapshot_entry_name(version_id, key_name), value
+        )
+        if stored is None:
+            continue
+        cfg[key_name] = secret_store.make_ref(stored)
+        changed = True
+        live = secret_store.config_entry_name(key_name)
+        try:
+            if not secret_store.has_entry(project_root, live):
+                secret_store.store(project_root, live, value)
+        except secret_store.SecretError as exc:
+            print(
+                f"[secrets][warn] คัดลอก {key_name} ไปค่าปัจจุบันไม่ได้: "
+                f"{type(exc).__name__} — ค่าใน snapshot ยังอยู่"
+            )
+    return changed
+
+
+def _freeze_for_snapshot(project_root, version_id: str, cfg: dict) -> dict:
+    """Snapshot dict with credentials replaced by refs. Settings stay as-is.
+    If a credential cannot be copied, the original value is kept so it is not lost."""
+    frozen = {}
+    for key_name, value in cfg.items():
+        if not secret_store.is_secret_name(key_name):
+            frozen[key_name] = value
+            continue
+        plain = None
+        if secret_store.ref_name(value):
+            try:
+                plain = secret_store.reveal(project_root, secret_store.ref_name(value))
+            except secret_store.SecretError:
+                plain = None
+        elif isinstance(value, str) and value:
+            plain = value
+        if not plain:
+            frozen[key_name] = value
+            continue
+        stored = _copy_secret(
+            project_root, secret_store.snapshot_entry_name(version_id, key_name), plain
+        )
+        frozen[key_name] = secret_store.make_ref(stored) if stored else value
+    return frozen
 
 
 def _meta(v: dict) -> dict:
@@ -51,8 +150,9 @@ def _meta(v: dict) -> dict:
 
 
 def snapshot(project_root, label: str = "") -> dict:
-    """เก็บ snapshot ของ config.json ปัจจุบันเป็นเวอร์ชันใหม่ — คืน metadata"""
-    cfg = config_manager._load_config(Path(project_root))
+    """เก็บ snapshot ของ config.json ปัจจุบันเป็นเวอร์ชันใหม่ — คืน metadata.
+    credential ถูกคัดลอกไปชื่อ snapshot:<id>:<key> แล้วในไฟล์เหลือแต่ ref"""
+    cfg = dict(config_manager._load_config(Path(project_root)))
     versions = _load(project_root)
     # id อิงเวลา (ms) + กันชนกันถ้าเรียกถี่ ด้วยการต่อ suffix
     vid = f"v{int(time.time() * 1000)}"
@@ -61,11 +161,50 @@ def snapshot(project_root, label: str = "") -> dict:
     while vid in existing:
         n += 1
         vid = f"v{int(time.time() * 1000)}-{n}"
-    entry = {"id": vid, "ts": int(time.time()), "label": str(label)[:120], "config": cfg}
+    entry = {
+        "id": vid,
+        "ts": int(time.time()),
+        "label": str(label)[:120],
+        "config": _freeze_for_snapshot(project_root, vid, cfg),
+    }
     versions.append(entry)
+    dropped = versions[:-MAX_VERSIONS]
     versions = versions[-MAX_VERSIONS:]   # เก็บแค่ล่าสุด N อัน
     _save(project_root, versions)
+    if dropped:
+        _drop_snapshot_secrets(project_root, dropped, versions)
     return _meta(entry)
+
+
+def _refs_in(cfg) -> set:
+    if not isinstance(cfg, dict):
+        return set()
+    return {n for n in (secret_store.ref_name(v) for v in cfg.values()) if n}
+
+
+def _drop_snapshot_secrets(project_root, dropped: list, kept: list) -> None:
+    """Sealed snapshot:<vid>:* entries of pruned versions are deleted.
+    An entry still referenced by config.json (e.g. after a rollback) or by a
+    kept version stays."""
+    vids = [str(v.get("id")) for v in dropped if v.get("id")]
+    if not vids:
+        return
+    in_use = _refs_in(config_manager._load_config(Path(project_root)))
+    for v in kept:
+        in_use |= _refs_in(v.get("config"))
+
+    def doomed(name: str) -> bool:
+        return name not in in_use and any(
+            secret_store.is_snapshot_entry_for_version(name, vid) for vid in vids
+        )
+
+    try:
+        secret_store.delete_where(project_root, doomed)
+    except secret_store.SecretError as exc:
+        print(
+            f"[secrets][warn] ลบความลับของเวอร์ชันเก่าไม่ได้: {type(exc).__name__} "
+            "— ไม่เขียนทับไฟล์ลับ"
+        )
 
 
 def list_versions(project_root) -> list:
@@ -83,7 +222,5 @@ def rollback(project_root, version_id: str) -> dict:
     if target is None:
         raise ValueError(f"ไม่พบเวอร์ชัน: {version_id}")
     backup = snapshot(project_root, label=f"อัตโนมัติ: ก่อน rollback → {version_id}")
-    path = config_manager._config_path(Path(project_root))
-    path.write_text(json.dumps(target.get("config", {}), ensure_ascii=False, indent=2),
-                    encoding="utf-8")
+    config_manager._write_config(Path(project_root), target.get("config") or {})
     return {"restored": version_id, "keys": len(target.get("config", {})), "backup": backup["id"]}

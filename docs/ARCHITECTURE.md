@@ -1,6 +1,18 @@
-# LCA v0.0.2 — Architecture
+# LCA v0.1.6 — Architecture
 
-## Module Map
+สถานะที่รันอยู่ใน repo นี้คือไฟล์ `VERSION` = **0.1.6** ไม่ใช่หัวข้อเดิม "LCA v0.0.2"
+(คอมมิตล่าสุดของไฟล์นี้ก่อนการแก้คือ `7859def`, 2026-10-14)
+
+- `server.py` — `http.server.ThreadingHTTPServer`, พอร์ตเริ่มต้น **8420**, bind เริ่มต้น `127.0.0.1`
+- `lca_app.py` — เปิดเซิร์ฟเวอร์ในตัว แล้วเปิดหน้าต่าง Edge/Chrome `--app` (เปิดเบราว์เซอร์ปกติถ้าไม่มี). ข้อมูลโหมดเดสก์ท็อปอยู่ที่ `%LOCALAPPDATA%\LocalCodeAssistant\data`
+- `local_coder.py` — CLI. โมเดล local เรียก Ollama ที่ `http://localhost:11434/api/chat`
+- หน้าเว็บอยู่ใต้ `app/` (`index.html`, `login.html`, `console.html`, `spaces.html`, `dev.html`, `support.html`, `install.html`) ไม่ได้อยู่ที่ราก repo
+- dependency ที่ปักใน `requirements.txt` มี `psutil` อย่างเดียว
+- ไฟล์ `.exe` ไม่ได้ถูก commit. `.github/workflows/build-exe.yml` บิลด์ `LCA-Desktop.exe` (จาก `lca_app.py`) และ `TokenLCAlimit.exe` (จาก `installer_gui.py`) เมื่อ `workflow_dispatch` หรือแท็ก `v*` บน `windows-latest` / Python 3.12 / PyInstaller `--onefile`
+
+แผนผังด้านล่างเป็นเอกสารเดิมสมัยที่หัวข้อยังเป็น v0.0.2. มันเป็นแผนที่โมดูลยุคนั้น ไม่ใช่แผนสามชั้นที่ใช้แทนโค้ดปัจจุบัน
+
+## Module Map (เอกสารเดิม v0.0.2)
 
 ```
 LCA/

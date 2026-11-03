@@ -2,7 +2,7 @@
 # serve.sh — เปิด LCA server ด้วยคำสั่งเดียว (เปิดให้คนใช้จริงบนเครื่องตัวเอง)
 #
 # ใช้งาน:
-#   ./scripts/serve.sh                 # โหมด local: เข้าได้เฉพาะเครื่องนี้ (127.0.0.1:8420) = CEO เลย
+#   ./scripts/serve.sh                 # โหมด local: 127.0.0.1:8420 + session token ที่ server สุ่มให้ (พิมพ์ในเทอร์มินัล)
 #   ./scripts/serve.sh --lan           # เปิดให้เครื่องอื่นใน Wi-Fi/LAN เข้า (บังคับมี token อัตโนมัติ)
 #   ./scripts/serve.sh --lan --token เลขลับของคุณ
 #   ./scripts/serve.sh --port 9000 --dir /path/to/project
