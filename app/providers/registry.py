@@ -104,12 +104,27 @@ def get_provider(name: str | None = None, project_root=None, **kwargs):
     if kwargs.get("base_url") in (None, ""):
         kwargs.pop("base_url", None)
     if "base_url" not in kwargs:
-        configured = _cfg(root, BASE_CONFIG_KEYS[canonical])
-        if configured:
-            kwargs["base_url"] = configured
-        elif canonical == "openai_compat":
-            kwargs["base_url"] = _default_openai_compat_base()
-        elif canonical == "ollama":
-            kwargs["base_url"] = default_ollama_root()
+        base = configured_base_url(canonical, root)
+        if base:
+            kwargs["base_url"] = base
     kwargs.setdefault("project_root", root)
     return cls(**kwargs)
+
+
+def configured_base_url(name: str, project_root=None) -> str | None:
+    """Base URL ``get_provider`` would use, or ``None`` for the adapter's own default.
+
+    Config key first (``BASE_CONFIG_KEYS``), then the local defaults for
+    ``openai_compat`` and ``ollama``. Cloud adapters with no override return
+    ``None`` (their built-in public endpoint).
+    """
+    canonical = canonicalize(name)
+    root = None if project_root is None else Path(project_root)
+    configured = _cfg(root, BASE_CONFIG_KEYS[canonical])
+    if configured:
+        return configured
+    if canonical == "openai_compat":
+        return _default_openai_compat_base()
+    if canonical == "ollama":
+        return default_ollama_root()
+    return None

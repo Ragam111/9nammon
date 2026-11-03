@@ -233,6 +233,28 @@ class ChatApiTest(unittest.TestCase):
         self.assertEqual(len(compared["replies"]), 2)
         self.assertEqual(self.inflight["max"], 1)
 
+    def test_lan_endpoints_count_as_cloud_and_run_together(self):
+        from app import config_manager
+        config_manager.set_key(self.root, "OLLAMA_BASE_URL", "http://192.168.1.5:11434")
+        config_manager.set_key(self.root, "OPENAI_BASE_URL", "http://192.168.1.5:8000/v1")
+        self.delay = 0.3
+        st, compared = self._post("/api/chat/compare", {
+            "content": "lan",
+            "targets": [
+                {"provider": "ollama", "model": "qwen-a"},
+                {"provider": "openai_compat", "model": "m"},
+            ],
+        }, timeout=10)
+        self.assertEqual(st, 200, compared)
+        self.assertEqual(len(compared["replies"]), 2)
+        self.assertEqual(self.inflight["max"], 2)
+        st, catalog = self._get("/api/chat/providers")
+        self.assertEqual(st, 200)
+        items = catalog.get("providers", catalog) if isinstance(catalog, dict) else catalog
+        flags = {p["id"]: p["local"] for p in items}
+        self.assertFalse(flags["ollama"])
+        self.assertFalse(flags["openai_compat"])
+
     def test_stream_keeps_partial_text_when_provider_drops(self):
         def stream(messages, model, *, provider, project_root=None, **_opts):
             holder = {}

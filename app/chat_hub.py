@@ -6,9 +6,11 @@ different provider and still see the same thread. Requests that name neither
 a provider nor a conversation stay on the existing ``model_backend`` path in
 ``server.py``.
 
-Local providers (Ollama and OpenAI-compatible) take the admission gate and,
-when more than one is in a compare set, run one at a time. Cloud providers in
-a compare set run together.
+Local targets take the admission gate and, when more than one is in a compare
+set, run one at a time. Cloud targets in a compare set run together. "Local"
+means the endpoint host is localhost, 127.0.0.1 or ::1 (see
+``app.providers.locality``); an Ollama or OpenAI-compatible base_url on any
+other host (LAN IP, remote server, tunnel) counts as cloud.
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ from urllib.parse import parse_qs
 from app import chat_store
 from app.chat_store import ChatStoreError
 
+# Adapters that *can* be local; whether one is depends on its base_url host.
 LOCAL_PROVIDERS = {"ollama", "openai_compat"}
 MAX_COMPARE = 4
 
@@ -73,8 +76,9 @@ def wants_post(path: str) -> bool:
     return path in POST_PATHS
 
 
-def _is_local(provider) -> bool:
-    return provider is None or provider in LOCAL_PROVIDERS
+def _is_local(provider, project_root=None) -> bool:
+    from app.providers.locality import is_local_provider
+    return is_local_provider(provider, project_root)
 
 
 def _providers():
@@ -182,7 +186,7 @@ def complete(project_root, *, provider, model, transcript, gen_gate, num_ctx,
     last_flush = started
     gate = None
     try:
-        if _is_local(provider):
+        if _is_local(provider, project_root):
             if gen_gate is None:
                 raise admission.Busy("ไม่มีช่องรันโมเดล")
             gate = gen_gate.slot()
@@ -642,7 +646,7 @@ def _provider_catalog(project_root) -> list:
         catalog.append({
             "id": name,
             "label": LABELS.get(name, name),
-            "local": name in LOCAL_PROVIDERS,
+            "local": _is_local(name, project_root),
             "models": models,
         })
     return catalog
@@ -812,8 +816,9 @@ def _post_compare(handler, project_root, ident, data, gen_gate) -> None:
             raise ChatStoreError("เทียบได้จากข้อความของผู้ใช้")
     else:
         raise ChatStoreError("ต้องมีข้อความที่จะเทียบ")
-    locals_ = [t for t in cleaned if _is_local(t["provider"])]
-    clouds = [t for t in cleaned if not _is_local(t["provider"])]
+    local_flags = [_is_local(t["provider"], project_root) for t in cleaned]
+    locals_ = [t for t, is_local in zip(cleaned, local_flags) if is_local]
+    clouds = [t for t, is_local in zip(cleaned, local_flags) if not is_local]
     replies = []
 
     def run(target):
