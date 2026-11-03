@@ -1,4 +1,4 @@
-"""secrets.py — API keys at rest (Windows DPAPI, with a documented fallback).
+"""secret_store.py — API keys at rest (Windows DPAPI, with a documented fallback).
 
 What this module does
     seal a secret so ``config.json`` / ``connections.json`` / ``config_versions.json``
@@ -80,6 +80,14 @@ _SECRET_SUFFIXES = (
     "_SECRET",
     "_WEBHOOK_URL",
 )
+# "TOKEN" is ambiguous: an auth token vs. an LLM token count. A *_TOKEN(S)
+# name that reads as a number setting (MAX_TOKENS, PRICE_PER_1K_TOKENS,
+# NUM_CTX_TOKENS, TOKEN_LIMIT_TOKENS...) is a setting and stays plaintext.
+_NUMERIC_TOKEN_PREFIXES = ("MAX", "MIN", "NUM", "TOTAL", "DEFAULT")
+_NUMERIC_TOKEN_WORDS = frozenset({
+    "MAX", "MIN", "NUM", "LIMIT", "LIMITS", "COUNT", "PER", "BUDGET",
+    "PRICE", "COST", "RATE", "CTX", "CONTEXT", "WINDOW", "SIZE",
+})
 
 _lock = threading.Lock()
 _file_fallback_warned = False
@@ -109,7 +117,16 @@ def is_secret_name(name: str) -> bool:
         return False
     if n in _EXACT_SECRET_NAMES:
         return True
-    return any(n.endswith(suffix) for suffix in _SECRET_SUFFIXES)
+    suffix = next((sfx for sfx in _SECRET_SUFFIXES if n.endswith(sfx)), None)
+    if suffix is None:
+        return False
+    if suffix in ("_TOKEN", "_TOKENS"):
+        words = n.split("_")
+        if words[0] in _NUMERIC_TOKEN_PREFIXES:
+            return False
+        if any(w in _NUMERIC_TOKEN_WORDS for w in words[:-1]):
+            return False
+    return True
 
 
 def make_ref(name: str) -> dict:
@@ -485,6 +502,49 @@ def delete(project_root, name: str) -> None:
             return
         del data["entries"][name]
         _write_store(path, data)
+
+
+def entry_names(project_root) -> list[str]:
+    """Names of all stored entries (no values). Missing file → []."""
+    path = _secrets_path(project_root)
+    with _lock:
+        if not path.exists():
+            return []
+        return sorted(_read_store(path)["entries"])
+
+
+def delete_where(project_root, predicate) -> list[str]:
+    """Remove every entry whose name matches ``predicate`` in one write.
+    Returns the removed names. A corrupt store is left as-is (SecretError)."""
+    path = _secrets_path(project_root)
+    with _lock:
+        if not path.exists():
+            return []
+        data = _read_store(path)
+        gone = [name for name in data["entries"] if predicate(name)]
+        if not gone:
+            return []
+        for name in gone:
+            del data["entries"][name]
+        _write_store(path, data)
+    return sorted(gone)
+
+
+def is_snapshot_entry_for_key(name: str, key_name: str) -> bool:
+    """True for ``snapshot:<vid>:<key>`` and the ``-N`` copies made by
+    ``store_keeping_existing``."""
+    parts = str(name).split(":", 2)
+    if len(parts) != 3 or parts[0] != "snapshot":
+        return False
+    tail = parts[2]
+    if tail == key_name:
+        return True
+    base, sep, num = tail.rpartition("-")
+    return bool(sep) and base == key_name and num.isdigit()
+
+
+def is_snapshot_entry_for_version(name: str, version_id: str) -> bool:
+    return str(name).startswith(f"snapshot:{version_id}:")
 
 
 def config_entry_name(key_name: str) -> str:

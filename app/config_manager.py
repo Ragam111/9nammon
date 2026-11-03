@@ -7,9 +7,9 @@ config_manager.py — Hot-Swap Config: เก็บ API key ลง config.json �
 **สำคัญ (Rule ข้อ 23)**: config.json มี secret จริง ห้าม commit เข้า git หรือแนบ
 ไปกับไฟล์ที่ส่งให้คนอื่น — ต้องอยู่ใน .gitignore เสมอ ห้าม print ค่า key เต็มๆ
 
-ค่าที่เป็น API key / token / password ถูก seal ผ่าน ``app.secrets`` ก่อนเขียน
+ค่าที่เป็น API key / token / password ถูก seal ผ่าน ``app.secret_store`` ก่อนเขียน
 (Windows DPAPI CurrentUser, นอก Windows เป็น secrets.bin โหมด 0600 — ดู
-secrets.py). อ่านแล้วได้ plaintext เหมือนเดิม. ค่า plaintext เก่าถูก seal
+secret_store.py). อ่านแล้วได้ plaintext เหมือนเดิม. ค่า plaintext เก่าถูก seal
 ตอนอ่าน แล้วเขียนกลับ — ถ้า seal ไม่ได้ ค่าเดิมยังอยู่ ไม่ทิ้ง.
 
 Interface ที่ local_coder.py เรียกใช้ตรงๆ:
@@ -23,9 +23,9 @@ import os
 from pathlib import Path
 
 try:
-    from app import secrets
+    from app import secret_store
 except ImportError:  # ถูก import เป็น config_manager จาก sys.path ที่ชี้ app/
-    import secrets  # type: ignore
+    import secret_store  # type: ignore
 
 CONFIG_FILE_NAME = "config.json"
 
@@ -47,20 +47,20 @@ def _seal_plaintext_secrets(project_root: Path, config: dict) -> bool:
     dict changed. On failure the original string stays in ``config``."""
     changed = False
     for key_name, value in list(config.items()):
-        if not secrets.is_secret_name(key_name) or not isinstance(value, str) or value == "":
+        if not secret_store.is_secret_name(key_name) or not isinstance(value, str) or value == "":
             continue
-        if secrets.ref_name(value) is not None:
+        if secret_store.ref_name(value) is not None:
             continue
-        entry = secrets.config_entry_name(key_name)
+        entry = secret_store.config_entry_name(key_name)
         try:
-            secrets.store(project_root, entry, value)
-        except secrets.SecretError as exc:
+            secret_store.store(project_root, entry, value)
+        except secret_store.SecretError as exc:
             print(
                 f"[secrets][warn] เข้ารหัส {key_name} ไม่ได้: {type(exc).__name__} "
                 "— คงค่าเดิมไว้"
             )
             continue
-        config[key_name] = secrets.make_ref(entry)
+        config[key_name] = secret_store.make_ref(entry)
         changed = True
     return changed
 
@@ -90,12 +90,12 @@ def _resolve(project_root: Path, key_name: str, value):
     """Plaintext for callers. A sealed ref that cannot be opened does not fall
     through to the environment (the value exists, it just cannot be read) and
     is not deleted."""
-    name = secrets.ref_name(value)
+    name = secret_store.ref_name(value)
     if name is None:
         return value
     try:
-        plain = secrets.reveal(project_root, name)
-    except secrets.SecretError:
+        plain = secret_store.reveal(project_root, name)
+    except secret_store.SecretError:
         print(f"[secrets][warn] อ่าน {key_name} ไม่ได้ — ไม่เขียนทับไฟล์ลับ")
         return None
     if plain is None:
@@ -109,7 +109,7 @@ def get_key(project_root: Path, key_name: str) -> str | None:
     config = _load_config(project_root)
     if key_name in config:
         value = _resolve(project_root, key_name, config.get(key_name))
-        if secrets.ref_name(config.get(key_name)) is not None:
+        if secret_store.ref_name(config.get(key_name)) is not None:
             return value or None
         if value:
             return value
@@ -121,13 +121,13 @@ def set_key(project_root: Path, key_name: str, value: str) -> None:
     restart โปรแกรม (hot-swap). credential ถูก seal; ถ้า seal ไม่ได้ เก็บ plaintext
     ไว้ก่อน เพื่อไม่ให้ค่าที่ผู้ใช้เพิ่งกรอกหาย"""
     config = _load_config(project_root)
-    if secrets.is_secret_name(key_name):
+    if secret_store.is_secret_name(key_name):
         if value:
-            entry = secrets.config_entry_name(key_name)
+            entry = secret_store.config_entry_name(key_name)
             try:
-                secrets.store(project_root, entry, value)
-                config[key_name] = secrets.make_ref(entry)
-            except secrets.SecretError as exc:
+                secret_store.store(project_root, entry, value)
+                config[key_name] = secret_store.make_ref(entry)
+            except secret_store.SecretError as exc:
                 print(
                     f"[secrets][warn] เข้ารหัส {key_name} ไม่ได้: {type(exc).__name__} "
                     "— เก็บ plaintext ไว้"
@@ -135,8 +135,14 @@ def set_key(project_root: Path, key_name: str, value: str) -> None:
                 config[key_name] = value
         else:
             try:
-                secrets.delete(project_root, secrets.config_entry_name(key_name))
-            except secrets.SecretError as exc:
+                secret_store.delete(project_root, secret_store.config_entry_name(key_name))
+                # Clearing a credential clears it everywhere: version snapshots
+                # keep a sealed copy under snapshot:<vid>:<key>.
+                secret_store.delete_where(
+                    project_root,
+                    lambda name: secret_store.is_snapshot_entry_for_key(name, key_name),
+                )
+            except secret_store.SecretError as exc:
                 print(
                     f"[secrets][warn] ลบ {key_name} ที่ seal ไว้ไม่ได้: {type(exc).__name__} "
                     "— ไม่เขียนทับไฟล์ลับ"

@@ -25,9 +25,9 @@ from pathlib import Path
 from app import config_manager
 
 try:
-    from app import secrets
+    from app import secret_store
 except ImportError:  # import ตรงจากโฟลเดอร์ app/
-    import secrets  # type: ignore
+    import secret_store  # type: ignore
 
 VERSIONS_FILE = "config_versions.json"
 MAX_VERSIONS = 20
@@ -82,8 +82,8 @@ def _copy_secret(project_root, preferred: str, plaintext: str) -> str | None:
     """Copy a secret without overwriting a different existing entry.
     None means the copy failed and the caller must keep the original value."""
     try:
-        return secrets.store_keeping_existing(project_root, preferred, plaintext)
-    except secrets.SecretError as exc:
+        return secret_store.store_keeping_existing(project_root, preferred, plaintext)
+    except secret_store.SecretError as exc:
         print(
             f"[secrets][warn] คัดลอก {preferred} ไม่ได้: {type(exc).__name__} "
             "— คงค่าเดิมไว้"
@@ -96,20 +96,20 @@ def _seal_legacy_snapshot(project_root, version_id: str, cfg: dict) -> bool:
     Does not replace a live ``config:`` entry that already exists."""
     changed = False
     for key_name, value in list(cfg.items()):
-        if not secrets.is_secret_name(key_name) or not isinstance(value, str) or value == "":
+        if not secret_store.is_secret_name(key_name) or not isinstance(value, str) or value == "":
             continue
         stored = _copy_secret(
-            project_root, secrets.snapshot_entry_name(version_id, key_name), value
+            project_root, secret_store.snapshot_entry_name(version_id, key_name), value
         )
         if stored is None:
             continue
-        cfg[key_name] = secrets.make_ref(stored)
+        cfg[key_name] = secret_store.make_ref(stored)
         changed = True
-        live = secrets.config_entry_name(key_name)
+        live = secret_store.config_entry_name(key_name)
         try:
-            if not secrets.has_entry(project_root, live):
-                secrets.store(project_root, live, value)
-        except secrets.SecretError as exc:
+            if not secret_store.has_entry(project_root, live):
+                secret_store.store(project_root, live, value)
+        except secret_store.SecretError as exc:
             print(
                 f"[secrets][warn] คัดลอก {key_name} ไปค่าปัจจุบันไม่ได้: "
                 f"{type(exc).__name__} — ค่าใน snapshot ยังอยู่"
@@ -122,14 +122,14 @@ def _freeze_for_snapshot(project_root, version_id: str, cfg: dict) -> dict:
     If a credential cannot be copied, the original value is kept so it is not lost."""
     frozen = {}
     for key_name, value in cfg.items():
-        if not secrets.is_secret_name(key_name):
+        if not secret_store.is_secret_name(key_name):
             frozen[key_name] = value
             continue
         plain = None
-        if secrets.ref_name(value):
+        if secret_store.ref_name(value):
             try:
-                plain = secrets.reveal(project_root, secrets.ref_name(value))
-            except secrets.SecretError:
+                plain = secret_store.reveal(project_root, secret_store.ref_name(value))
+            except secret_store.SecretError:
                 plain = None
         elif isinstance(value, str) and value:
             plain = value
@@ -137,9 +137,9 @@ def _freeze_for_snapshot(project_root, version_id: str, cfg: dict) -> dict:
             frozen[key_name] = value
             continue
         stored = _copy_secret(
-            project_root, secrets.snapshot_entry_name(version_id, key_name), plain
+            project_root, secret_store.snapshot_entry_name(version_id, key_name), plain
         )
-        frozen[key_name] = secrets.make_ref(stored) if stored else value
+        frozen[key_name] = secret_store.make_ref(stored) if stored else value
     return frozen
 
 
@@ -168,9 +168,43 @@ def snapshot(project_root, label: str = "") -> dict:
         "config": _freeze_for_snapshot(project_root, vid, cfg),
     }
     versions.append(entry)
+    dropped = versions[:-MAX_VERSIONS]
     versions = versions[-MAX_VERSIONS:]   # เก็บแค่ล่าสุด N อัน
     _save(project_root, versions)
+    if dropped:
+        _drop_snapshot_secrets(project_root, dropped, versions)
     return _meta(entry)
+
+
+def _refs_in(cfg) -> set:
+    if not isinstance(cfg, dict):
+        return set()
+    return {n for n in (secret_store.ref_name(v) for v in cfg.values()) if n}
+
+
+def _drop_snapshot_secrets(project_root, dropped: list, kept: list) -> None:
+    """Sealed snapshot:<vid>:* entries of pruned versions are deleted.
+    An entry still referenced by config.json (e.g. after a rollback) or by a
+    kept version stays."""
+    vids = [str(v.get("id")) for v in dropped if v.get("id")]
+    if not vids:
+        return
+    in_use = _refs_in(config_manager._load_config(Path(project_root)))
+    for v in kept:
+        in_use |= _refs_in(v.get("config"))
+
+    def doomed(name: str) -> bool:
+        return name not in in_use and any(
+            secret_store.is_snapshot_entry_for_version(name, vid) for vid in vids
+        )
+
+    try:
+        secret_store.delete_where(project_root, doomed)
+    except secret_store.SecretError as exc:
+        print(
+            f"[secrets][warn] ลบความลับของเวอร์ชันเก่าไม่ได้: {type(exc).__name__} "
+            "— ไม่เขียนทับไฟล์ลับ"
+        )
 
 
 def list_versions(project_root) -> list:

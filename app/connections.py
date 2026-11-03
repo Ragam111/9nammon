@@ -11,7 +11,7 @@ OllamaBackend (local). connection หนึ่งตัวจึงแค่ "�
   openai  — OpenAI-compatible endpoint (base_url ลงท้าย /v1 + api_key)  → ต่อ TokenMe/cloud/vLLM
   ollama  — Ollama ในเครื่อง (ฟรี ใช้วันนี้)                           → base_url ไม่จำเป็น
 
-ความปลอดภัย (Rule 23): api_key เป็นความลับ — seal ผ่าน app.secrets
+ความปลอดภัย (Rule 23): api_key เป็นความลับ — seal ผ่าน app.secret_store
 (Windows DPAPI CurrentUser; นอก Windows เป็น secrets.bin โหมด 0600) แล้วเก็บแค่
 ตัวชี้ใน connections.json (gitignored). **ไม่เคยคืนค่าเต็มออก API** (คืนแค่
 api_key_set: true/false). อ่านเจอ plaintext เก่าจะ seal แล้วเขียนกลับ;
@@ -33,9 +33,9 @@ from app import store_schema
 from app import conn_usage
 
 try:
-    from app import secrets
+    from app import secret_store
 except ImportError:  # import ตรงจากโฟลเดอร์ app/
-    import secrets  # type: ignore
+    import secret_store  # type: ignore
 
 STORE_FILE = "connections.json"
 SCHEMA_VERSION = 1       # ยังไม่เคยเปลี่ยน schema — baseline
@@ -68,16 +68,16 @@ def _seal_api_keys(project_root, recs: list) -> bool:
         conn_id = rec.get("id")
         if not conn_id:
             continue
-        entry = secrets.connection_entry_name(str(conn_id))
+        entry = secret_store.connection_entry_name(str(conn_id))
         try:
-            secrets.store(project_root, entry, api_key)
-        except secrets.SecretError as exc:
+            secret_store.store(project_root, entry, api_key)
+        except secret_store.SecretError as exc:
             print(
                 f"[secrets][warn] เข้ารหัส api_key ของ connection {conn_id} ไม่ได้: "
                 f"{type(exc).__name__} — คงค่าเดิมไว้"
             )
             continue
-        rec["api_key"] = secrets.make_ref(entry)
+        rec["api_key"] = secret_store.make_ref(entry)
         changed = True
     return changed
 
@@ -85,12 +85,12 @@ def _seal_api_keys(project_root, recs: list) -> bool:
 def _reveal_api_key(project_root, rec: dict) -> dict:
     """Copy of ``rec`` with api_key in plaintext. Does not write the store."""
     out = dict(rec)
-    name = secrets.ref_name(out.get("api_key"))
+    name = secret_store.ref_name(out.get("api_key"))
     if not name:
         return out
     try:
-        plain = secrets.reveal(project_root, name)
-    except secrets.SecretError:
+        plain = secret_store.reveal(project_root, name)
+    except secret_store.SecretError:
         print(
             f"[secrets][warn] อ่าน api_key ของ connection {rec.get('id')} ไม่ได้ "
             "— ไม่ลบค่าที่เก็บไว้"
@@ -99,8 +99,8 @@ def _reveal_api_key(project_root, rec: dict) -> dict:
         return out
     if plain is None:
         try:
-            still_there = secrets.has_entry(project_root, name)
-        except secrets.SecretError:
+            still_there = secret_store.has_entry(project_root, name)
+        except secret_store.SecretError:
             still_there = True
         if not still_there:
             print(f"[secrets][warn] ไม่พบ api_key ที่ seal ของ connection {rec.get('id')}")
@@ -204,9 +204,12 @@ def add(project_root, name: str, kind: str, base_url: str = "",
         if any(r.get("name") == name for r in recs):
             raise ConnectionError(f"มี connection ชื่อ {name!r} อยู่แล้ว")
         recs.append(rec)
-        if len(recs) > MAX_RECORDS:
+        dropped = recs[:-MAX_RECORDS] if len(recs) > MAX_RECORDS else []
+        if dropped:
             recs = recs[-MAX_RECORDS:]
         _save(project_root, recs)
+        for old in dropped:
+            _forget_api_keys(project_root, old.get("id", ""), [old], recs)
     return _public(rec)
 
 
@@ -249,7 +252,27 @@ def remove(project_root, conn_id: str) -> bool:
         if len(new) == len(recs):
             return False
         _save(project_root, new)
+        gone = [r for r in recs if r.get("id") == conn_id]
+        _forget_api_keys(project_root, conn_id, gone, new)
         return True
+
+
+def _forget_api_keys(project_root, conn_id: str, gone: list, kept: list) -> None:
+    """Delete the sealed api_key of a removed connection (conn:<id> and any
+    ref it held). An entry still referenced by a remaining connection stays."""
+    names = {secret_store.connection_entry_name(str(conn_id))}
+    for rec in gone:
+        ref = secret_store.ref_name(rec.get("api_key"))
+        if ref:
+            names.add(ref)
+    names -= {secret_store.ref_name(r.get("api_key")) for r in kept}
+    try:
+        secret_store.delete_where(project_root, lambda name: name in names)
+    except secret_store.SecretError as exc:
+        print(
+            f"[secrets][warn] ลบ api_key ของ connection {conn_id} ไม่ได้: "
+            f"{type(exc).__name__} — ไม่เขียนทับไฟล์ลับ"
+        )
 
 
 def _backend_for(rec: dict):

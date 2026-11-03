@@ -1,4 +1,4 @@
-"""test_secrets.py — API keys at rest.
+"""test_secret_store.py — API keys at rest.
 
 DPAPI is mocked on Linux (CI). The non-Windows path is the 0600 file,
 because keyring is not declared in requirements.txt.
@@ -21,7 +21,7 @@ from app import config_manager  # noqa: E402
 from app import config_versions  # noqa: E402
 from app import connections  # noqa: E402
 from app import model_backend  # noqa: E402
-from app import secrets  # noqa: E402
+from app import secret_store as secrets  # noqa: E402
 
 SENTINEL = "sk-PLAINTEXT-SENTINEL"
 
@@ -299,6 +299,133 @@ class SecretNameTest(unittest.TestCase):
         self.assertFalse(secrets.is_secret_name("CLUSTER_FORWARD_ENABLED"))
         self.assertFalse(secrets.is_secret_name("SMTP_HOST"))
         self.assertFalse(secrets.is_secret_name("NEW_KEY"))
+
+    def test_number_settings_named_tokens_are_not_sealed(self):
+        for name in ("MAX_TOKENS", "MAX_OUTPUT_TOKENS", "MIN_TOKENS", "NUM_TOKENS",
+                     "TOTAL_TOKENS", "PRICE_PER_1K_TOKENS", "CONTEXT_WINDOW_TOKENS",
+                     "TOKEN_LIMIT_TOKENS", "max_tokens"):
+            self.assertFalse(secrets.is_secret_name(name), name)
+        # Real credentials in this repo stay sealed.
+        for name in ("HUB_TOKEN", "CLUSTER_FORWARD_TOKEN", "STATIC_TOKENS", "LCA_TOKEN",
+                     "MASTER_TOKEN", "OPENAI_API_KEY", "BRAVE_SEARCH_API_KEY",
+                     "TAVILY_API_KEY", "LINEAR_API_KEY", "SMTP_PASS",
+                     "DISCORD_WEBHOOK_URL", "GITHUB_TOKEN", "REFRESH_TOKENS"):
+            self.assertTrue(secrets.is_secret_name(name), name)
+
+    def test_max_tokens_stays_plaintext_in_config(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with mocked_dpapi():
+                config_manager.set_key(root, "MAX_TOKENS", "4096")
+                self.assertEqual(config_manager.get_key(root, "MAX_TOKENS"), "4096")
+            disk = json.loads((root / "config.json").read_text(encoding="utf-8"))
+            self.assertEqual(disk["MAX_TOKENS"], "4096")
+            self.assertFalse((root / "secrets.bin").exists())
+
+
+class SecretCleanupTest(unittest.TestCase):
+    """Sealed copies are deleted when the thing that owned them goes away."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def names(self):
+        return secrets.entry_names(self.root)
+
+    def test_connection_remove_deletes_conn_secret(self):
+        with mocked_dpapi():
+            keep = connections.add(self.root, "keep", "ollama", api_key="sk-keep")
+            gone = connections.add(self.root, "gone", "ollama", api_key="sk-gone")
+            connections.list_connections(self.root)
+            self.assertIn(f"conn:{gone['id']}", self.names())
+            self.assertTrue(connections.remove(self.root, gone["id"]))
+            self.assertNotIn(f"conn:{gone['id']}", self.names())
+            self.assertIn(f"conn:{keep['id']}", self.names())
+            self.assertEqual(
+                connections.get(self.root, keep["id"], raw=True)["api_key"], "sk-keep")
+            self.assertFalse(connections.remove(self.root, gone["id"]))
+
+    def test_pruned_versions_drop_their_sealed_entries(self):
+        with mocked_dpapi(), \
+                mock.patch.object(config_versions, "MAX_VERSIONS", 3):
+            ids = []
+            for i in range(5):
+                config_manager.set_key(self.root, "OPENAI_API_KEY", f"sk-v{i}")
+                ids.append(config_versions.snapshot(self.root)["id"])
+            snap = {n.split(":")[1] for n in self.names() if n.startswith("snapshot:")}
+            self.assertEqual(snap, set(ids[-3:]))
+            self.assertEqual(
+                secrets.reveal(self.root, f"snapshot:{ids[-1]}:OPENAI_API_KEY"), "sk-v4")
+            self.assertIn("config:OPENAI_API_KEY", self.names())
+
+    def test_prune_keeps_entry_used_by_live_config_after_rollback(self):
+        with mocked_dpapi(), \
+                mock.patch.object(config_versions, "MAX_VERSIONS", 2):
+            config_manager.set_key(self.root, "OPENAI_API_KEY", "sk-old")
+            first = config_versions.snapshot(self.root)["id"]
+            config_manager.set_key(self.root, "OPENAI_API_KEY", "sk-new")
+            config_versions.rollback(self.root, first)   # live config → snapshot ref
+            for _ in range(3):
+                config_versions.snapshot(self.root)
+            self.assertEqual(config_manager.get_key(self.root, "OPENAI_API_KEY"), "sk-old")
+
+    def test_set_key_empty_clears_snapshot_copies(self):
+        with mocked_dpapi():
+            config_manager.set_key(self.root, "OPENAI_API_KEY", "sk-a")
+            v1 = config_versions.snapshot(self.root)["id"]
+            config_manager.set_key(self.root, "OPENAI_API_KEY", "sk-b")
+            config_versions.snapshot(self.root)
+            secrets.store(self.root, f"snapshot:{v1}:OPENAI_API_KEY-2", "sk-dup")
+            config_manager.set_key(self.root, "TAVILY_API_KEY", "tv-keep")
+            config_versions.snapshot(self.root)
+            config_manager.set_key(self.root, "OPENAI_API_KEY", "")
+            left = self.names()
+            self.assertFalse([n for n in left if "OPENAI_API_KEY" in n], left)
+            self.assertTrue([n for n in left if n.endswith(":TAVILY_API_KEY")])
+            self.assertIsNone(config_manager.get_key(self.root, "OPENAI_API_KEY"))
+            config_versions.rollback(self.root, v1)
+            self.assertIsNone(config_manager.get_key(self.root, "OPENAI_API_KEY"))
+
+    def test_snapshot_entry_matching(self):
+        self.assertTrue(secrets.is_snapshot_entry_for_key("snapshot:v1:A_TOKEN", "A_TOKEN"))
+        self.assertTrue(secrets.is_snapshot_entry_for_key("snapshot:v1:A_TOKEN-3", "A_TOKEN"))
+        self.assertFalse(secrets.is_snapshot_entry_for_key("snapshot:v1:B_A_TOKEN", "A_TOKEN"))
+        self.assertFalse(secrets.is_snapshot_entry_for_key("config:A_TOKEN", "A_TOKEN"))
+        self.assertFalse(secrets.is_snapshot_entry_for_key("snapshot:v1:A_TOKEN-x", "A_TOKEN"))
+
+
+class StdlibSecretsNotShadowedTest(unittest.TestCase):
+    """local_coder.py puts app/ first on sys.path. ``import secrets`` must
+    still be the stdlib module (org_store and server use token_urlsafe)."""
+
+    ROOT = Path(__file__).resolve().parent.parent
+
+    def test_no_app_secrets_module(self):
+        self.assertFalse((self.ROOT / "app" / "secrets.py").exists())
+        self.assertFalse((self.ROOT / "app" / "secrets").exists())
+
+    def test_import_secrets_with_app_on_path_is_stdlib(self):
+        import subprocess
+        code = (
+            "import sys; sys.path.insert(0, sys.argv[1]); "
+            "import secrets, config_manager, org_store; "
+            "assert callable(secrets.token_urlsafe), secrets; "
+            "assert 'app' not in secrets.__file__.replace('\\\\', '/').split('/')[-2:], secrets.__file__; "
+            "print(config_manager.secret_store.__name__)"
+        )
+        # cwd outside the repo: ``from app import ...`` fails, so the
+        # ``import secret_store`` fallback in config_manager is exercised.
+        with tempfile.TemporaryDirectory() as cwd:
+            out = subprocess.run(
+                [sys.executable, "-c", code, str(self.ROOT / "app")],
+                cwd=cwd, capture_output=True, text=True, timeout=60,
+            )
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertEqual(out.stdout.strip(), "secret_store")
 
 
 if __name__ == "__main__":
