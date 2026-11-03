@@ -4,6 +4,25 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [Unreleased] — 2026-11-03 (installer SHA-256 verify)
+
+### Security
+- **ตัวติดตั้งตรวจ SHA-256 ของไฟล์ที่ดาวน์โหลด** (`installer_gui.py`)
+  - `verify_sha256()` อ่านไฟล์ทีละ chunk ผ่าน `hashlib.sha256`
+  - ช่อง urllib อัปเดต hash ไปพร้อมกับเขียนสตรีม; ช่อง curl ตรวจไฟล์ที่เซฟแล้วด้วย helper เดียวกัน
+  - hash ไม่ตรง → ลบไฟล์ทิ้ง แล้วโยน `ChecksumMismatch` (ไม่แตก zip ต่อ และไม่ fallback ไปช่องทางอื่น)
+- **ปัก commit แทน `refs/heads/main.zip`**
+  - URL แบบ latest ไม่มี SHA-256 คงที่ (ไบต์เปลี่ยนทุก push) และ GitHub ไม่ได้เผยแพร่ `.sha256` ของ source archive — จึงไม่ใส่ hash ที่เดา
+  - `PINNED_COMMIT` = `93f1ca8de37543af528b33c8620347cf10865c5c` (HEAD ของ main ตอนเพิ่มการตรวจ)
+  - `ZIP_SHA256` = `d03326baa16f1555b1d0089e46884a0f0ddf249e3b2b4976f77854313fe5ef8d`
+    คำนวณจากไฟล์ที่ดาวน์โหลดจริงจาก URL นั้นเมื่อ 2026-11-03 (curl สองครั้งได้ digest เดียวกัน, 518881 ไบต์)
+    — **ไม่ใช่** checksum ที่ upstream ประกาศ
+
+### Tests
++3 (`837` → `840`) ใน `tests/test_sha256_verify.py` และ `tests/test_installer_gui.py`:
+- `VerifySha256Test` — match คืน digest และเก็บไฟล์, mismatch ลบไฟล์แล้ว raise
+- `DownloadZipTest.test_urllib_mismatch_deletes_file_and_skips_curl`
+
 ## [Unreleased] — 2026-11-03 (VS Code workspace + SKILL.md install path)
 
 ไม่ bump เวอร์ชัน — ยังเป็น 0.1.6 จนกว่าจะมี release
