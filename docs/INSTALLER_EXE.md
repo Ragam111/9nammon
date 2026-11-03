@@ -35,8 +35,10 @@
 
 ## ซอร์ส
 `installer_gui.py` (Python stdlib: tkinter + urllib + zipfile + shutil + threading)
-- ดาวน์โหลดซอร์สล่าสุดจาก GitHub (`main.zip`) → แตก → คัดลอก `app/`,`sysmanager/`,`server.py`,
-  launcher ต่าง ๆ ลงโฟลเดอร์ที่เลือก
+- ดาวน์โหลดซอร์สที่ปัก commit ไว้จาก GitHub (ไม่ใช้ `main.zip` — เป็น URL แบบ latest ไม่มี SHA-256 คงที่)
+  → ตรวจ SHA-256 ก่อนแตก → คัดลอก `app/`,`sysmanager/`,`server.py`, launcher ต่าง ๆ ลงโฟลเดอร์ที่เลือก
+  hash ไม่ตรงจะลบไฟล์ทิ้งแล้วหยุด. ค่าพินอยู่ใน `PINNED_COMMIT` / `ZIP_SHA256` ของ `installer_gui.py`
+  (digest คำนวณจากไฟล์ที่โหลดจริง — GitHub ไม่ได้เผยแพร่ `.sha256` ของ source archive)
 - สร้าง `start-lca.bat` (ดับเบิลคลิกเปิด server + เด้งเบราว์เซอร์)
 - ถ้าติ๊ก "icon บน Desktop" → วางทางลัดบน Desktop
 - แถบ progress เป็น **สีเขียว** เมื่อ 100% แล้วปุ่ม Close ค่อยกดได้

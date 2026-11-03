@@ -32,6 +32,10 @@ python server.py . --port 8420
 cloudflared tunnel --url http://localhost:8420
 ```
 ได้ URL `https://xxxx.trycloudflare.com` ทันที — ส่งให้ web users เปิดได้เลย
+(server bind `0.0.0.0` + token จึงรับ `Host: xxxx.trycloudflare.com` ที่ไม่มีพอร์ต และ
+`Origin: https://xxxx.trycloudflare.com` ได้ — Origin เว็บอื่นยังโดน 403. ผู้ใช้วาง token/API key ที่หน้า `/login`)
+> อย่ารัน `127.0.0.1` แบบไม่ตั้ง token แล้วต่อ tunnel — ชื่อ tunnel จะโดน 403. ถ้าจำเป็นต้องทำทางนั้น
+> ตั้ง `LCA_ALLOWED_HOSTS=xxxx.trycloudflare.com` (หน้าเว็บผ่าน tunnel จะไม่ได้ session token อัตโนมัติ)
 **ข้อจำกัด:** URL สุ่มเปลี่ยนทุกครั้ง + เครื่องพี่ต้องเปิดค้าง. อยากได้โดเมนคงที่ → ทำข้อ "ผูกโดเมน" ล่าง
 
 ---
@@ -107,6 +111,10 @@ python3 server.py . --port 8420
 Render build จาก `Dockerfile` ในรีโปให้เอง. เครื่องฟรี RAM น้อย → **ไม่รัน Ollama เอง** แต่ชี้ LLM ไป cloud
 ตั้ง env บน Render: `LCA_HOST=0.0.0.0`, `LCA_TOKEN=<secret>`, `MODEL_BACKEND=openai`,
 `OPENAI_BASE_URL=https://<cloud-llm>/v1`, `OPENAI_API_KEY=<key>` (ดู `docs/DEPLOY.md`)
+
+Render อยู่หลัง proxy HTTPS: ส่ง `Host: <ชื่อแอป>.onrender.com` (ไม่มีพอร์ต) + `Origin: https://…` (443).
+โหมด `LCA_HOST=0.0.0.0` รับได้เลย (เทียบ Origin กับ Host โดยไม่สนพอร์ต) — Origin เว็บอื่นโดน 403.
+ถ้าผูกโดเมนเองและอยากระบุชื่อชัด ๆ ตั้ง `LCA_ALLOWED_HOSTS=lca.yourdomain.com` เพิ่มได้
 
 ---
 

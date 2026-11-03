@@ -13,6 +13,7 @@ import threading
 import unittest
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -27,12 +28,24 @@ class ServerPagesTest(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         root = Path(self._tmp.name)
-        # ไม่ตั้ง master token = โหมด local (127.0.0.1) → หน้าเว็บ shell เสิร์ฟได้ไม่ต้อง auth
+        # ไม่ตั้ง master token → server สุ่ม session token (สิทธิ์ CEO เมื่อส่งกลับมา)
+        # หน้า shell เสิร์ฟได้ไม่ต้อง auth; API ที่เปลี่ยนข้อมูลต้องแนบ token นี้
         handler = server.make_handler(root, None)
+        self.session_token = handler.session_token
         self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
         self.port = self.httpd.server_address[1]
         self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
         self.thread.start()
+        orig = http.client.HTTPConnection.request
+
+        def _request(conn, method, url, body=None, headers=None, *, encode_chunked=False):
+            hdrs = dict(headers or {})
+            hdrs.setdefault("X-Auth-Token", self.session_token)
+            return orig(conn, method, url, body=body, headers=hdrs, encode_chunked=encode_chunked)
+
+        self._req_patch = mock.patch.object(http.client.HTTPConnection, "request", _request)
+        self._req_patch.start()
+        self.addCleanup(self._req_patch.stop)
 
     def tearDown(self):
         self.httpd.shutdown()
