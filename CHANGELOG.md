@@ -4,7 +4,7 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
-## [Unreleased] — 2026-11-03
+## [Unreleased] — 2026-11-03 (installer SHA-256 verify)
 
 ### Security
 - **ตัวติดตั้งตรวจ SHA-256 ของไฟล์ที่ดาวน์โหลด** (`installer_gui.py`)
@@ -22,6 +22,26 @@ Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไ�
 +3 (`837` → `840`) ใน `tests/test_sha256_verify.py` และ `tests/test_installer_gui.py`:
 - `VerifySha256Test` — match คืน digest และเก็บไฟล์, mismatch ลบไฟล์แล้ว raise
 - `DownloadZipTest.test_urllib_mismatch_deletes_file_and_skips_curl`
+
+## [Unreleased] — 2026-11-03 (VS Code workspace + SKILL.md install path)
+
+ไม่ bump เวอร์ชัน — ยังเป็น 0.1.6 จนกว่าจะมี release
+
+### Added
+- **`.vscode/`** (`launch.json`, `tasks.json`, `settings.json`, `extensions.json`)
+  ให้รัน เทส ลิงต์ และดีบัก LCA ใน VS Code บน Windows
+  - launch: `server.py <dir> --host 127.0.0.1 --port 8420`, `lca_app.py`,
+    `local_coder.py <dir> --model qwen2.5-coder:3b`, `installer_gui.py`
+  - task หลักตรง CI: `python -m unittest discover -s tests`
+  - `files.eol` เป็น LF — repo เก็บไฟล์เป็น LF (`git ls-files --eol`)
+- **README** ส่วน "Develop in VS Code"
+
+### Fixed
+- **`SKILL.md`**: ไม่ชี้ `install.sh`, `install_online.ps1`, `lca-web` / `lca-web.bat`
+  ที่ลบใน v0.1.3 (#101) แล้ว
+  - Windows: `install.bat` / `install.ps1` (one-liner เดิม), เปิดเว็บด้วย `start-lca.bat`
+  - Linux/macOS: `pip install -r requirements.txt` แล้ว `python server.py <dir>`
+- **`docs/APP_WALKTHROUGH.md`**: `install*.ps1/sh` → `install.ps1` + `install.bat`
 
 ---
 
