@@ -249,7 +249,7 @@ Build อัตโนมัติ: `.github/workflows/build-exe.yml` (Windows ru
 8. **agent ทำงานเอง**: `agent/tools`(sandbox+SSRF guard) → `core`(ReAct loop) → `worker`(24/7) → `jobs`(คิว) → `stats`(วัด)
 9. **Console Platform (ต่อสมองภายนอก)**: `connections`(ทะเบียน AI) → `skills`(prompt สำเร็จรูป) → `bots`(service) → `conn_usage`(นับ token) + `store_schema`(migration)
 10. **แอปเดสก์ท็อป .exe**: `lca_app.py` → pyinstaller bundle → ดับเบิลคลิกเปิดแชตเลย
-11. **แพ็ก + ติดตั้ง + ขึ้นเน็ต**: `install*.ps1/sh` + `Dockerfile` + `.github/workflows/build-exe.yml` (CI build)
+11. **แพ็ก + ติดตั้ง + ขึ้นเน็ต**: `install.ps1` + `install.bat` + `Dockerfile` + `.github/workflows/build-exe.yml` (CI build) (`install.sh` ลบใน v0.1.3)
 
 แต่ละขั้น **มีเทสของตัวเอง** (โฟลเดอร์ `tests/` — รัน `python -m unittest discover -s tests`,
 ตอนนี้ **489 เทส**). นี่คือวิธี "ทำทีละขั้น + วัดผล" ที่ทำให้ต่อระบบใหญ่ได้โดยไม่พัง.

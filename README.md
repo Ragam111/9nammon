@@ -120,6 +120,34 @@ start-lca.bat     — เปิด server + browser ที่ 127.0.0.1:8420
 lca-desktop.bat   — เปิดในหน้าต่างแอป (Edge/Chrome --app mode)
 ```
 
+## Develop in VS Code
+
+เปิดโฟลเดอร์นี้ใน VS Code บน Windows (CI ใช้ Python 3.13):
+
+```powershell
+py -3.13 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt pytest ruff
+code .
+```
+
+`pytest` กับ `ruff` เป็นเครื่องมือตอนพัฒนา ไม่ได้อยู่ใน `requirements.txt` และ CI ไม่รัน ruff
+แชตต้องมี Ollama ที่ `127.0.0.1:11434`
+
+| Run and Debug / Run Task | คำสั่งจริง |
+|---|---|
+| LCA Server (web UI :8420) | `python server.py <โฟลเดอร์> --host 127.0.0.1 --port 8420` |
+| LCA Desktop (`lca_app.py`) | `python lca_app.py` (ไม่มี argument; `--version` ได้) |
+| LCA CLI (`local_coder.py`) | `python local_coder.py <โฟลเดอร์> --model qwen2.5-coder:3b` |
+| Installer GUI | `python installer_gui.py` |
+| test: all (CI parity) | `python -m unittest discover -s tests` |
+| version smoke | `python server.py --version` (ไม่ต้องใส่โฟลเดอร์) |
+
+คอนฟิกดีบักของ server ใช้โฟลเดอร์ workspace เป็น `project_dir` และเคลียร์ `PORT` / `LCA_HOST`
+เพื่อไม่ให้ค่า cloud ทับพอร์ต 8420 — `start-lca.bat` ที่ติดตั้งแล้วส่ง `%USERPROFILE%` แทน
+ไฟล์ใน repo เป็น LF (`files.eol` ใน `.vscode/settings.json` จึงเป็น `\n`)
+task ชี้ `.venv\Scripts\python.exe` (Windows)
+
 ## แนะนำ Terminal setup (ไม่บังคับ)
 
 `lca` ใช้ ANSI escape code ธรรมดาแสดงสี (ดู `Color` class ใน `local_coder.py`)
