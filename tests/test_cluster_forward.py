@@ -66,10 +66,10 @@ class ForwardIntegrationTest(unittest.TestCase):
         ]
         for p in self._patchers:
             p.start()
-        # node (local mode = ไม่ต้อง auth) + hub (เปิด forward ชี้มาที่ node)
+        # node ใช้ token เดียวกับที่ hub ส่งตอน forward; hub ใช้ token คนละตัวให้ผู้เรียก
         self._n = tempfile.TemporaryDirectory(); self._h = tempfile.TemporaryDirectory()
         self.node_root = Path(self._n.name); self.hub_root = Path(self._h.name)
-        self.node = ThreadingHTTPServer(("127.0.0.1", 0), server.make_handler(self.node_root, None))
+        self.node = ThreadingHTTPServer(("127.0.0.1", 0), server.make_handler(self.node_root, "huptok"))
         self.node_port = self.node.server_address[1]
         threading.Thread(target=self.node.serve_forever, daemon=True).start()
         self.node_url = f"http://127.0.0.1:{self.node_port}"
@@ -77,7 +77,8 @@ class ForwardIntegrationTest(unittest.TestCase):
         config_manager.set_key(self.hub_root, "CLUSTER_FORWARD_ENABLED", "true")
         config_manager.set_key(self.hub_root, "CLUSTER_FORWARD_TOKEN", "huptok")
         cluster_store.add_node(self.hub_root, "node1", self.node_url)
-        self.hub = ThreadingHTTPServer(("127.0.0.1", 0), server.make_handler(self.hub_root, None))
+        self.hub_token = "hub-session"
+        self.hub = ThreadingHTTPServer(("127.0.0.1", 0), server.make_handler(self.hub_root, self.hub_token))
         self.hub_port = self.hub.server_address[1]
         threading.Thread(target=self.hub.serve_forever, daemon=True).start()
 
@@ -94,7 +95,8 @@ class ForwardIntegrationTest(unittest.TestCase):
     def _post(self, port, path, body):
         conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
         conn.request("POST", path, body=json.dumps(body),
-                     headers={"Content-Type": "application/json"})
+                     headers={"Content-Type": "application/json",
+                              "X-Auth-Token": self.hub_token})
         r = conn.getresponse(); raw = r.read(); conn.close()
         return r.status, raw
 
@@ -110,7 +112,8 @@ class ForwardIntegrationTest(unittest.TestCase):
         conn = http.client.HTTPConnection("127.0.0.1", self.hub_port, timeout=5)
         conn.request("POST", "/api/chat/stream",
                      body=json.dumps({"messages": [{"role": "user", "content": "hi"}]}),
-                     headers={"Content-Type": "application/json"})
+                     headers={"Content-Type": "application/json",
+                              "X-Auth-Token": self.hub_token})
         r = conn.getresponse()
         self.assertEqual(r.status, 200)
         self.assertIn("text/event-stream", r.getheader("Content-Type"))

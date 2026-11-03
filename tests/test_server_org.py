@@ -380,6 +380,7 @@ class ServerOrgTest(unittest.TestCase):
         # server แยกที่ตั้ง rate limit ต่ำ ๆ เพื่อพิสูจน์ 429
         root = Path(self._tmp.name)
         handler = server.make_handler(root, None, rate_limit_max=3, rate_limit_window=60)
+        token = handler.session_token
         httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
         port = httpd.server_address[1]
         thread = threading.Thread(target=httpd.serve_forever, daemon=True)
@@ -387,12 +388,12 @@ class ServerOrgTest(unittest.TestCase):
         try:
             def hit():
                 conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
-                conn.request("GET", "/api/todos")
+                conn.request("GET", "/api/todos", headers={"X-Auth-Token": token})
                 resp = conn.getresponse()
                 resp.read()
                 conn.close()
                 return resp.status
-            # 3 ครั้งแรกผ่าน (local mode = CEO, ไม่ตั้ง token), ครั้งที่ 4 โดน 429
+            # 3 ครั้งแรกผ่าน (session token ของโหมด local = CEO), ครั้งที่ 4 โดน 429
             statuses = [hit() for _ in range(4)]
             self.assertEqual(statuses[:3], [200, 200, 200])
             self.assertEqual(statuses[3], 429)

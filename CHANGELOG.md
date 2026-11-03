@@ -4,6 +4,34 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [Unreleased] — 2026-11-03 (localhost CSRF / DNS rebinding guard)
+
+### Security — 2026-11-03
+
+- **กัน CSRF / DNS rebinding บน loopback** (`server.py` พอร์ต 8420)
+  - Host allowlist: `127.0.0.1:<port>`, `localhost:<port>`, `[::1]:<port>`
+    และชื่อใน `LCA_HOST` เมื่อ bind นอก loopback. ค่าอื่นตอบ 403
+  - ตรวจ Origin บน POST/PUT/PATCH/DELETE และ websocket upgrade.
+    ไม่มี Origin ได้สำหรับ CLI. Origin คนละต้นทางตอบ 403. ไม่เพิ่ม CORS
+  - ไม่ได้ตั้ง `--token` / `LCA_TOKEN`: สุ่ม session token (`secrets.token_urlsafe`) ต่อการเปิดโปรเซส
+    และต้องส่ง `X-Auth-Token` สำหรับ endpoint ที่ต้องล็อกอิน. สิทธิ์ยังเป็น CEO
+  - หน้าเว็บได้ token จากสคริปต์ที่ฝังใน HTML (`window.__LCA_SESSION_TOKEN`)
+    และแอปเดสก์ท็อปเปิดด้วย fragment `#lca_token=`. `server.py` พิมพ์ค่าให้ CLI
+  - ตั้ง token เอง: พฤติกรรมเดิม (master token = CEO, API key / role เหมือนเดิม) และไม่ฝัง token ลงหน้า
+- **`GET /api/version` ยัง public** — ไม่มี secret. คงฟิลด์ `python` ไว้สำหรับ support
+- **ใช้ได้หลัง proxy HTTPS / tunnel** (Render, HF Spaces, Docker, cloudflared): เมื่อ bind `0.0.0.0` / `::`
+  (บังคับ token) รับ Host ที่ไม่มีพอร์ต หรือ `:80` / `:443` / พอร์ตที่ฟัง และเทียบ Origin กับชื่อใน Host
+  โดยไม่สนพอร์ต. Origin เว็บอื่นยังตอบ 403. loopback เข้มเหมือนเดิม
+- **`LCA_ALLOWED_HOSTS`** (คั่นด้วยจุลภาค) — allow-list ชื่อ host เพิ่ม. ชื่อ loopback ถูกตัดออก (คลายไม่ได้)
+  และหน้าเว็บที่เปิดผ่านชื่อเหล่านี้ไม่ได้ session token อัตโนมัติ
+- **กัน clickjacking**: หน้า HTML ส่ง `X-Frame-Options: DENY` + `Content-Security-Policy: frame-ancestors 'none'`
+- docs: `DEPLOY.md` §1/§2a + ตาราง env, `GO_ONLINE_FREE.md` เส้นทาง A/C, `GO_LIVE.md` หมายเหตุ tunnel
+
+### Tests
+- +17 (`tests/test_server_request_guard.py` และ `launch_url` ใน `test_lca_app.py`)
+- +15 (`tests/test_server_proxy_hosts.py` — Host ไม่มีพอร์ตบน wildcard, Origin เว็บอื่น 403,
+  `LCA_ALLOWED_HOSTS`, header กัน iframe)
+
 ## [Unreleased] — 2026-11-03 (installer SHA-256 verify)
 
 ### Security

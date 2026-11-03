@@ -305,7 +305,17 @@
   function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,function(c){
     return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
   function tok(){ return $("token").value.trim(); }
-  function authHeaders(){ var t=tok(); return t?{ "X-Auth-Token":t, "X-API-Key":t }:{}; }
+  function launchedSessionToken(){
+    if (window.__LCA_SESSION_TOKEN) return String(window.__LCA_SESSION_TOKEN);
+    try {
+      var m = (location.hash || "").match(/(?:^#|&)lca_token=([^&]+)/);
+      return m ? decodeURIComponent(m[1]) : "";
+    } catch (e) { return ""; }
+  }
+  function authHeaders(){
+    var t = tok() || launchedSessionToken();
+    return t ? { "X-Auth-Token": t, "X-API-Key": t } : {};
+  }
   function showErr(m){ $("err").textContent = m||""; }
 
   // persist token (per-viewer convenience only)
@@ -627,6 +637,7 @@
 
   $("load").addEventListener("click", loadAll);
   $("token").addEventListener("keydown", function(e){ if(e.key==="Enter") loadAll(); });
+  if (tok() || launchedSessionToken()) loadAll();
 })();
 </script>
 </body>
