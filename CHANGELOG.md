@@ -23,12 +23,40 @@ Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไ�
   is importable (PR #108, not on main yet). Keys are not logged.
 
 ### Tests
-+79 in `tests/test_providers.py` (mocked HTTP, no network). Full suite: **916 passed**.
++79 in `tests/test_providers.py` (mocked HTTP, no network). Full suite at that
+commit: **916 passed**.
 
 ### Not changed
 - `VERSION` stays 0.1.6.
-- `model_backend.generate` / `generate_stream` and their callers, including
-  `server.py` (request-guard work is PR #107).
+- Host/Origin request-guard code is not in this branch (PR #107).
+
+### Added — chat hub conversations and page (2026-11-03)
+- **`/api/chat` and `/api/chat/stream`** call `app.providers` when the request
+  names a `provider`. The model is chosen on that request. A `conversation_id`
+  reloads the shared transcript, so the next turn can name a different provider.
+  Requests that name neither a provider nor a conversation stay on
+  `model_backend` (including cluster forward).
+- **SQLite migration `0010_chat_hub`** (`app/migrations/0010_chat_hub.sql`).
+  No `app/migrations` files existed, so 0010 was free. A new database moves
+  from `user_version` 0 to 10. Thai/English search is Python character bigrams
+  in contentless FTS5 (`app/chat_search.py`).
+- **Branch, regenerate, and compare** (`POST /api/chat/branch`, `/regen`,
+  `/compare`). Compare runs cloud targets together and local targets
+  (Ollama, OpenAI-compatible) one at a time through `admission`.
+- **Chat page `/chat`** (`app/chat.html`, `app/chat.css`, `app/chat.js`).
+  Vanilla JS, no framework. IBM Plex Sans Thai and IBM Plex Mono are subset
+  to woff2 under `app/fonts/` and served locally (OFL). The subset is renamed
+  to LCA Sans / LCA Mono because "IBM Plex" is a Reserved Font Name.
+- Chat skills with `mode=chat` are seeded into `personas` once. Dataset
+  samples are copied only when `CHAT_IMPORT_SAMPLES` is `1`/`true`/`yes`.
+
+### Tests
++20 in `tests/test_chat_store.py`, `tests/test_chat_api.py`, and
+`tests/test_chat_page.py` (mocked providers, no network, no real keys).
+Full suite: **936 passed**.
+
+### Not changed
+- `VERSION` stays 0.1.6.
 
 ## [0.1.6] — 2026-10-30 (`--version` CLI flag — ตรงกับ `/api/version`)
 

@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LCA Chat Hub</title>
+<link rel="preload" href="/fonts/IBMPlexSansThai-Regular.sub.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/app.css">
+<link rel="stylesheet" href="/chat.css">
+</head>
+<body class="page-hub">
+<div class="hub">
+  <aside class="sidebar">
+    <div class="row">
+      <button id="new-chat" type="button" class="grow">+ แชทใหม่</button>
+    </div>
+    <input id="search" type="search" placeholder="ค้นหา… (Ctrl+K)" autocomplete="off">
+    <div id="search-hits" class="list" hidden></div>
+    <div class="row">
+      <select id="folder" class="grow" aria-label="โปรเจกต์"></select>
+      <button id="add-folder" type="button" title="สร้างโปรเจกต์">+</button>
+    </div>
+    <div id="conv-list" class="list" aria-label="ล่าสุด"></div>
+    <label class="meta"><input id="ephemeral" type="checkbox"> ชั่วคราว (ไม่บันทึก)</label>
+    <div class="side-foot">
+      <a href="/">หน้าเดิม</a> · <a href="/console">คีย์</a><br>
+      <span id="net-dot">local</span>
+    </div>
+  </aside>
+  <section class="main">
+    <header class="head">
+      <span id="title" class="title">แชทใหม่</span>
+      <select id="model" aria-label="โมเดล"></select>
+      <input id="custom-model" placeholder="ชื่อโมเดล" hidden>
+      <button id="compare-btn" type="button">เทียบ</button>
+      <select id="persona" aria-label="persona"><option value="">persona</option></select>
+      <button id="export-btn" type="button">ส่งออก</button>
+      <button id="import-btn" type="button">นำเข้า</button>
+      <input id="import-file" type="file" accept="application/json" hidden>
+    </header>
+    <div id="offline" class="banner" hidden>ไม่มีอินเทอร์เน็ต — ใช้ได้เฉพาะโมเดล local</div>
+    <div id="notice" class="banner warn" hidden></div>
+    <div id="thread" class="thread"></div>
+    <form id="composer" class="composer">
+      <textarea id="input" rows="2" placeholder="พิมพ์ข้อความ… (Enter ส่ง, Shift+Enter ขึ้นบรรทัด)"></textarea>
+      <button id="send" type="submit">ส่ง</button>
+    </form>
+    <div id="compare-box" class="banner" hidden>
+      <p class="meta">เลือกอย่างน้อย 2 โมเดล แล้วกดเทียบกับข้อความในช่องพิมพ์</p>
+      <div id="compare-picks"></div>
+      <p id="queue-note" class="meta" hidden>รอคิว — เครื่องรันได้ทีละโมเดล local</p>
+      <button id="compare-go" type="button">เทียบตอนนี้</button>
+    </div>
+  </section>
+</div>
+<script src="/chat.js"></script>
+</body>
+</html>

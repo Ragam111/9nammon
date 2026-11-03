@@ -42,6 +42,7 @@ from app import dataset_store  # noqa: E402  (เก็บตัวอย่า�
 from app import config_manager  # noqa: E402  (อ่าน flag COLLECT_TRAINING_DATA จาก config.json)
 from app import resource_budget  # noqa: E402  (ก้านสมอง: เลือกโมเดล/backend ตาม RAM)
 from app import model_backend  # noqa: E402  (adapter: Ollama / OpenAI-compatible สลับด้วย config)
+from app import chat_hub  # noqa: E402  (chat hub: providers + conversation DB; fallback ยังเป็น model_backend)
 from app import cluster_store  # noqa: E402  (ทะเบียน + มอนิเตอร์ health ของหลาย node)
 from app import admission  # noqa: E402  (ยามคุมจำนวน generation พร้อมกัน กัน RAM thrash เครื่องสเปกต่ำ)
 from app import hw_profile  # noqa: E402  (โปรไฟล์ฮาร์ดแวร์: จัดระดับเครื่อง + แนะนำ config)
@@ -98,6 +99,13 @@ STATIC_ROUTES = {
     "/console": ("console.html", "text/html; charset=utf-8",              False),
     "/app.css": ("app.css",      "text/css; charset=utf-8",               True),
     "/app.js":  ("app.js",       "application/javascript; charset=utf-8",  True),
+    "/chat":    ("chat.html",    "text/html; charset=utf-8",              False),
+    "/chat.css": ("chat.css",    "text/css; charset=utf-8",               True),
+    "/chat.js": ("chat.js",      "application/javascript; charset=utf-8", True),
+    "/fonts/IBMPlexSansThai-Regular.sub.woff2": ("fonts/IBMPlexSansThai-Regular.sub.woff2", "font/woff2", True),
+    "/fonts/IBMPlexSansThai-SemiBold.sub.woff2": ("fonts/IBMPlexSansThai-SemiBold.sub.woff2", "font/woff2", True),
+    "/fonts/IBMPlexMono-Regular.sub.woff2": ("fonts/IBMPlexMono-Regular.sub.woff2", "font/woff2", True),
+    "/fonts/OFL.txt": ("fonts/OFL.txt", "text/plain; charset=utf-8", True),
 }
 
 
@@ -201,8 +209,12 @@ def make_handler(project_root: Path, auth_token: Optional[str],
         # เส้นทาง "เปิดเสมอ" ที่ schedule gate ไม่ปิด — ให้ลูกค้าเช็คสถานะ/health ได้ตลอด
         _SCHEDULE_ALLOWLIST = (
             "/api/health", "/api/status", "/api/version",
-            "/", "/console", "/web", "/install",
-            "/app.css", "/favicon.ico",
+            "/", "/console", "/web", "/install", "/chat",
+            "/app.css", "/chat.css", "/chat.js", "/favicon.ico",
+            "/fonts/IBMPlexSansThai-Regular.sub.woff2",
+            "/fonts/IBMPlexSansThai-SemiBold.sub.woff2",
+            "/fonts/IBMPlexMono-Regular.sub.woff2",
+            "/fonts/OFL.txt",
         )
 
         @staticmethod
@@ -335,6 +347,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._handle_bots_list()
             elif parsed.path == "/api/connections/usage":
                 self._handle_connections_usage()
+            elif chat_hub.wants_get(parsed.path):
+                chat_hub.handle_get(self, parsed, project_root)
             else:
                 self._send_json(404, {"error": "not found"})
 
@@ -1012,6 +1026,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                     self._handle_chat()
                 elif parsed.path == "/api/chat/stream":
                     self._handle_chat_stream()
+                elif chat_hub.wants_post(parsed.path):
+                    chat_hub.handle_post(self, parsed, project_root, gen_gate)
                 elif parsed.path == "/api/todos":
                     self._handle_todos_post()
                 elif parsed.path == "/api/todos/toggle":
@@ -1415,17 +1431,39 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 model = resource_budget.pick_model(project_root=project_root)["model"]
             else:
                 model = requested
-            messages = data.get("messages", [])
+            provider = data.get("provider")
+            if not isinstance(provider, str) or not provider.strip():
+                provider = None
+            else:
+                provider = provider.strip()
+            content = data.get("content") if isinstance(data.get("content"), str) else ""
+            hub = {
+                "provider": provider,
+                "conversation_id": data.get("conversation_id"),
+                "parent_id": data.get("parent_id"),
+                "content": content.strip(),
+                "lang": data.get("lang", "th"),
+                "connection_id": data.get("connection_id") if isinstance(data.get("connection_id"), str) else None,
+            }
+            messages = data.get("messages") or []
+            if not isinstance(messages, list):
+                self._send_json(400, {"error": "messages ต้องเป็น list"})
+                return None
+            if not messages and hub["content"]:
+                messages = [{"role": "user", "content": hub["content"]}]
             num_ctx = data.get("num_ctx", 8192)
-            lang = data.get("lang", "th")
-            if not messages:
+            lang = hub["lang"]
+            if not messages and not hub["conversation_id"]:
+                self._send_json(400, {"error": "ต้องมี messages"})
+                return None
+            if hub["conversation_id"] and not messages and not hub["content"]:
                 self._send_json(400, {"error": "ต้องมี messages"})
                 return None
             # ถ้า client ไม่ได้แนบ system prompt มา (เช่น index.html ที่ส่งแค่ user/assistant)
             # ให้ server แทรกให้เองตาม lang ที่เลือก
-            if not messages or messages[0].get("role") != "system":
+            if messages and (not isinstance(messages[0], dict) or messages[0].get("role") != "system"):
                 messages = [{"role": "system", "content": get_system_prompt(lang)}] + messages
-            return model, messages, num_ctx
+            return model, messages, num_ctx, hub
 
         def _chat_finalize(self, ident, model, messages, reply):
             """หักโควตา + บันทึก usage + เก็บ dataset — หลังได้คำตอบเต็มแล้ว (blocking/stream ใช้ร่วม)"""
@@ -1473,7 +1511,12 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             prepared = self._chat_prepare(ident)
             if prepared is None:
                 return
-            model, messages, num_ctx = prepared
+            model, messages, num_ctx, hub = prepared
+            # provider ต่อ request หรือบทสนทนาใน DB → app.providers (สลับค่ายกลางบทสนทนาได้)
+            # ไม่ส่งสองอย่างนี้ = ทางเดิม model_backend (รวม cluster forward)
+            if hub.get("provider") or hub.get("conversation_id"):
+                chat_hub.serve_chat(self, project_root, ident, model, messages, num_ctx, hub, gen_gate, stream=False)
+                return
             payload = {"model": model, "messages": messages, "num_ctx": num_ctx}
             # HPC ขั้น 3+: ลองยื่นงานไป node อื่นที่พร้อม (ถ้าเปิด forward) — งาน generate
             # ไปกินแรงที่ node ปลายทาง ไม่ใช่เครื่องนี้ (จึงไม่ถือ gen_gate ของ local)
@@ -1515,7 +1558,10 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             prepared = self._chat_prepare(ident)
             if prepared is None:
                 return
-            model, messages, num_ctx = prepared
+            model, messages, num_ctx, hub = prepared
+            if hub.get("provider") or hub.get("conversation_id"):
+                chat_hub.serve_chat(self, project_root, ident, model, messages, num_ctx, hub, gen_gate, stream=True)
+                return
             # HPC ขั้น 3+: ลอง relay สตรีมจาก node อื่นก่อน (ถ้าเปิด forward + มี node พร้อม)
             payload = {"model": model, "messages": messages, "num_ctx": num_ctx}
             node = self._forward_target(payload)
