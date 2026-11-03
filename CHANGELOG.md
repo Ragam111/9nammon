@@ -4,6 +4,25 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [Unreleased]
+
+### Security — 2026-11-03
+
+- **กัน CSRF / DNS rebinding บน loopback** (`server.py` พอร์ต 8420)
+  - Host allowlist: `127.0.0.1:<port>`, `localhost:<port>`, `[::1]:<port>`
+    และชื่อใน `LCA_HOST` เมื่อ bind นอก loopback. ค่าอื่นตอบ 403
+  - ตรวจ Origin บน POST/PUT/PATCH/DELETE และ websocket upgrade.
+    ไม่มี Origin ได้สำหรับ CLI. Origin คนละต้นทางตอบ 403. ไม่เพิ่ม CORS
+  - ไม่ได้ตั้ง `--token` / `LCA_TOKEN`: สุ่ม session token (`secrets.token_urlsafe`) ต่อการเปิดโปรเซส
+    และต้องส่ง `X-Auth-Token` สำหรับ endpoint ที่ต้องล็อกอิน. สิทธิ์ยังเป็น CEO
+  - หน้าเว็บได้ token จากสคริปต์ที่ฝังใน HTML (`window.__LCA_SESSION_TOKEN`)
+    และแอปเดสก์ท็อปเปิดด้วย fragment `#lca_token=`. `server.py` พิมพ์ค่าให้ CLI
+  - ตั้ง token เอง: พฤติกรรมเดิม (master token = CEO, API key / role เหมือนเดิม) และไม่ฝัง token ลงหน้า
+- **`GET /api/version` ยัง public** — ไม่มี secret. คงฟิลด์ `python` ไว้สำหรับ support
+
+### Tests
+- +17 (`tests/test_server_request_guard.py` และ `launch_url` ใน `test_lca_app.py`) — **854 tests pass** (จาก 837)
+
 ## [0.1.6] — 2026-10-30 (`--version` CLI flag — ตรงกับ `/api/version`)
 
 ตามที่ user สั่ง: "**ดูทางจริงทำงานยังไง**" — ผู้ใช้ต้องเช็กเวอร์ชันจาก

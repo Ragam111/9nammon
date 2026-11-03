@@ -32,6 +32,7 @@ class ServerHealthTest(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         root = Path(self._tmp.name)
         handler = server.make_handler(root, None)
+        self.session_token = handler.session_token
         self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
         self.port = self.httpd.server_address[1]
         self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
@@ -53,7 +54,10 @@ class ServerHealthTest(unittest.TestCase):
     def _post(self, path, payload):
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
         body = json.dumps(payload).encode("utf-8")
-        conn.request("POST", path, body=body, headers={"Content-Type": "application/json"})
+        conn.request("POST", path, body=body, headers={
+            "Content-Type": "application/json",
+            "X-Auth-Token": self.session_token,
+        })
         resp = conn.getresponse()
         raw = resp.read().decode("utf-8")
         conn.close()

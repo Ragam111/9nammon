@@ -8,6 +8,8 @@ View       : app/index.html (หน้าเว็บ) + JSON response (สำ�
 
 ความปลอดภัย (ตาม Rule ข้อ 12): bind 127.0.0.1 เป็นค่าเริ่มต้นเท่านั้น
 ถ้าจะเปิดให้อุปกรณ์อื่นใน LAN เข้าถึง ต้องระบุ --host และ --token เอง
+โหมด local ที่ไม่ได้ตั้ง token จะสุ่ม session token ต่อการเปิดโปรเซส
+และปฏิเสธ Host/Origin ที่ไม่ใช่ของเซิร์ฟเวอร์นี้ (กัน CSRF / DNS rebinding)
 
 การใช้งาน:
     python3 server.py ./my_project --host 127.0.0.1 --port 8420
@@ -18,6 +20,7 @@ import argparse
 import hmac
 import json
 import os
+import secrets
 import socket
 import sqlite3
 import sys
@@ -100,10 +103,135 @@ STATIC_ROUTES = {
     "/app.js":  ("app.js",       "application/javascript; charset=utf-8",  True),
 }
 
+# ชื่อที่ถือว่าเป็นเครื่องตัวเอง — DNS rebinding ใช้ชื่ออื่นที่ชี้มาที่ 127.0.0.1
+_LOOPBACK_NAMES = frozenset({"127.0.0.1", "localhost", "::1"})
+# bind ทุกอินเทอร์เฟซ: ไคลเอนต์ส่ง IP/ชื่อจริง ไม่ได้ส่ง 0.0.0.0
+_WILDCARD_BINDS = frozenset({"0.0.0.0", "::", "::0"})
+_STATE_CHANGING = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+
+def _normalize_bind_host(bind_host: str) -> str:
+    value = (bind_host or "").strip().lower()
+    if len(value) >= 2 and value.startswith("[") and value.endswith("]"):
+        value = value[1:-1]
+    return value
+
+
+def _split_host_header(value: str):
+    """คืน (name, port) จาก Host — port เป็น None ถ้าไม่มี. name เป็นตัวพิมพ์เล็ก"""
+    raw = (value or "").strip()
+    if not raw:
+        return None, None
+    if raw.startswith("["):
+        end = raw.find("]")
+        if end < 0:
+            return None, None
+        name = raw[1:end].strip().lower()
+        rest = raw[end + 1:]
+        if rest == "":
+            return name, None
+        if rest.startswith(":") and rest[1:].isdigit():
+            return name, int(rest[1:])
+        return None, None
+    if raw.count(":") == 1:
+        name, port_s = raw.rsplit(":", 1)
+        if name and port_s.isdigit():
+            return name.strip().lower(), int(port_s)
+        return None, None
+    if ":" in raw:
+        return raw.lower(), None
+    return raw.lower(), None
+
+
+def _allowed_host_names(bind_host: str) -> set:
+    names = set(_LOOPBACK_NAMES)
+    bind = _normalize_bind_host(bind_host)
+    if bind and bind not in _LOOPBACK_NAMES and bind not in _WILDCARD_BINDS:
+        names.add(bind)
+    return names
+
+
+def host_header_allowed(host_header: str, listen_port: int, bind_host: str = "127.0.0.1") -> bool:
+    """Host ต้องเป็น loopback:<port> (และชื่อที่ bind ไว้ ถ้าไม่ใช่ loopback)
+
+    bind 0.0.0.0/:: อนุญาตทุกชื่อบนพอร์ตที่ฟัง — ไคลเอนต์ LAN ส่ง IP จริง
+    และโหมดนี้บังคับ token อยู่แล้ว (Rule 12). พอร์ตต้องตรงเสมอ
+    """
+    name, port = _split_host_header(host_header)
+    if not name or port is None or port != int(listen_port):
+        return False
+    if _normalize_bind_host(bind_host) in _WILDCARD_BINDS:
+        return True
+    return name in _allowed_host_names(bind_host)
+
+
+def origin_header_allowed(origin: str, listen_port: int, bind_host: str = "127.0.0.1",
+                          host_header: Optional[str] = None) -> bool:
+    """Origin ที่เบราว์เซอร์ส่งมาต้องเป็น same-origin ของเซิร์ฟเวอร์นี้
+
+    ไม่มี Origin ไม่ได้เรียกฟังก์ชันนี้ (CLI ผ่านได้ที่ชั้นบน). `null` = ปฏิเสธ
+    loopback รับเฉพาะ http://loopback:<port>. bind แบบ wildcard รับ Origin
+    ที่ host ตรงกับ Host header (คนเปิดหน้าจาก IP จริงใน LAN)
+    """
+    raw = (origin or "").strip()
+    if not raw or raw.lower() == "null":
+        return False
+    parsed = urlparse(raw)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        return False
+    if parsed.username or parsed.password or parsed.query or parsed.fragment:
+        return False
+    if parsed.path not in ("", "/"):
+        return False
+    oport = parsed.port
+    if oport is None:
+        oport = 443 if parsed.scheme == "https" else 80
+    if oport != int(listen_port):
+        return False
+    oname = parsed.hostname.lower()
+    bind = _normalize_bind_host(bind_host)
+    if bind in _WILDCARD_BINDS:
+        if oname in _LOOPBACK_NAMES:
+            return True
+        hname, hport = _split_host_header(host_header or "")
+        return bool(hname) and hport == int(listen_port) and oname == hname
+    if parsed.scheme != "http":
+        return False
+    return oname in _allowed_host_names(bind_host)
+
+
+def request_needs_origin_check(command: str, headers=None) -> bool:
+    """POST/PUT/PATCH/DELETE และ websocket upgrade ต้องตรวจ Origin"""
+    if (command or "").upper() in _STATE_CHANGING:
+        return True
+    if headers is None:
+        return False
+    upgrade = headers.get("Upgrade") if hasattr(headers, "get") else None
+    return bool(upgrade and str(upgrade).strip())
+
+
+def _session_bootstrap_snippet(token: str) -> bytes:
+    """สคริปต์สั้นๆ ฝังในหน้า HTML — ให้ UI ส่ง X-Auth-Token ได้โดยไม่เก็บถาวร"""
+    literal = json.dumps(token)
+    script = (
+        "<script>window.__LCA_SESSION_TOKEN=" + literal + ";"
+        "(function(){try{var h=location.hash||'';"
+        "var m=h.match(/(?:^#|&)lca_token=([^&]+)/);"
+        "if(m&&!window.__LCA_SESSION_TOKEN){window.__LCA_SESSION_TOKEN=decodeURIComponent(m[1]);}"
+        "if(m&&history.replaceState){history.replaceState(null,'',location.pathname+location.search);}"
+        "}catch(e){}})();</script>"
+    )
+    return script.encode("utf-8")
+
 
 def make_handler(project_root: Path, auth_token: Optional[str],
                  rate_limit_max: int = 300, rate_limit_window: float = 60.0,
                  bind_host: str = "127.0.0.1"):
+    # ไม่ได้ตั้ง token = โหมด local. ห้ามเปิดสิทธิ์ CEO ให้ทุก request —
+    # สุ่ม session token ต่อการเปิดโปรเซส แล้วให้ UI/CLI ส่งกลับมา
+    session_token_auto = not bool(auth_token)
+    if not auth_token:
+        auth_token = secrets.token_urlsafe(32)
     # limiter เดียวใช้ร่วมทุก thread ของ server นี้ (in-memory ต่อ process)
     # ค่าเริ่มต้น 300 req/60s ต่อ IP — กันยิงถล่มโดยไม่รบกวนการใช้งานปกติ
     api_rate_limiter = RateLimiter(rate_limit_max, rate_limit_window)
@@ -147,24 +275,54 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             """ระบุว่า request นี้คือใคร มีสิทธิ์อะไร คืน dict หรือ None (ไม่ผ่าน auth)
 
             ลำดับการตรวจ:
-              1. master token ผ่าน header X-Auth-Token (= สิทธิ์ CEO สำหรับ bootstrap/ดูแลระบบ)
+              1. master / session token ผ่าน header X-Auth-Token (= สิทธิ์ CEO)
+                 ถ้าผู้ใช้ไม่ได้ตั้ง token ไว้ ค่านี้คือ session ที่สุ่มตอนเปิดเซิร์ฟเวอร์
+                 และตัวตนยังเป็น __local__ (โหมดเครื่องตัวเอง)
               2. API key ผ่าน header X-API-Key (resolve เป็น user/role/tier จาก org_store)
-              3. ถ้าไม่ได้ตั้ง master token เลย = โหมด local ล้วน (ตาม Rule 12) → ถือเป็น CEO
-                 (ปลอดภัยเพราะ bind 127.0.0.1 เท่านั้นถึงจะไม่ตั้ง token ได้)
+            ไม่มีโหมด "ไม่ส่ง token แล้วได้ CEO" — กันเว็บอื่นยิงเข้า loopback
             """
             # เทียบ master token แบบ constant-time กัน timing attack (hmac.compare_digest)
             provided = self.headers.get("X-Auth-Token")
             if auth_token and provided and hmac.compare_digest(provided, auth_token):
-                return {"username": "__master__", "role": "CEO", "tier": "paid", "key_id": None}
+                username = "__local__" if session_token_auto else "__master__"
+                return {"username": username, "role": "CEO", "tier": "paid", "key_id": None}
             raw_key = self.headers.get("X-API-Key")
             if raw_key:
                 rec = org_store.verify_api_key(project_root, raw_key)
                 if rec:
                     return rec
-            if not auth_token and not raw_key:
-                # โหมด local ล้วน (ไม่ได้ตั้ง token, ไม่ได้ส่ง API key) — เหมือนพฤติกรรมเดิม
-                return {"username": "__local__", "role": "CEO", "tier": "paid", "key_id": None}
             return None
+
+        def _listen_port(self) -> int:
+            return int(self.server.server_address[1])
+
+        def _guard_request(self) -> bool:
+            """ตรวจ Host ทุก request และ Origin เมื่อเป็นการเปลี่ยน state / upgrade
+
+            คืน False ถ้าตอบ 403 ไปแล้ว — ผู้เรียกต้อง return ทันที
+            ไม่ใส่ CORS header (ไม่เปิดให้เว็บอื่นอ่านหรือยิงแบบข้าม origin)
+            """
+            host_hdr = self.headers.get("Host")
+            if not host_header_allowed(host_hdr, self._listen_port(), bind_host):
+                self._send_json(403, {"error": "forbidden — Host ไม่ได้รับอนุญาต"})
+                return False
+            if request_needs_origin_check(self.command, self.headers):
+                origin = self.headers.get("Origin")
+                if origin is not None and not origin_header_allowed(
+                        origin, self._listen_port(), bind_host, host_hdr):
+                    self._send_json(403, {"error": "forbidden — Origin ไม่ตรงกับเซิร์ฟเวอร์นี้"})
+                    return False
+            return True
+
+        def _inject_session_token(self, body: bytes, content_type: str) -> bytes:
+            # ฝังเฉพาะ session ที่สุ่มให้ — ไม่ฝัง master token ที่ผู้ใช้ตั้ง (ของถาวร)
+            if not session_token_auto or "text/html" not in content_type:
+                return body
+            snippet = _session_bootstrap_snippet(auth_token)
+            idx = body.lower().find(b"</head>")
+            if idx == -1:
+                return snippet + body
+            return body[:idx] + snippet + body[idx:]
 
         def _send_json(self, status: int, payload: dict):
             body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -256,6 +414,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
 
         # ---------- View: serve index.html ----------
         def do_GET(self):
+            if not self._guard_request():
+                return
             parsed = urlparse(self.path)
             if self._rate_limited(parsed):
                 return
@@ -928,6 +1088,7 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             except OSError as e:
                 self._send_json(500, {"error": f"อ่าน {filename} ไม่ได้: {e}"})
                 return
+            body = self._inject_session_token(body, content_type)
             self.send_response(200)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
@@ -1002,6 +1163,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
 
         # ---------- Controller: API routes ----------
         def do_POST(self):
+            if not self._guard_request():
+                return
             parsed = urlparse(self.path)
             if self._rate_limited(parsed):
                 return
@@ -1118,6 +1281,21 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             except ValueError as e:
                 # org_store โยน ValueError เมื่อ input ผิด/สิทธิ์ไม่พอ/ชื่อซ้ำ
                 self._send_json(400, {"error": str(e)})
+
+        def _unused_write_method(self):
+            # ไม่มี route PUT/PATCH/DELETE — ยังต้องกัน Host/Origin ก่อนตอบ 404
+            if not self._guard_request():
+                return
+            self._send_json(404, {"error": "not found"})
+
+        def do_PUT(self):
+            self._unused_write_method()
+
+        def do_PATCH(self):
+            self._unused_write_method()
+
+        def do_DELETE(self):
+            self._unused_write_method()
 
         # ---------- Controller: Org / Admin routes ----------
         def _handle_users_create(self):
@@ -1596,8 +1774,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             return True
 
         def _handle_todos_get(self):
-            # เดิม GET /api/todos เปิดสาธารณะ — ปิดให้ต้อง USER ขึ้นไป (สอดคล้องกับ
-            # POST/toggle/delete). โหมด local (ไม่ตั้ง token) ยังถือเป็น CEO จึงใช้ได้ตามเดิม
+            # GET /api/todos ต้อง USER ขึ้นไป (สอดคล้องกับ POST/toggle/delete).
+            # โหมด local ส่ง session token ที่หน้าเว็บได้รับตอนโหลด จึงยังเป็น CEO ได้
             if self._require("USER") is None:
                 return
             todos = load_todos(project_root)
@@ -1636,6 +1814,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             ok = delete_todo(project_root, int(todo_id))
             self._send_json(200 if ok else 404, {"success": ok})
 
+    LocalAssistantHandler.session_token = auth_token
+    LocalAssistantHandler.session_token_auto = session_token_auto
     return LocalAssistantHandler
 
 
@@ -1733,8 +1913,15 @@ def main():
         httpd = ThreadingHTTPServer((cfg["host"], cfg["port"]), handler_cls)
     print(f"=== Local Assistant Server ===")
     print(f"โปรเจกต์: {project_root}")
-    print(f"เปิดเบราว์เซอร์ที่: http://{cfg['host']}:{cfg['port']}")
-    if cfg["token"]:
+    if handler_cls.session_token_auto:
+        # CLI ต้องเห็นค่านี้ครั้งเดียว — หน้าเว็บได้ค่าเดียวกันฝังใน HTML / fragment
+        shown_host = "127.0.0.1" if cfg["host"] in ("0.0.0.0", "::", "") else cfg["host"]
+        print(f"เปิดเบราว์เซอร์ที่: http://{shown_host}:{cfg['port']}/#lca_token={handler_cls.session_token}")
+        print("[auth] ไม่ได้ตั้ง token — สุ่ม session token สำหรับการเปิดครั้งนี้")
+        print("[auth] หน้าเว็บได้รับ token เอง; curl/CLI ส่ง header X-Auth-Token ตามค่านี้")
+        print(f"[auth] X-Auth-Token: {handler_cls.session_token}")
+    else:
+        print(f"เปิดเบราว์เซอร์ที่: http://{cfg['host']}:{cfg['port']}")
         print("[auth] ต้องใส่ header X-Auth-Token เพื่อเรียก API")
     try:
         httpd.serve_forever()

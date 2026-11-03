@@ -143,8 +143,17 @@
     // จำ token ไว้ใน sessionStorage (ต่อ tab) เพื่อสะดวก — ไม่เก็บถาวร
     try { $('token').value = sessionStorage.getItem('lca_dev_token') || ''; } catch (e) {}
 
+    function launchedSessionToken() {
+      // session ที่เซิร์ฟเวอร์ฝังในหน้า หรือ #lca_token= — ไม่เขียนลงช่อง password
+      if (window.__LCA_SESSION_TOKEN) return String(window.__LCA_SESSION_TOKEN);
+      try {
+        const m = (location.hash || '').match(/(?:^#|&)lca_token=([^&]+)/);
+        return m ? decodeURIComponent(m[1]) : '';
+      } catch (e) { return ''; }
+    }
+
     function authHeaders() {
-      const t = $('token').value.trim();
+      const t = $('token').value.trim() || launchedSessionToken();
       // รองรับทั้ง master token และ API key — ส่งทั้งคู่ server จะเลือกเอง
       return t ? { 'X-Auth-Token': t, 'X-API-Key': t } : {};
     }
@@ -666,7 +675,7 @@
       finally { btn.disabled = false; }
     });
     $('token').addEventListener('keydown', (e) => { if (e.key === 'Enter') load(); });
-    if ($('token').value) load();
+    if ($('token').value || launchedSessionToken()) load();
   </script>
 </body>
 </html>

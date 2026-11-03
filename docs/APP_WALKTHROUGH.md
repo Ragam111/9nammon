@@ -214,7 +214,7 @@ Framework กลางที่ JSON store ทุกตัวใช้ (connecti
 `lca_app.py` → pyinstaller แพ็กเป็น .exe ไฟล์เดียว (เหมือน ChatGPT.exe / Claude.exe):
 
 - `data_dir()` → `%LOCALAPPDATA%\LocalCodeAssistant\data` (ข้อมูลส่วนตัว ไม่หลุด)
-- `build_server()` → สร้าง HTTP server bind `127.0.0.1` (CEO mode ไม่ต้อง auth)
+- `build_server()` → สร้าง HTTP server bind `127.0.0.1` (สุ่ม session token ให้หน้าเว็บ, สิทธิ์ CEO เมื่อส่ง token นั้น)
 - `open_app_window()` → เปิดเป็น app-mode (Edge/Chrome `--app`; fallback เบราว์เซอร์ปกติ)
 - `server.py._resource_root()` → อ่าน asset จาก `sys._MEIPASS` ตอนเป็น .exe (frozen detection)
 

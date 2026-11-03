@@ -98,15 +98,25 @@ class BuildServerTest(unittest.TestCase):
                 r = conn.getresponse()
                 self.assertEqual(r.status, 200)
                 r.read(); conn.close()
-                # เสิร์ฟหน้าเว็บ shell ได้ (bind 127.0.0.1 = local = CEO ไม่ต้อง auth)
+                # เสิร์ฟหน้าเว็บ shell ได้ (ไม่ต้อง auth เพื่อเปิดหน้า; API ใช้ session ที่ฝังในหน้า)
                 conn2 = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
                 conn2.request("GET", "/")
                 r2 = conn2.getresponse()
                 self.assertEqual(r2.status, 200)
-                r2.read(); conn2.close()
+                page = r2.read(); conn2.close()
+                # แอปเดสก์ท็อปไม่ได้ตั้ง token → หน้าเว็บต้องได้ session ของการเปิดครั้งนี้
+                self.assertIn(b"__LCA_SESSION_TOKEN", page)
+                self.assertIn(httpd.lca_session_token.encode("utf-8"), page)
             finally:
                 httpd.shutdown()
                 httpd.server_close()
+
+    def test_launch_url_puts_auto_token_in_fragment_only(self):
+        url = lca_app.launch_url(8420, "/console", "abc_DEF-123", auto=True)
+        self.assertEqual(url, "http://127.0.0.1:8420/console#lca_token=abc_DEF-123")
+        plain = lca_app.launch_url(8420, "/", "secret-master", auto=False)
+        self.assertEqual(plain, "http://127.0.0.1:8420/")
+        self.assertNotIn("secret-master", plain)
 
 
 class VersionFlagTest(unittest.TestCase):
