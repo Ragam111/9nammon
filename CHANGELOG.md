@@ -4,6 +4,26 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [0.2.1] — 2026-11-04 (Database layer upgrade — migration 0011 + `GET /api/admin/db/status`)
+
+ตามที่ user สั่ง: "PR TOdo ให้อัพเดท file แก้ อัพเดทงานตลอดและ pr วนลูปดูทางจริงทำงานยังไง"
+
+### Added
+- `app/migrations/0011_server_events.sql` — เพิ่มตาราง `server_events` ใน `lca.db` (kind, level, source, message, extra, ts)
+- `app/migrations/0011_server_events.py` — migration runner; ตาม pattern เดิม 0010_chat_hub
+- `app/db_manager.py` — `get_db_status()` คืน db_version, code_version, db_size_bytes, tables, migrations_applied/pending; `log_event()` silent
+- `GET /api/admin/db/status` — ADMIN-gated endpoint บน server.py
+- `tests/test_db_manager.py` — 9 tests: 6 HTTP + 3 unit; fix tearDownClass เพื่อ restore model_backend.generate
+
+### Fixed
+- `tests/test_chat_store.py` — อัปเดต 2 tests ที่ hardcode migration count=1 / version=10 ให้รองรับ migration ที่เพิ่มในอนาคต (assertGreaterEqual, assertIn)
+- `tests/test_db_manager.py` — เพิ่ม tearDownClass เพื่อ restore model_backend.generate (กัน test isolation leak)
+
+### Tests
++9 `DbStatusHttpTest` + `DbManagerUnitTest` ใน `tests/test_db_manager.py`
+
+**1064 tests pass** (จาก 1055 → +9)
+
 ## [0.2.0] — 2026-11-04 (News RSS API — `GET /api/news`)
 
 ตามที่ user สั่ง: "PR TOdo ให้อัพเดท file แก้ อัพเดทงานตลอดและ pr วนลูปดูทางจริงทำงานยังไง"

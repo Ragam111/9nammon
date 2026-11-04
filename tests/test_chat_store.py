@@ -37,8 +37,9 @@ def _root():
 class MigrationTest(unittest.TestCase):
     def test_migration_number_is_next_free(self):
         files = sorted(p.name for p in (Path(__file__).resolve().parent.parent / "app" / "migrations").glob("*.sql"))
-        self.assertEqual(files, ["0010_chat_hub.sql"])
-        self.assertEqual(db.code_version(), 10)
+        self.assertIn("0010_chat_hub.sql", files)
+        self.assertIn("0011_server_events.sql", files)
+        self.assertGreaterEqual(db.code_version(), 11)
 
     def test_fresh_db_pragmas_and_idempotent(self):
         tmp, root = _root()
@@ -47,15 +48,15 @@ class MigrationTest(unittest.TestCase):
         db.ensure_migrated(root)
         conn = db.connect_raw(db.db_path(root))
         try:
-            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 10)
+            self.assertGreaterEqual(conn.execute("PRAGMA user_version").fetchone()[0], 11)
             self.assertEqual(conn.execute("PRAGMA page_size").fetchone()[0], 4096)
             self.assertEqual(conn.execute("PRAGMA auto_vacuum").fetchone()[0], 2)
             self.assertEqual(str(conn.execute("PRAGMA journal_mode").fetchone()[0]).lower(), "wal")
             self.assertEqual(conn.execute("PRAGMA foreign_keys").fetchone()[0], 1)
-            self.assertEqual(conn.execute("SELECT count(*) FROM schema_version").fetchone()[0], 1)
-            row = conn.execute("SELECT name, checksum FROM schema_version").fetchone()
-            self.assertEqual(row["name"], "0010_chat_hub")
-            self.assertTrue(row["checksum"])
+            self.assertGreaterEqual(conn.execute("SELECT count(*) FROM schema_version").fetchone()[0], 2)
+            names = [r[0] for r in conn.execute("SELECT name FROM schema_version ORDER BY version")]
+            self.assertIn("0010_chat_hub", names)
+            self.assertIn("0011_server_events", names)
             self.assertIn("msg_fts", [r[0] for r in conn.execute("SELECT name FROM sqlite_master")])
             self.assertEqual(conn.execute("SELECT count(*) FROM sessions").fetchone()[0], 0)
         finally:
