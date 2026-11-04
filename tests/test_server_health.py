@@ -128,5 +128,75 @@ class ServerHealthTest(unittest.TestCase):
         self.assertEqual(data["reply"], "MODEL=qwen2.5-coder:7b")
 
 
+class HwProfileEndpointTest(unittest.TestCase):
+    """/api/admin/hw-profile — HTTP integration tests (local bind = CEO auto, ไม่ต้อง token)"""
+
+    @classmethod
+    def setUpClass(cls):
+        model_backend.generate = (
+            lambda project_root, model, messages, num_ctx=8192, options=None: f"MODEL={model}"
+        )
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        root = Path(self._tmp.name)
+        handler = server.make_handler(root, None)
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        self.port = self.httpd.server_address[1]
+        self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
+        self.thread.start()
+
+    def tearDown(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        self._tmp.cleanup()
+
+    def _get(self, path):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        conn.request("GET", path)
+        resp = conn.getresponse()
+        raw = resp.read().decode("utf-8")
+        conn.close()
+        return resp.status, json.loads(raw) if raw else {}
+
+    def test_hw_profile_returns_200(self):
+        # local bind = CEO auto — ไม่ต้อง token → 200
+        st, _ = self._get("/api/admin/hw-profile?disk=0")
+        self.assertEqual(st, 200)
+
+    def test_hw_profile_shape(self):
+        # โครงของ response ต้องมีทุก key
+        _, data = self._get("/api/admin/hw-profile?disk=0")
+        p = data["profile"]
+        for key in ("tier", "tier_reasons", "cpu_model", "physical_cores",
+                    "ram_gb", "is_hdd", "has_compute_gpu", "gpus",
+                    "recommended_config", "next_upgrade"):
+            self.assertIn(key, p, f"missing key: {key}")
+
+    def test_hw_profile_tier_valid(self):
+        # tier ต้องเป็น netbook / workstation / server
+        _, data = self._get("/api/admin/hw-profile?disk=0")
+        self.assertIn(data["profile"]["tier"], ("netbook", "workstation", "server"))
+
+    def test_hw_profile_recommended_config_shape(self):
+        # recommended_config ต้องมีคีย์ config จริง
+        _, data = self._get("/api/admin/hw-profile?disk=0")
+        rc = data["profile"]["recommended_config"]
+        self.assertIn("PREFERRED_MODEL", rc)
+        self.assertIn("COMPUTE_BACKEND", rc)
+        self.assertIn("MAX_CONCURRENT_GENERATIONS", rc)
+
+    def test_hw_profile_next_upgrade_is_string(self):
+        _, data = self._get("/api/admin/hw-profile?disk=0")
+        self.assertIsInstance(data["profile"]["next_upgrade"], str)
+        self.assertGreater(len(data["profile"]["next_upgrade"]), 0)
+
+    def test_hw_profile_no_disk_param_is_safe(self):
+        # ไม่ส่ง disk param ก็ต้องไม่พัง (default disk=0 ไม่วัด disk จริง)
+        st, data = self._get("/api/admin/hw-profile")
+        self.assertEqual(st, 200)
+        self.assertIn("profile", data)
+
+
 if __name__ == "__main__":
     unittest.main()

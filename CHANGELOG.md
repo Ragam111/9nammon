@@ -4,6 +4,29 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [0.1.7] — 2026-11-04 (integration tests `/api/admin/hw-profile` — ตรวจสอบ endpoint จริง)
+
+ตามที่ user สั่ง: "PR TOdo ให้อัพเดท file แก้ อัพเดทงานตลอดและ pr วนลูปดูทางจริงทำงานยังไง"
+
+### Tests
++6 `HwProfileEndpointTest` ใน `test_server_health.py` — HTTP integration tests สำหรับ
+`GET /api/admin/hw-profile` ที่มี handler อยู่แล้วแต่ยังไม่เคยมีการทดสอบผ่าน HTTP จริง:
+- `test_hw_profile_returns_200` — local bind = CEO auto → 200 (ไม่ต้อง token)
+- `test_hw_profile_shape` — response มีครบทุก key (tier, cpu_model, ram_gb, is_hdd, gpus, ...)
+- `test_hw_profile_tier_valid` — tier ต้องเป็น netbook / workstation / server
+- `test_hw_profile_recommended_config_shape` — recommended_config มี PREFERRED_MODEL, COMPUTE_BACKEND, MAX_CONCURRENT_GENERATIONS
+- `test_hw_profile_next_upgrade_is_string` — next_upgrade เป็น string ไม่ว่าง
+- `test_hw_profile_no_disk_param_is_safe` — ไม่ส่ง `?disk=` ก็ต้องไม่พัง (default safe)
+
+**843 tests pass** (จาก 837 → +6)
+
+### Rationale
+`/api/admin/hw-profile` เป็น endpoint "สมองรู้จักตัวเอง" (HPC principle: self-aware machine)
+ใช้ตอน support ถามว่า "เครื่อง tier ไหน แนะนำ config อะไร" — มีอยู่แล้วแต่ไม่มี HTTP test
+เพิ่ม integration tests ให้ CI จับได้ถ้า regression เกิด (เช่น key หาย / 500 error)
+
+---
+
 ## [0.1.6] — 2026-10-30 (`--version` CLI flag — ตรงกับ `/api/version`)
 
 ตามที่ user สั่ง: "**ดูทางจริงทำงานยังไง**" — ผู้ใช้ต้องเช็กเวอร์ชันจาก
