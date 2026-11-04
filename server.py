@@ -50,6 +50,7 @@ from app import cluster_store  # noqa: E402  (ทะเบียน + มอน�
 from app import admission  # noqa: E402  (ยามคุมจำนวน generation พร้อมกัน กัน RAM thrash เครื่องสเปกต่ำ)
 from app import hw_profile  # noqa: E402  (โปรไฟล์ฮาร์ดแวร์: จัดระดับเครื่อง + แนะนำ config)
 from app import stats_store  # noqa: E402  (สถิติ request/response — บันทึกทุก endpoint, SQLite)
+from app import news_store  # noqa: E402  (RSS feed fetcher พร้อม 15-min cache)
 from app import config_versions  # noqa: E402  (เวอร์ชัน + rollback ของ config — กัน incident)
 from app import space_store  # noqa: E402  (พื้นที่ส่วนตัว/บริษัท + ข้อความ — RBAC)
 from app import cluster_router  # noqa: E402  (สมองจัดคิวงานของคลัสเตอร์ — route งานไป node ที่พร้อม)
@@ -566,6 +567,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._handle_bots_list()
             elif parsed.path == "/api/connections/usage":
                 self._handle_connections_usage()
+            elif parsed.path == "/api/news":
+                self._handle_news(parsed)
             elif chat_hub.wants_get(parsed.path):
                 chat_hub.handle_get(self, parsed, project_root)
             else:
@@ -1034,6 +1037,15 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             if self._require("ADMIN") is None:
                 return
             self._send_json(200, stats_store.get_stats(project_root))
+
+        # ---------- News: RSS feed (USER ขึ้นไป) ----------
+        def _handle_news(self, parsed):
+            if self._require("USER") is None:
+                return
+            from urllib.parse import parse_qs
+            qs = parse_qs(parsed.query)
+            feeds = qs.get("feed") or None
+            self._send_json(200, news_store.get_news(feeds))
 
         # ---------- Spaces: พื้นที่ส่วนตัว/บริษัท (USER ขึ้นไป) ----------
         def _handle_spaces_list(self):

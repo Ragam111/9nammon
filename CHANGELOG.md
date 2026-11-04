@@ -4,6 +4,20 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [0.2.0] — 2026-11-04 (News RSS API — `GET /api/news`)
+
+ตามที่ user สั่ง: "PR TOdo ให้อัพเดท file แก้ อัพเดทงานตลอดและ pr วนลูปดูทางจริงทำงานยังไง"
+
+### Added
+- `app/news_store.py` — RSS/Atom feed fetcher (stdlib only): `get_news(feeds)` + 15-min in-memory cache; `_fetch_feed` monkeypatch-able สำหรับ test
+- `GET /api/news` — USER-gated endpoint; รองรับ `?feed=url` override; คืน `{articles, count, feeds, errors, cached_until}`
+- `tests/test_news_api.py` — 6 HTTP integration tests: 200 shape, articles list, auth 401, count=len, fields check
+
+### Tests
++6 `NewsApiTest` ใน `tests/test_news_api.py`
+
+**1055 tests pass** (จาก 1049 → +6)
+
 ## [0.1.9] — 2026-11-04 (Review/Statistics API — `GET /api/admin/stats`)
 
 ตามที่ user สั่ง: "PR TOdo ให้อัพเดท file แก้ อัพเดทงานตลอดและ pr วนลูปดูทางจริงทำงานยังไง"
