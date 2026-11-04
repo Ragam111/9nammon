@@ -52,6 +52,7 @@ from app import hw_profile  # noqa: E402  (โปรไฟล์ฮาร์ด�
 from app import stats_store  # noqa: E402  (สถิติ request/response — บันทึกทุก endpoint, SQLite)
 from app import news_store  # noqa: E402  (RSS feed fetcher พร้อม 15-min cache)
 from app import db_manager  # noqa: E402  (DB admin: status + migration + log_event)
+from app import hw_meter  # noqa: E402  (hardware meter: CPU %, RAM %, tier — real-time)
 from app import config_versions  # noqa: E402  (เวอร์ชัน + rollback ของ config — กัน incident)
 from app import space_store  # noqa: E402  (พื้นที่ส่วนตัว/บริษัท + ข้อความ — RBAC)
 from app import cluster_router  # noqa: E402  (สมองจัดคิวงานของคลัสเตอร์ — route งานไป node ที่พร้อม)
@@ -570,6 +571,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._handle_connections_usage()
             elif parsed.path == "/api/admin/db/status":
                 self._handle_db_status()
+            elif parsed.path == "/api/metrics/hw":
+                self._handle_hw_meter(parsed)
             elif parsed.path == "/api/news":
                 self._handle_news(parsed)
             elif chat_hub.wants_get(parsed.path):
@@ -1040,6 +1043,19 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             if self._require("ADMIN") is None:
                 return
             self._send_json(200, stats_store.get_stats(project_root))
+
+        # ---------- Hardware Meter: CPU %, RAM, tier (USER ขึ้นไป) ----------
+        def _handle_hw_meter(self, parsed):
+            if self._require("USER") is None:
+                return
+            from urllib.parse import parse_qs
+            qs = parse_qs(parsed.query)
+            try:
+                interval = float(qs.get("interval", ["0.2"])[0])
+                interval = max(0.05, min(interval, 2.0))
+            except (TypeError, ValueError):
+                interval = 0.2
+            self._send_json(200, hw_meter.snapshot(project_root, interval=interval))
 
         # ---------- DB status (ADMIN) ----------
         def _handle_db_status(self):

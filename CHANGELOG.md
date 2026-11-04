@@ -4,6 +4,20 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [0.2.2] — 2026-11-04 (Hardware Meter — `GET /api/metrics/hw`)
+
+ตามที่ user สั่ง: "PR TOdo ให้อัพเดท file แก้ อัพเดทงานตลอดและ pr วนลูปดูทางจริงทำงานยังไง"
+
+### Added
+- `app/hw_meter.py` — `snapshot(project_root, interval)` รวม live collect() + hw_profile tier; คืน cpu_pct, cpu_per_core, freq_mhz, logical_cores, load_avg_1m, ram_pct, ram_used_gb, ram_total_gb, tier, recommended_model
+- `GET /api/metrics/hw` — USER-gated; `?interval=` ปรับ CPU measurement window (0.05–2.0s)
+- `tests/test_hw_meter_api.py` — 6 HTTP integration tests; monkeypatch hw_meter.snapshot + tearDownClass restore
+
+### Tests
++6 `HwMeterApiTest` ใน `tests/test_hw_meter_api.py`
+
+**1070 tests pass** (จาก 1064 → +6)
+
 ## [0.2.1] — 2026-11-04 (Database layer upgrade — migration 0011 + `GET /api/admin/db/status`)
 
 ตามที่ user สั่ง: "PR TOdo ให้อัพเดท file แก้ อัพเดทงานตลอดและ pr วนลูปดูทางจริงทำงานยังไง"
