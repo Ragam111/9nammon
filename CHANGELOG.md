@@ -18,12 +18,27 @@ Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไ�
 
 **855 tests pass** (จาก 849 → +6)
 
-## [0.1.8] — 2026-11-04 (rate-limit 429 guard — integration tests)
+## [0.1.8] — 2026-11-04 (rate-limiting HTTP tests — ทดสอบ 429 guard จริงผ่าน HTTP)
+
+ตามที่ user สั่ง: "PR TOdo ให้อัพเดท file แก้ อัพเดทงานตลอดและ pr วนลูปดูทางจริงทำงานยังไง"
 
 ### Tests
-+6 `RateLimitHttpTest` + `RateLimitDisabledTest` ใน `tests/test_server_rate_limit.py`
++6 `RateLimitHttpTest` + `RateLimitDisabledTest` ใน `tests/test_server_rate_limit.py` —
+HTTP integration tests สำหรับ rate limiting (429 guard) ที่มี `RateLimiter` อยู่แล้วแต่ยังไม่มี
+การทดสอบผ่าน HTTP จริง:
+- `test_requests_within_limit_succeed` — 3 ครั้ง ภายใน quota ต้องได้ 200
+- `test_request_over_limit_gets_429` — ครั้งที่ 4 ต้องได้ 429 + response มี `"error"`
+- `test_429_error_message_in_response` — response body มี `{"error": "..."}` ไม่ว่างเปล่า
+- `test_root_path_not_rate_limited` — `/` (static) หลัง quota หมดยังไม่ได้ 429
+- `test_console_path_not_rate_limited` — `/console` ไม่โดน rate limit
+- `test_many_requests_never_429_when_disabled` — `rate_limit_max=0` → ปิด rate limit ทั้งหมด (10 req)
 
 **849 tests pass** (จาก 843 → +6)
+
+### Rationale
+Rate limiting ป้องกัน DoS แต่ไม่มี HTTP integration test จริงมาก่อน — เพิ่ม 6 tests ให้ CI
+จับ regression ได้ทันที ใช้ `rate_limit_max=3` เพื่อ trigger 429 ได้เร็วโดยไม่ต้องยิง
+300 ครั้งจริง ทดสอบทั้งโหมดปกติและ disabled (rate_limit_max=0)
 
 ## [0.1.7] — 2026-11-04 (integration tests `/api/admin/hw-profile` — ตรวจสอบ endpoint จริง)
 
