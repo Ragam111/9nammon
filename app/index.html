@@ -33,6 +33,7 @@
   <div id="main-head">
     <button id="sidebar-toggle" aria-label="สลับเมนู">☰ เมนู</button>
     <span class="main-title">Local Code Assistant</span>
+    <a href="/chat" style="margin-left:auto;color:inherit">Chat Hub</a>
   </div>
   <div id="chat"></div>
   <div id="status-bar">โมเดลไม่ได้ต่อเน็ตเอง — ระบบรันผ่าน Ollama ในเครื่องเท่านั้น</div>
@@ -42,6 +43,7 @@
   </div>
 </div>
 
+<script src="/app.js"></script>
 <script>
 const chatEl = document.getElementById('chat');
 const inputEl = document.getElementById('user-input');
@@ -84,7 +86,7 @@ async function sendMessage() {
   try {
     const res = await fetch('/api/chat/stream', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: window.lca.headers({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         model: modelSelect.value,
         messages: history,
@@ -156,7 +158,7 @@ function setTodoMsg(text, isErr) {
 
 async function loadTodos() {
   try {
-    const res = await fetch('/api/todos');
+    const res = await fetch('/api/todos', { headers: window.lca.authHeaders() });
     if (res.status === 401) {
       todoList.innerHTML = '';
       setTodoMsg('ต้องล็อกอิน/ตั้ง token เพื่อดู todo', true);
@@ -195,7 +197,7 @@ async function toggleTodo(id) {
   try {
     await fetch('/api/todos/toggle', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: window.lca.headers({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ id }),
     });
     loadTodos();
@@ -208,7 +210,7 @@ async function deleteTodo(id) {
   try {
     await fetch('/api/todos/delete', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: window.lca.headers({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ id }),
     });
     loadTodos();
@@ -225,7 +227,7 @@ todoInput.addEventListener('keydown', async (e) => {
     try {
       await fetch('/api/todos', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: window.lca.headers({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ text }),
       });
       loadTodos();

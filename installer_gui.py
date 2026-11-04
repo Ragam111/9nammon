@@ -4,8 +4,9 @@ r"""installer_gui.py — ตัวติดตั้ง LCA แบบ GUI ไฟ
   ดับเบิลคลิก → GUI → เลือกโฟลเดอร์ติดตั้ง + จะสร้าง icon บน Desktop ไหม →
   กด "ติดตั้ง" → ดาวน์โหลด+แตก+คัดลอก (แถบวิ่งขึ้นจนเขียวเต็มหลอด) → กด Close พร้อมใช้งาน
 
-stdlib ล้วน: tkinter (GUI), urllib (ดาวน์โหลด), zipfile, shutil, threading.
-ดาวน์โหลดซอร์สล่าสุดจาก GitHub (main.zip) แล้วติดตั้งลงโฟลเดอร์ที่เลือก.
+stdlib ล้วน: tkinter (GUI), urllib (ดาวน์โหลด), hashlib (SHA-256), zipfile, shutil, threading.
+ดาวน์โหลดซอร์สที่ปัก commit ไว้จาก GitHub (ไม่ใช้ main.zip — URL แบบ latest ไม่มี hash คงที่)
+แล้วตรวจ SHA-256 ก่อนแตกไฟล์.
 
 แพ็กเป็น .exe (บน Windows):
   pip install pyinstaller
@@ -16,6 +17,7 @@ stdlib ล้วน: tkinter (GUI), urllib (ดาวน์โหลด), zipfil
 
 from __future__ import annotations
 
+import hashlib
 import os
 import shutil
 import subprocess
@@ -26,7 +28,17 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-ZIP_URL = "https://github.com/Ragam111/9nammon/archive/refs/heads/main.zip"
+# แหล่งซอร์สที่ตัวติดตั้งดึงมา. refs/heads/main.zip เป็น URL แบบ "latest":
+# ไบต์เปลี่ยนทุกครั้งที่ main ขยับ และ GitHub ไม่ได้เผยแพร่ไฟล์ .sha256 ของ source archive
+# — จึงปัก commit แทนการเดา hash. ถ้าจะขยับพิน ต้องเปลี่ยน PINNED_COMMIT กับ ZIP_SHA256 คู่กัน
+# หลังจากดาวน์โหลด URL ใหม่แล้วคำนวณเองเท่านั้น (ห้ามใส่ค่าที่ไม่ได้วัดจากไฟล์จริง).
+#
+# ZIP_SHA256 มาจากการดาวน์โหลด ZIP_URL จริงเมื่อ 2026-11-03 (curl สองครั้งได้ digest เดียวกัน
+# d03326ba…ef8d, ขนาด 518881 ไบต์). ไม่ใช่ checksum ที่ upstream ประกาศ — GitHub ไม่มีให้.
+PINNED_COMMIT = "93f1ca8de37543af528b33c8620347cf10865c5c"
+ZIP_URL = f"https://github.com/Ragam111/9nammon/archive/{PINNED_COMMIT}.zip"
+ZIP_SHA256 = "d03326baa16f1555b1d0089e46884a0f0ddf249e3b2b4976f77854313fe5ef8d"
+_HASH_CHUNK = 64 * 1024
 APP_NAME = "Local Code Assistant"
 # ขนาดดิสก์ขั้นต่ำที่ต้องมีก่อนติดตั้ง (bytes) — zip ~2 MB + extracted ~30 MB + buffer
 # ตั้ง 300 MB เผื่อ Python packages ตอนรัน + log + workspace ของ agent (user เจอ 118 errors
@@ -80,19 +92,103 @@ def check_free_disk(install_dir: str, min_bytes: int = MIN_FREE_DISK_BYTES) -> t
     return True, tight, ""
 
 
-def _download_zip(url: str, dest: Path) -> str:
-    """ดาวน์โหลด zip พร้อม fallback (bug fix v0.1.2: user เจอ SSL cert verify failed
-    บน Windows ที่ CA bundle ของ Python ไม่ update). คืน method ที่ใช้ ("urllib"/"curl").
-    1. urllib ปกติ (ตรวจ cert ครบ)
-    2. curl.exe (Windows 10+ มีมาเอง — ใช้ CA ของระบบที่ update ถี่กว่า)
-    โยน RuntimeError ถ้าทั้ง 2 ล้ม — เสนอวิธีให้ user: pip install certifi หรือ update Python"""
-    # 1. urllib ปกติ
+class ChecksumMismatch(RuntimeError):
+    """SHA-256 ของไฟล์ที่ดาวน์โหลดไม่ตรงกับค่าที่ปักไว้ — ไฟล์ถูกลบแล้ว"""
+
+
+def _discard(path: Path) -> None:
+    """ลบไฟล์ที่โหลดค้างหรือตรวจไม่ผ่าน — เงียบถ้าไฟล์ไม่มีอยู่แล้ว"""
     try:
-        urllib.request.urlretrieve(url, dest)
+        path.unlink()
+    except OSError:
+        pass
+
+
+def _normalize_sha256(expected_sha256: str) -> str:
+    text = (expected_sha256 or "").strip().lower()
+    if len(text) != 64 or any(c not in "0123456789abcdef" for c in text):
+        raise ChecksumMismatch(
+            "ค่า SHA-256 ที่ปักไว้ใช้ตรวจไม่ได้ "
+            f"(ต้องเป็นตัวอักษร hex 64 ตัว): {expected_sha256!r}"
+        )
+    return text
+
+
+def _require_digest(path: Path, digest: str, expected: str) -> str:
+    """เทียบ digest ที่คำนวณแล้วกับค่าที่ปักไว้. ไม่ตรง → ลบไฟล์แล้วโยน ChecksumMismatch."""
+    if digest != expected:
+        _discard(path)
+        raise ChecksumMismatch(
+            "SHA-256 ไม่ตรง — ลบไฟล์ทิ้งแล้ว ไม่ติดตั้งต่อ\n"
+            f"ไฟล์: {path}\n"
+            f"ที่คาดไว้: {expected}\n"
+            f"ที่ได้จริง: {digest}"
+        )
+    return digest
+
+
+def verify_sha256(path: Path, expected_sha256: str, chunk_size: int = _HASH_CHUNK) -> str:
+    """อ่าน `path` ทีละ chunk ผ่าน hashlib.sha256 แล้วเทียบกับค่าที่ปักไว้.
+
+    ตรงกัน → คืน digest (hex ตัวเล็ก) และเก็บไฟล์ไว้.
+    ไม่ตรง → ลบไฟล์ (รวมไฟล์ที่โหลดมาไม่ครบ) แล้วโยน ChecksumMismatch.
+    ค่าที่ปักไว้ผิดรูปแบบ หรืออ่านไฟล์ไม่ได้ → โยน ChecksumMismatch โดยไม่ลบไฟล์.
+    """
+    expected = _normalize_sha256(expected_sha256)
+    hasher = hashlib.sha256()
+    try:
+        with path.open("rb") as fh:
+            while True:
+                chunk = fh.read(chunk_size)
+                if not chunk:
+                    break
+                hasher.update(chunk)
+    except OSError as e:
+        raise ChecksumMismatch(f"อ่านไฟล์เพื่อตรวจ SHA-256 ไม่ได้: {path} ({e})") from e
+    return _require_digest(path, hasher.hexdigest(), expected)
+
+
+def _stream_download(url: str, dest: Path, chunk_size: int = _HASH_CHUNK) -> str:
+    """ดาวน์โหลด url → dest พร้อมอัปเดต SHA-256 ทุก chunk ที่อ่านจากเน็ต.
+
+    พังกลางทาง → ลบไฟล์ที่เขียนค้าง แล้วโยน exception เดิม. คืน digest (ยังไม่เทียบพิน).
+    """
+    hasher = hashlib.sha256()
+    try:
+        with urllib.request.urlopen(url, timeout=120) as resp, dest.open("wb") as out:
+            while True:
+                chunk = resp.read(chunk_size)
+                if not chunk:
+                    break
+                hasher.update(chunk)
+                out.write(chunk)
+    except Exception:
+        _discard(dest)
+        raise
+    return hasher.hexdigest()
+
+
+def _download_zip(url: str, dest: Path, expected_sha256: str = ZIP_SHA256) -> str:
+    """ดาวน์โหลด zip แล้วตรวจ SHA-256 ก่อนคืน method ("urllib"/"curl").
+
+    bug fix v0.1.2: user เจอ SSL cert verify failed บน Windows ที่ CA bundle ของ
+    Python ไม่ update — จึงมี fallback:
+    1. urllib (ตรวจ cert ครบ) — hashlib.sha256 ระหว่างสตรีม
+    2. curl.exe (Windows 10+ มีมาเอง — ใช้ CA ของระบบ) แล้ว verify_sha256 อ่านไฟล์ทีละ chunk
+    hash ไม่ตรงไม่ถือเป็นเหตุให้ลองช่องทางที่สอง: เนื้อหา URL เดียวกัน ลบไฟล์แล้วหยุด.
+    ทั้งสองช่องทางล้มเรื่องเครือข่าย → RuntimeError + วิธีแก้ (certifi / ติดตั้ง Python ใหม่).
+    """
+    expected = _normalize_sha256(expected_sha256)
+    try:
+        digest = _stream_download(url, dest)
+        _require_digest(dest, digest, expected)
         return "urllib"
+    except ChecksumMismatch:
+        raise
     except Exception as e:
         err_urllib = e
-    # 2. curl.exe (Windows 10+)
+    # 2. curl.exe (Windows 10+) — สตรีมออกไฟล์แล้วค่อยตรวจด้วย verify_sha256
+    # (curl อยู่นอกโปรเซส จึง hashing ทีละ chunk จากไฟล์ที่เซฟแล้ว ไม่ใช่จากซ็อกเก็ต)
     curl = shutil.which("curl") or (r"C:\Windows\System32\curl.exe"
                                     if sys.platform == "win32" else None)
     if curl and Path(curl).exists():
@@ -101,9 +197,13 @@ def _download_zip(url: str, dest: Path) -> str:
                 [curl, "-fsSL", "--output", str(dest), url],
                 capture_output=True, timeout=120)
             if res.returncode == 0 and dest.exists() and dest.stat().st_size > 0:
+                verify_sha256(dest, expected)
                 return "curl"
+        except ChecksumMismatch:
+            raise
         except (OSError, subprocess.SubprocessError):
             pass
+        _discard(dest)
     raise RuntimeError(
         f"ดาวน์โหลดไม่สำเร็จ: {err_urllib}\n\n"
         f"วิธีแก้: (1) ติดตั้ง Python ใหม่จาก python.org (จะได้ CA bundle ล่าสุด) "
@@ -111,7 +211,7 @@ def _download_zip(url: str, dest: Path) -> str:
 
 
 def _find_src_root(extract_dir: Path) -> Path:
-    """GitHub zip แตกออกมาเป็นโฟลเดอร์ 9nammon-main/ — หาตัวที่มี server.py"""
+    """GitHub zip แตกออกมาเป็นโฟลเดอร์ 9nammon-<ref>/ — หาตัวที่มี server.py"""
     if (extract_dir / "server.py").exists():
         return extract_dir
     for child in extract_dir.iterdir():
@@ -136,7 +236,8 @@ def do_install(install_dir: str, make_desktop_icon: bool, progress_cb,
         tmp = Path(tmp)
         zip_path = tmp / "lca.zip"
         progress_cb(10, "กำลังดาวน์โหลดจาก GitHub...")
-        method = _download_zip(ZIP_URL, zip_path)  # v0.1.2: 3 fallbacks (SSL fix)
+        # expected hash คือ ZIP_SHA256 (ค่า default) — ไม่ผ่านจะไม่แตกไฟล์
+        method = _download_zip(ZIP_URL, zip_path)
         if method != "urllib":
             progress_cb(42, f"ดาวน์โหลดสำเร็จ (ผ่าน {method}) — กำลังแตกไฟล์...")
         progress_cb(45, "แตกไฟล์...")

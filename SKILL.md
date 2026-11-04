@@ -45,21 +45,29 @@ Skill นี้คือชุดเครื่องมือ (CLI + หน้
 
 ## Instructions — สรุปขั้นตอนสำหรับผู้ใช้ที่จะไปติดตั้งจริงบน Windows
 
-ทุกไฟล์ sync เข้า `windows-package/` ครบแล้ว พร้อมให้ผู้ใช้นำไปติดตั้งจริง
-ขั้นตอนสำหรับผู้ใช้ (สรุปจาก `windows-package/README.md`):
+ไฟล์ติดตั้งอยู่ที่ราก repo (โฟลเดอร์ `windows-package/` ไม่มีแล้ว)
+ขั้นตอนสำหรับผู้ใช้ (รายละเอียดใน `README.md`):
 
-1. **ดาวน์โหลดโฟลเดอร์ `windows-package/` ทั้งหมด** ไปไว้ที่เครื่อง Windows
-2. **ดับเบิลคลิก `install.bat`** (หรือรัน `install.ps1` ผ่าน PowerShell ถ้าถนัด)
+1. **ทางที่แนะนำ**: โหลด `LCA-Desktop.exe` จากหน้า Releases แล้วดับเบิลคลิก
+   หรือใช้ `TokenLCAlimit.exe` (`installer_gui.py`) ถ้ามี Python อยู่แล้ว
+2. **หรือดับเบิลคลิก `install.bat`** หลังแตก zip
+   (หรือรัน `install.ps1` ผ่าน PowerShell ถ้าถนัด)
    - สคริปต์จะตรวจ RAM อัตโนมัติแล้วแนะนำโมเดลให้ กด Enter ยอมรับ หรือพิมพ์
      ชื่อโมเดลอื่นเองก็ได้
+   - ติดตั้งออนไลน์บรรทัดเดียวใช้ `install.ps1` (`install_online.ps1` ลบใน v0.1.3, #101):
+     `powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercontent.com/Ragam111/9nammon/main/install.ps1 | iex"`
 3. **ติดตั้ง Ollama** ถ้ายังไม่มี (ลิงก์จะโชว์ตอนรัน install.ps1) แล้วรัน
    `ollama pull <ชื่อโมเดลที่แนะนำ>`
 4. **เปิด terminal ใหม่** แล้วใช้คำสั่ง `lca <path โปรเจกต์>` (CLI) หรือ
    `start-lca.bat` (หน้าเว็บที่ `http://127.0.0.1:8420`) หรือ `LCA-Desktop.exe --version` เพื่อตรวจเวอร์ชัน
+   — `start-lca.bat` เรียก `python server.py "%USERPROFILE%" --port 8420`
+   แล้วเปิดเบราว์เซอร์ให้ คำสั่ง `lca-web` / ไฟล์ `lca-web.bat` ลบใน v0.1.3 (#101)
 5. **ตรวจสอบพื้นที่เก็บข้อมูลถาวร**: พิมพ์ `/archive` ใน CLI เพื่อดู path เดสก์ท็อป
    ที่ข้อมูลถูก sync ไปไว้ (ค่าเริ่มต้นคือ `Desktop\LocalCodeAssistant-Data\`
    บน Windows)
 6. **ถอน/อัปเดต** ทำได้ด้วย `uninstall.ps1` / `update.ps1` ในโฟลเดอร์เดียวกัน
+7. **Linux/macOS** ไม่มี `install.sh` แล้ว (ลบใน v0.1.3, #101):
+   `pip install -r requirements.txt` แล้ว `python server.py <โฟลเดอร์โปรเจกต์>`
 
 **สิ่งที่ผู้ใช้ต้องรู้ก่อนใช้จริง (ย้ำอีกครั้งจาก TODO table)**: สคริปต์ `.ps1`
 ทั้งหมดเขียนและตรวจ syntax แบบ static แล้ว แต่ **ยังไม่เคยรันบน Windows จริง**
@@ -75,8 +83,8 @@ Claude ควรเรียก skill นี้เมื่อเข้าเง
 
 **Keyword-based:**
 - พูดถึง "Aider", "Claude Code แบบฟรี", "local LLM coding", "Ollama coding"
-- ขอปรับปรุง/แก้ไข `local_coder.py`, `server.py`, `SKILL.md`, หรือไฟล์ใน
-  `windows-package/` ของ skill นี้โดยเฉพาะ
+- ขอปรับปรุง/แก้ไข `local_coder.py`, `server.py`, `SKILL.md`, หรือไฟล์ติดตั้งที่ราก repo
+  (`install.ps1`, `install.bat`, `start-lca.bat`) ของ skill นี้โดยเฉพาะ
 
 **Intent-based (ไม่ต้องพูดชื่อเครื่องมือก็เข้าเงื่อนไขได้):**
 - ต้องการ "AI coding assistant" หรือ "coding agent" ที่รันบน terminal ของตัวเอง
@@ -205,10 +213,10 @@ Branch ทำงาน: `claude/windows-package-architecture-j4znro`
 | เชื่อม Linear (`/linear sync`) | ✅ เสร็จ (อ่านอย่างเดียว) | `app/linear_connector.py` | ดึง issue → ใส่ todo ทดสอบกับ mock Linear API แล้ว ฟังก์ชันเขียนกลับสถานะมีแต่ปฏิเสธถ้าไม่ `confirm=True` (ยังไม่ผูกเข้า UI ยืนยัน) |
 | MVC Server (multi-device/มือถือ) | ✅ เสร็จ (ระดับ LAN) | `server.py` | Model=`call_ollama`, Controller=HTTP handler, View=`index.html`/JSON — ทดสอบ `--host 0.0.0.0 --token` ปฏิเสธถ้าไม่ตั้ง token, auth header ทำงานถูกต้อง |
 | Custom Instructions / SRS upload workflow | 📋 เป็นคำแนะนำการใช้งาน ไม่ใช่โค้ด | — | ทำที่หน้าเว็บ claude.ai โดยผู้ใช้เอง ไม่มีไฟล์เกี่ยวข้อง |
-| **Windows Installer + CLI** (install.ps1/bat, local_coder.py) | ✅ **ทดสอบจริงบน Windows สำเร็จแล้ว** (2 ส.ค. 2026, เครื่อง HP, RAM 7.9GB) | `windows-package/*.ps1`, `*.bat` | รอบแรกพังเพราะไฟล์ `.ps1` ไม่มี UTF-8 BOM (ดู Troubleshooting + Rule ข้อ 22) — เติม BOM แก้แล้ว **ทดสอบซ้ำผ่านครบวงจรจริง**: ติดตั้งที่ D: → ตรวจ RAM/โมเดลถูกต้อง → เรียก `lca C:\Users\Hello\Documents` → เห็น banner สีขึ้นถูกต้อง (`Local Code Assistant v0.0.2`) พร้อมโมเดล/ภาษา/path ถูกต้องหมด — พบอาการ path ตัดครึ่ง (`C:\Users\Hello\C`) ตอนลอง `Desktop` ครั้งเดียว ไม่ reproduce ซ้ำตอนลอง `Documents` คาดว่าเป็น fluke ไม่ใช่บั๊กโค้ด ต้องเฝ้าดูถ้าเกิดซ้ำ |
-| **Linux/macOS Installer** (`install.sh`) | ✅ เสร็จ, **ทดสอบจริงผ่านแล้ว** | `windows-package/install.sh` | ตรวจ RAM (`/proc/meminfo` บน Linux, `sysctl hw.memsize` บน macOS) → เลือกโมเดลเหมือน install.ps1, สร้าง launcher `lca`/`lca-web`, เพิ่มเข้า PATH — รันจริงบนแซนด์บ็อกซ์ Linux แล้ว: ติดตั้ง → เรียก `lca` → เห็น banner สีถูกต้อง ครบวงจร |
+| **Windows Installer + CLI** (install.ps1/bat, local_coder.py) | ✅ **ทดสอบจริงบน Windows สำเร็จแล้ว** (2 ส.ค. 2026, เครื่อง HP, RAM 7.9GB) | `install.ps1`, `install.bat`, `*.ps1`, `*.bat` (ราก repo) | รอบแรกพังเพราะไฟล์ `.ps1` ไม่มี UTF-8 BOM (ดู Troubleshooting + Rule ข้อ 22) — เติม BOM แก้แล้ว **ทดสอบซ้ำผ่านครบวงจรจริง**: ติดตั้งที่ D: → ตรวจ RAM/โมเดลถูกต้อง → เรียก `lca C:\Users\Hello\Documents` → เห็น banner สีขึ้นถูกต้อง (`Local Code Assistant v0.0.2`) พร้อมโมเดล/ภาษา/path ถูกต้องหมด — พบอาการ path ตัดครึ่ง (`C:\Users\Hello\C`) ตอนลอง `Desktop` ครั้งเดียว ไม่ reproduce ซ้ำตอนลอง `Documents` คาดว่าเป็น fluke ไม่ใช่บั๊กโค้ด ต้องเฝ้าดูถ้าเกิดซ้ำ |
+| **Linux/macOS Installer** (`install.sh`) | 🗑️ ลบใน v0.1.3 (#101) | — (ไฟล์ไม่มีแล้ว) | ทางติดตั้งปัจจุบัน: `pip install -r requirements.txt` แล้ว `python server.py <โฟลเดอร์โปรเจกต์>` — launcher `lca-web` ถูกลบด้วย บน Windows เปิดหน้าเว็บด้วย `start-lca.bat` |
 | **Windows GUI Installer** (`installer.iss` → `setup.exe`) | ⚠️ เขียนแล้ว, ตรวจ static ครบ section | `windows-package/installer.iss` | ต้องคอมไพล์ด้วย Inno Setup Compiler (ฟรี, Windows เท่านั้น) — **ยังไม่เคยคอมไพล์/รันจริง** ไม่มี privilege ขอ admin (ติดตั้งใน `%LOCALAPPDATA%`), มีหน้า INFO_BEFORE เตือนสถานะ early-stage ก่อนติดตั้ง |
-| **Online One-liner Installer** (`install_online.ps1`) | ⚠️ เขียนแล้ว, มี guard ป้องกัน placeholder URL | `windows-package/install_online.ps1` | ดึง zip จาก URL (ต้องเป็น GitHub Releases จริงหรือที่ host อื่น) → แตกไฟล์ที่ `%TEMP%` → เรียก `install.ps1` ข้างในอัตโนมัติ → ลบไฟล์ชั่วคราว — **`$ZipUrl` ยังเป็น placeholder ต้องแก้ก่อนใช้จริง** ถ้าไม่แก้จะปฏิเสธทำงานทันที (fail ดัง ไม่ fail เงียบ) — ยังไม่เคยรันจริงบน Windows |
+| **Online One-liner Installer** (`install_online.ps1`) | ⚠️ เขียนแล้ว, มี guard ป้องกัน placeholder URL | `windows-package/install_online.ps1` | ดึง zip จาก URL (ต้องเป็น GitHub Releases จริงหรือที่ host อื่น) → แตกไฟล์ที่ `%TEMP%` → เรียก `install.ps1` ข้างในอัตโนมัติ → ลบไฟล์ชั่วคราว — **`$ZipUrl` ยังเป็น placeholder ต้องแก้ก่อนใช้จริง** ถ้าไม่แก้จะปฏิเสธทำงานทันที (fail ดัง ไม่ fail เงียบ) — ยังไม่เคยรันจริงบน Windows · one-liner ปัจจุบัน (ใช้ `install.ps1` โดยตรง): `powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercontent.com/Ragam111/9nammon/main/install.ps1 | iex"` |
 | **Version 0.0.2** | ✅ เสร็จ | `local_coder.py` (`__version__`), banner, `install.ps1/.sh`, `installer.iss`, เอกสารทั้งหมด | bump จาก 0.0.1 → 0.0.2 (เคลียร์ `__pycache__` ก่อน bump), เลขเวอร์ชันตรงกันทุกไฟล์ ไม่ใช้ 1.0.0 (ยังไม่ stable จริง ตามหลัก 9arm ข้อ 1) — ทดสอบแล้วว่า banner แสดง v0.0.2 ถูกต้อง |
 | **v0.1.0 Official Release** | ✅ เสร็จ | หลายไฟล์ | 812 tests, schedule gate (06–20 TH), /api/status, system tray, security (hmac.compare_digest + body size limit), disk pre-check |
 | **v0.1.1 Bug fixes** | ✅ เสร็จ | `installer_gui.py`, `server.py` | `check_free_disk` ตรวจทั้ง install_dir + TEMP; `_schedule_gated` trailing slash fix (`_norm_path()`) |
@@ -279,8 +287,8 @@ uninstaller (copy ไปรันที่ `%TEMP%` ก่อนลบตัว�
 | มองไม่เห็นนามสกุลไฟล์ (เห็น `install` เฉยๆ ไม่รู้ว่าเป็น `.bat` หรือ `.exe`) | Windows ซ่อนนามสกุลไฟล์ที่รู้จักเป็นค่าเริ่มต้น (`Hide extensions for known file types`) | บอกให้ดูไอคอน (`.bat` = จอดำเล็กๆ) หรือแนะนำเปิด File Explorer → View → ติ๊ก "File name extensions" เพื่อความชัดเจนถาวร |
 | **`ModuleNotFoundError: No module named 'folder_trust'`** (หรือ `context_manager`) ตอนรัน `lca` | `local_coder.py` import สองโมดูลนี้ผ่าน `sys.path` ที่ชี้ไปโฟลเดอร์ `app\` แต่ installer เดิม copy ไม่ครบ | **แก้แล้วถาวร**: `update.ps1` v0.1.0 (PR #86) ทำ recursive copy `app\` ทั้งโฟลเดอร์ (รวม `app\agent\*`) + ลบ `fix_missing_modules.ps1` ออกแล้ว (ไม่จำเป็นอีก) — รัน `update.ps1` ใหม่ครั้งเดียวแก้ได้ |
 
-| **ไฟล์ `.ps1` ไม่มี UTF-8 BOM ทั้งที่ SKILL.md บันทึกไว้ว่า "เติม BOM แก้แล้ว"** (พบจากการแพ็ก zip รอบล่าสุด 19 ส.ค. 2026) | เอกสารบันทึกผลลัพธ์ที่ตั้งใจไว้ ไม่ใช่สถานะไฟล์จริงเสมอไป — เมื่อไฟล์ถูกคัดลอก/ส่งต่อผ่านช่องทางอื่น BOM ที่เติมไว้อาจหายระหว่างทางได้ | **ห้ามเชื่อคำบรรยายในเอกสารเฉยๆ ว่า BOM มีอยู่แล้ว — ต้องเปิดไฟล์จริงเช็ค 3 byte แรกทุกครั้งก่อนแพ็ก zip ส่งมอบ** (`b'\xef\xbb\xbf'`) — เจอเคสนี้จริงกับ `install.ps1`/`uninstall.ps1`/`update.ps1`/`install_online.ps1` |
-| **ไฟล์ `app/*.py` (todo_store, linear_connector, desktop_archive, web_search, config_manager) + `app/index.html` หายไปทั้งหมดจาก working copy** (พบ 19 ส.ค. 2026 ตอนจะแพ็ก zip ส่งทดสอบ) | ไฟล์เหล่านี้เคยเขียนเสร็จจริงตามที่ตาราง TODO บันทึกไว้ แต่ไม่ได้อยู่ใน context/Project files ชุดล่าสุดที่ใช้แพ็ก — เป็นปัญหาการ sync ไฟล์เข้า Project knowledge ไม่ใช่โค้ดหาย | เขียนใหม่ทั้ง 6 ไฟล์จาก **interface ที่ `local_coder.py`/`server.py` เรียกใช้จริง** (อ่านทุกจุด `import`/เรียกฟังก์ชันก่อนเขียน ไม่เดา signature) แล้วทดสอบ: syntax check ผ่านทั้งหมด, รัน `local_coder.py` จริงกับ mock Ollama ผ่าน (`/todo`, `/model`, `/lang`, chat, `/status`, `/files`, catch-all error), รัน `server.py` จริงผ่าน `curl` ครบ endpoint (`GET /`, `/api/chat`, `/api/todos` CRUD), รัน `install.sh` จริงแล้วเรียก `lca` ผ่าน launcher ที่ติดตั้งเสร็จ — ไม่มี `ModuleNotFoundError` เลย — **ยังไม่ทดสอบบน Windows จริง** ต้องยืนยันซ้ำก่อนใช้งานจริงจัง |
+| **ไฟล์ `.ps1` ไม่มี UTF-8 BOM ทั้งที่ SKILL.md บันทึกไว้ว่า "เติม BOM แก้แล้ว"** (พบจากการแพ็ก zip รอบล่าสุด 19 ส.ค. 2026) | เอกสารบันทึกผลลัพธ์ที่ตั้งใจไว้ ไม่ใช่สถานะไฟล์จริงเสมอไป — เมื่อไฟล์ถูกคัดลอก/ส่งต่อผ่านช่องทางอื่น BOM ที่เติมไว้อาจหายระหว่างทางได้ | **ห้ามเชื่อคำบรรยายในเอกสารเฉยๆ ว่า BOM มีอยู่แล้ว — ต้องเปิดไฟล์จริงเช็ค 3 byte แรกทุกครั้งก่อนแพ็ก zip ส่งมอบ** (`b'\xef\xbb\xbf'`) — เจอเคสนี้จริงกับ `install.ps1`/`uninstall.ps1`/`update.ps1` (`install_online.ps1` เคยเจอเคสเดียวกัน แต่ลบใน v0.1.3, #101) |
+| **ไฟล์ `app/*.py` (todo_store, linear_connector, desktop_archive, web_search, config_manager) + `app/index.html` หายไปทั้งหมดจาก working copy** (พบ 19 ส.ค. 2026 ตอนจะแพ็ก zip ส่งทดสอบ) | ไฟล์เหล่านี้เคยเขียนเสร็จจริงตามที่ตาราง TODO บันทึกไว้ แต่ไม่ได้อยู่ใน context/Project files ชุดล่าสุดที่ใช้แพ็ก — เป็นปัญหาการ sync ไฟล์เข้า Project knowledge ไม่ใช่โค้ดหาย | เขียนใหม่ทั้ง 6 ไฟล์จาก **interface ที่ `local_coder.py`/`server.py` เรียกใช้จริง** (อ่านทุกจุด `import`/เรียกฟังก์ชันก่อนเขียน ไม่เดา signature) แล้วทดสอบ: syntax check ผ่านทั้งหมด, รัน `local_coder.py` จริงกับ mock Ollama ผ่าน (`/todo`, `/model`, `/lang`, chat, `/status`, `/files`, catch-all error), รัน `server.py` จริงผ่าน `curl` ครบ endpoint (`GET /`, `/api/chat`, `/api/todos` CRUD), เรียก `lca` ผ่าน launcher ที่ติดตั้งเสร็จ (ตอนนั้นใช้ `install.sh` ซึ่งลบใน v0.1.3, #101 — วันนี้บน Linux ใช้ `pip install -r requirements.txt` แล้ว `python server.py`) — ไม่มี `ModuleNotFoundError` เลย — **ยังไม่ทดสอบบน Windows จริง** ต้องยืนยันซ้ำก่อนใช้งานจริงจัง |
 
 **บทเรียนเชิงระบบจากรายการนี้**: ผู้ใช้ทั่วไปไม่คุ้นเคยกับ PowerShell/CMD/นามสกุลไฟล์ที่ซ่อนอยู่
 — เวลาส่งมอบไฟล์ติดตั้งให้ **(1)** always แพ็กเป็น zip เดียวเมื่อมีไฟล์เกิน 1 ไฟล์ที่ต้องอยู่ด้วยกัน
@@ -363,7 +371,7 @@ uninstaller (copy ไปรันที่ `%TEMP%` ก่อนลบตัว�
 
 **Windows Installer (CLI, PowerShell/CMD, AMD64, Windows 10/11) — งานปัจจุบัน:**
 
-1. **รวมไฟล์ทั้งหมดเป็น package เดียว** ในโฟลเดอร์ `windows-package/` ประกอบด้วย
+1. **รวมไฟล์ทั้งหมดเป็น package เดียว** ที่ราก repo (โฟลเดอร์ `windows-package/` ไม่มีแล้ว) ประกอบด้วย
    `local_coder.py`, `server.py`, `app/` (index.html, todo_store.py, linear_connector.py)
 2. **`install.ps1`** — สคริปต์หลัก:
    - ตรวจ RAM เครื่องด้วย `Get-CimInstance Win32_ComputerSystem`

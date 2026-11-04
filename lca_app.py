@@ -44,12 +44,23 @@ def data_dir() -> Path:
     return d
 
 
+def launch_url(port: int, path: str, token: str | None = None, auto: bool = False) -> str:
+    """URL ที่เปิดในหน้าต่างแอป. session ที่สุ่มได้ไปอยู่ fragment — เบราว์เซอร์ไม่ส่ง fragment ให้เซิร์ฟเวอร์"""
+    url = f"http://127.0.0.1:{port}{path}"
+    if auto and token:
+        url += "#lca_token=" + token
+    return url
+
+
 def build_server(root, preferred_port: int = DEFAULT_PORT, host: str = "127.0.0.1"):
     """สร้าง HTTP server ที่พร้อม serve — คืน (httpd, port). หา port ว่างให้เองถ้าชน.
-    แยกออกมาเป็นฟังก์ชันเพื่อเทสได้ (ไม่ต้องเปิดหน้าต่าง/วนลูปจริง)"""
+    แยกออกมาเป็นฟังก์ชันเพื่อเทสได้ (ไม่ต้องเปิดหน้าต่าง/วนลูปจริง)
+    ไม่ได้ส่ง token → server สุ่ม session ต่อการเปิด แล้วแปะไว้ที่ httpd.lca_session_token"""
     port = server.find_free_port(preferred_port, host=host)
-    handler = server.make_handler(Path(root), None, bind_host=host)  # local = CEO, bind 127.0.0.1
+    handler = server.make_handler(Path(root), None, bind_host=host)
     httpd = ThreadingHTTPServer((host, port), handler)
+    httpd.lca_session_token = handler.session_token
+    httpd.lca_session_auto = handler.session_token_auto
     return httpd, httpd.server_address[1]
 
 
@@ -99,10 +110,15 @@ def main() -> int:
     # LCA Chat first-run flow: ถ้ายังไม่มี connection → เปิดหน้า /console ก่อน
     # (user เห็นหน้าตั้งสมอง AI ทันที เหมือน Claude Desktop ถาม API key ครั้งแรก)
     path = "/console" if _is_first_run(root) else "/"
-    url = f"http://127.0.0.1:{port}{path}"
+    token = getattr(httpd, "lca_session_token", None)
+    auto = bool(getattr(httpd, "lca_session_auto", False))
+    url = launch_url(port, path, token, auto)
     t = threading.Thread(target=httpd.serve_forever, daemon=True)
     t.start()
-    print(f"[LCA Chat] กำลังทำงานที่ {url}  (ข้อมูลอยู่ที่ {root})")
+    # ไม่พิมพ์ค่า token ลง log ของแอปเดสก์ท็อป — หน้าต่างได้ทาง fragment + หน้า HTML
+    print(f"[LCA Chat] กำลังทำงานที่ http://127.0.0.1:{port}{path}  (ข้อมูลอยู่ที่ {root})")
+    if auto:
+        print("[auth] ส่ง session token ให้หน้าต่างแอปแล้ว")
     time.sleep(1)                    # ให้ server พร้อมก่อนเปิดหน้าต่าง
     open_app_window(url)
     try:

@@ -4,6 +4,8 @@ mock การดาวน์โหลด (urlretrieve) ด้วย zip ปล�
 progress ถึง 100 + สร้าง start-lca.bat + desktop icon. ไม่ import tkinter (อยู่ใน launch_gui เท่านั้น)
 """
 
+import hashlib
+import io
 import os
 import sys
 import tempfile
@@ -218,52 +220,97 @@ class CopyManifestTest(unittest.TestCase):
         self.assertIn("start-lca.bat", installer_gui.COPY_FILES)
 
 
+class _FakeHttpResp:
+    """ตัวแทน response ของ urlopen — อ่านได้ทีละ chunk และใช้เป็น context manager"""
+
+    def __init__(self, data: bytes):
+        self._buf = io.BytesIO(data)
+
+    def read(self, n=-1):
+        return self._buf.read(n)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
 class DownloadZipTest(unittest.TestCase):
-    """bug fix v0.1.2: SSL cert fail → fallback curl → fallback unverified"""
+    """bug fix v0.1.2: SSL cert fail → fallback curl. ทุกช่องทางต้องผ่าน SHA-256"""
 
     def test_urllib_success_returns_urllib(self):
+        payload = b"PK\x03\x04fakezip"
+        expected = hashlib.sha256(payload).hexdigest()
         with tempfile.TemporaryDirectory() as tmp:
             dest = Path(tmp) / "out.zip"
 
-            def fake_urlretrieve(url, path):
-                Path(path).write_bytes(b"PK\x03\x04fakezip")
-            with mock.patch.object(installer_gui.urllib.request, "urlretrieve",
-                                   fake_urlretrieve):
-                method = installer_gui._download_zip("https://example.com/x.zip", dest)
+            def fake_urlopen(url, timeout=120):
+                return _FakeHttpResp(payload)
+
+            with mock.patch.object(installer_gui.urllib.request, "urlopen", fake_urlopen):
+                method = installer_gui._download_zip(
+                    "https://example.com/x.zip", dest, expected_sha256=expected)
             self.assertEqual(method, "urllib")
+            self.assertEqual(dest.read_bytes(), payload)
+
+    def test_urllib_mismatch_deletes_file_and_skips_curl(self):
+        payload = b"PK\x03\x04tampered"
+        wrong = hashlib.sha256(b"different-bytes").hexdigest()
+
+        def fake_urlopen(url, timeout=120):
+            return _FakeHttpResp(payload)
+
+        def curl_must_not_run(*args, **kwargs):
+            raise AssertionError("hash ไม่ตรงต้องหยุด ไม่ fallback ไป curl")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = Path(tmp) / "out.zip"
+            with mock.patch.object(installer_gui.urllib.request, "urlopen", fake_urlopen), \
+                 mock.patch.object(installer_gui.shutil, "which", curl_must_not_run):
+                with self.assertRaises(installer_gui.ChecksumMismatch) as cm:
+                    installer_gui._download_zip(
+                        "https://example.com/x.zip", dest, expected_sha256=wrong)
+            self.assertFalse(dest.exists())
+            self.assertIn(wrong, str(cm.exception))
+            self.assertIn(hashlib.sha256(payload).hexdigest(), str(cm.exception))
 
     def test_ssl_fail_falls_back_to_curl(self):
-        """ถ้า urllib fail (SSL cert) → ต้องลอง curl ก่อน unverified"""
+        """ถ้า urllib fail (SSL cert) → ลอง curl แล้วตรวจ SHA-256 ของไฟล์ที่ได้"""
         import ssl as ssl_module
 
-        def ssl_fail(url, path):
+        payload = b"PK\x03\x04curldata"
+        expected = hashlib.sha256(payload).hexdigest()
+
+        def ssl_fail(url, timeout=120):
             raise ssl_module.SSLError("CERTIFICATE_VERIFY_FAILED")
 
         def fake_curl_run(cmd, capture_output, timeout):
             # cmd = ["curl", "-fsSL", "--output", dest, url] → เขียน file ให้
             dest_idx = cmd.index("--output") + 1
-            Path(cmd[dest_idx]).write_bytes(b"PK\x03\x04curldata")
+            Path(cmd[dest_idx]).write_bytes(payload)
             m = mock.MagicMock()
             m.returncode = 0
             return m
 
         with tempfile.TemporaryDirectory() as tmp:
             dest = Path(tmp) / "out.zip"
-            with mock.patch.object(installer_gui.urllib.request, "urlretrieve", ssl_fail), \
+            with mock.patch.object(installer_gui.urllib.request, "urlopen", ssl_fail), \
                  mock.patch.object(installer_gui.shutil, "which", return_value="/usr/bin/curl"), \
                  mock.patch.object(installer_gui.subprocess, "run", fake_curl_run):
                 # Path.exists ต้องคืน True สำหรับ curl path
                 with mock.patch("pathlib.Path.exists", return_value=True):
-                    method = installer_gui._download_zip("https://x.com/y.zip", dest)
+                    method = installer_gui._download_zip(
+                        "https://x.com/y.zip", dest, expected_sha256=expected)
             self.assertEqual(method, "curl")
 
     def test_both_fail_raises_with_helpful_message(self):
         """ทั้ง urllib และ curl fail → RuntimeError + ข้อความชี้วิธีแก้"""
-        def ssl_fail(url, path):
+        def ssl_fail(url, timeout=120):
             raise OSError("ssl error")
         with tempfile.TemporaryDirectory() as tmp:
             dest = Path(tmp) / "out.zip"
-            with mock.patch.object(installer_gui.urllib.request, "urlretrieve", ssl_fail), \
+            with mock.patch.object(installer_gui.urllib.request, "urlopen", ssl_fail), \
                  mock.patch.object(installer_gui.shutil, "which", return_value=None):
                 with self.assertRaises(RuntimeError) as cm:
                     installer_gui._download_zip("https://x.com/y.zip", dest)
