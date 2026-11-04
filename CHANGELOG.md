@@ -4,6 +4,29 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [0.2.6] — 2026-11-04 (AI Cluster Setup — `scripts/ai_cluster_setup.sh`)
+
+ตามที่ user สั่ง: "ทำPRที่แก้ไขขั้นสูง ทำให้ GitHub database น้อย รวมเป็นไฟล์เดียวกัน"
+AI Cluster บน LAN 2 เครื่อง: Master (PC/Linux 192.168.1.10) + Worker (Notebook 192.168.1.20)
+
+### Added
+- `scripts/ai_cluster_setup.sh` — single-file cluster setup (ไม่มีแยกไฟล์ config):
+  - `phase_ollama()` — Ollama install + systemd `OLLAMA_HOST=0.0.0.0:11434` + `ufw allow`
+  - `phase_litellm()` — LiteLLM Docker + embedded YAML config (3 backends: Ollama/Claude/Gemini); MASTER_KEY auto-gen → `~/.lca/.env`
+  - `phase_webui()` — Open WebUI Docker `:3000` → ต่อ Ollama + LiteLLM
+  - `phase_tunnel()` — Cloudflare quick tunnel → `https://*.trycloudflare.com` (ไม่ต้อง login)
+  - `phase_verify()` — curl health checks ทุก service (Ollama/LiteLLM/WebUI/LCA)
+  - Commands: `all [--tunnel]`, `--verify`, `--stop`, `--worker`, `--tunnel`
+- `.claude/skills/ai-cluster-setup/SKILL.md` — Claude Code skill `/ai-cluster-setup`:
+  - ASCII architecture diagram (Master/Worker/Cloud)
+  - Commands, env vars, AI backends (Ollama/Claude/Gemini)
+  - 3-Agent development pattern (Leader/Engineer/QA Chef)
+  - Troubleshooting table + ports summary
+
+### No new tests (bash script — no Python test needed)
+
+**1101 tests pass** (ไม่เปลี่ยน)
+
 ## [0.2.5] — 2026-11-04 (Cluster Sync — `GET /api/nodes/sync`)
 
 ตามที่ user สั่ง: "PR TOdo ให้อัพเดท file แก้ อัพเดทงานตลอดและ pr วนลูปดูทางจริงทำงานยังไง"

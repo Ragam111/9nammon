@@ -1,15 +1,15 @@
 ---
 name: local-code-assistant
 description: >
-  LCA (Local Code Assistant) v0.2.4 — AI Coding Assistant + Desktop App แบบก้อนเดียว
-  รันบน Ollama (local/cloud hybrid), bind 127.0.0.1, 1091 tests pass.
+  LCA (Local Code Assistant) v0.2.6 — AI Coding Assistant + Desktop App แบบก้อนเดียว
+  รันบน Ollama (local/cloud hybrid), bind 127.0.0.1, 1101 tests pass.
   ใช้ skill นี้เมื่อผู้ใช้ต้องการ: ผู้ช่วยเขียนโค้ดที่รันใน terminal, แก้ไฟล์โค้ด
   อัตโนมัติแบบ diff, ใช้โมเดล local (Ollama) แทน Claude/OpenAI, desktop app (.exe
-  ไฟล์เดียว), เซิร์ฟเวอร์ schedule gate, observability endpoints, news RSS feed,
+  ไฟล์เดียว), AI Cluster LAN setup (Ollama+LiteLLM+WebUI+Cloudflare), 3-agent pattern,
   หรือพูดถึง "Aider", "coding agent ฟรี", "local LLM coding", "LCA Desktop"
 
 skill_memory_updated: "2026-11-04"
-version: "0.2.5"
+version: "0.2.6"
 tests_pass: 1101
 ---
 
@@ -192,6 +192,7 @@ PowerShell/CMD ต้องติดตั้งสำเร็จได้เ�
 | #117 (updated) | v0.2.3 | 2026-11-04 | Multi-tier Ollama selector: router + GET /api/models/recommend (+11 tests, 1081 total) | 🔄 open |
 | #117 (updated) | v0.2.4 | 2026-11-04 | LAN Discovery: lan_discovery + GET /api/nodes/discover (+10 tests, 1091 total) | 🔄 open |
 | #117 (updated) | v0.2.5 | 2026-11-04 | Cluster Sync: cluster_sync + GET /api/nodes/sync (+10 tests, 1101 total) | 🔄 open |
+| #117 (updated) | v0.2.6 | 2026-11-04 | AI Cluster Setup: scripts/ai_cluster_setup.sh (Ollama+LiteLLM+WebUI+Cloudflare, single-file) + .claude/skills/ai-cluster-setup/SKILL.md | 🔄 open |
 
 **หลักการ autopilot loop**: open atomic PR → CI → merge → sync branch → next PR
 Branch ทำงาน: `claude/windows-package-architecture-j4znro`
@@ -242,6 +243,7 @@ Branch ทำงาน: `claude/windows-package-architecture-j4znro`
 | **v0.2.3 Multi-tier Ollama Selector** | ✅ เสร็จ | `app/router.py`, `server.py`, `tests/test_router_api.py` | `GET /api/models/recommend` USER-gated; tier-based model list; Ollama installed check; 5-min cache; 1081 tests total |
 | **v0.2.4 LAN Discovery (P6 software)** | ✅ เสร็จ | `app/lan_discovery.py`, `server.py`, `tests/test_lan_discovery.py` | `GET /api/nodes/discover` ADMIN-gated; scan /24 subnet; thread pool; `_probe` ลอง /api/version; `get_local_ips()`; 1091 tests total |
 | **v0.2.5 Cluster Sync** | ✅ เสร็จ | `app/cluster_sync.py`, `server.py`, `tests/test_cluster_sync.py` | `GET /api/nodes/sync` ADMIN-gated; run LAN discovery → auto-register new nodes into cluster_store; skips existing; error passthrough; 1101 tests total |
+| **v0.2.6 AI Cluster Setup** | ✅ เสร็จ | `scripts/ai_cluster_setup.sh`, `.claude/skills/ai-cluster-setup/SKILL.md` | single-file bash: Ollama LAN + LiteLLM Docker (Ollama/Claude/Gemini) + Open WebUI + Cloudflare Tunnel; `/ai-cluster-setup` Claude Code skill; 3-agent pattern; 1101 tests total |
 | **ตกแต่ง CLI (สี + banner)** | ✅ เสร็จ | `local_coder.py` (`Color` class, `print_banner()`) | ใช้ ANSI escape code, เปิดใช้งานบน Windows cmd.exe ด้วย `os.system("")`, ทดสอบแล้วว่าสีขึ้นจริงทั้งตอนรันตรงและตอนรันผ่าน launcher ที่ install.sh สร้าง — ยึดหลัก 9arm ข้อ 1 (ไม่แต่งเติม): ข้อความ banner บอกแค่ "รันในเครื่อง, ฟรี" ไม่อ้างว่าเก่งเท่า Claude |
 | **พื้นที่จัดเก็บข้อมูลถาวรที่เดสก์ท็อป** (`sync_project`) | ✅ เสร็จ | `app/desktop_archive.py` | sync `CHANGELOG_local.md` + `todos.json` ไป `~/Desktop/LocalCodeAssistant-Data/<โปรเจกต์>/` ทุกครั้งหลังแก้ไฟล์หรือแก้ todo, มี `index.json` รวมทุกโปรเจกต์, คำสั่ง `/archive` ดูตำแหน่ง — ทดสอบแล้วทั้ง 2 เส้นทาง (apply diff + todo) ผ่าน มี fallback ถ้าสร้างโฟลเดอร์ Desktop ไม่ได้ (แต่ทดสอบ permission-denied จริงไม่ได้เพราะรันเป็น root ในแซนด์บ็อกซ์) |
 | **`/websearch on\|off`** (switch 0/1 ต่อเน็ตจริง) | ✅ เสร็จ | `app/web_search.py` | ค้นหาจริงผ่าน Brave Search API แล้วแปะผลลัพธ์เข้า context ก่อนส่งโมเดล — ทดสอบ flow เต็มรูปแบบกับ mock Brave API + mock Ollama แล้วผ่าน ถ้าไม่มี key จะแจ้งเตือนแล้ว fallback เป็นโมเดล local ล้วนอัตโนมัติ (ไม่ crash) |
