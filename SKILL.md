@@ -186,7 +186,7 @@ PowerShell/CMD ต้องติดตั้งสำเร็จได้เ�
 | #114 | v0.1.7 | 2026-11-04 | HTTP integration tests สำหรับ /api/admin/hw-profile (+6 tests) | ✅ merged |
 | #117 | v0.1.8 | 2026-11-04 | rate-limit 429 guard integration tests (+6 tests, 849 total) | ✅ merged |
 | #117 (updated) | v0.1.9 | 2026-11-04 | Review/Statistics API: stats_store + GET /api/admin/stats (+6 tests, 855 total) | 🔄 open |
-| #117 (updated) | v0.2.0 | 2026-11-04 | News RSS API: news_store + GET /api/news (+6 tests, 1055 total) | 🚀 pushing |
+| #117 (updated) | v0.2.0 | 2026-11-04 | News RSS API: news_store + GET /api/news (+6 tests, 1055 total) | 🔄 open |
 
 **หลักการ autopilot loop**: open atomic PR → CI → merge → sync branch → next PR
 Branch ทำงาน: `claude/windows-package-architecture-j4znro`
