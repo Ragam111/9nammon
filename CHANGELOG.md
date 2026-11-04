@@ -4,6 +4,27 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [0.1.9] — 2026-11-04 (Review/Statistics API — `GET /api/admin/stats`)
+
+ตามที่ user สั่ง: "PR TOdo ให้อัพเดท file แก้ อัพเดทงานตลอดและ pr วนลูปดูทางจริงทำงานยังไง"
+
+### Added
+- `app/stats_store.py` — SQLite counter (stdlib only): `record(project_root, endpoint, status)` + `get_stats()` คืน total_requests, total_errors, error_rate, last_24h, by_endpoint (top 20)
+- `GET /api/admin/stats` — ADMIN-gated endpoint บน server.py; บันทึกทุก `_send_json` response ก่อน write
+- `tests/test_stats_api.py` — 6 HTTP integration tests: 200 shape, error_rate type, RBAC 401, total increments, by_endpoint list
+
+### Tests
++6 `StatsApiTest` ใน `tests/test_stats_api.py`
+
+**855 tests pass** (จาก 849 → +6)
+
+## [0.1.8] — 2026-11-04 (rate-limit 429 guard — integration tests)
+
+### Tests
++6 `RateLimitHttpTest` + `RateLimitDisabledTest` ใน `tests/test_server_rate_limit.py`
+
+**849 tests pass** (จาก 843 → +6)
+
 ## [0.1.7] — 2026-11-04 (integration tests `/api/admin/hw-profile` — ตรวจสอบ endpoint จริง)
 
 ตามที่ user สั่ง: "PR TOdo ให้อัพเดท file แก้ อัพเดทงานตลอดและ pr วนลูปดูทางจริงทำงานยังไง"

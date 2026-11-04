@@ -49,6 +49,7 @@ from app import chat_hub  # noqa: E402  (chat hub: providers + conversation DB; 
 from app import cluster_store  # noqa: E402  (ทะเบียน + มอนิเตอร์ health ของหลาย node)
 from app import admission  # noqa: E402  (ยามคุมจำนวน generation พร้อมกัน กัน RAM thrash เครื่องสเปกต่ำ)
 from app import hw_profile  # noqa: E402  (โปรไฟล์ฮาร์ดแวร์: จัดระดับเครื่อง + แนะนำ config)
+from app import stats_store  # noqa: E402  (สถิติ request/response — บันทึกทุก endpoint, SQLite)
 from app import config_versions  # noqa: E402  (เวอร์ชัน + rollback ของ config — กัน incident)
 from app import space_store  # noqa: E402  (พื้นที่ส่วนตัว/บริษัท + ข้อความ — RBAC)
 from app import cluster_router  # noqa: E402  (สมองจัดคิวงานของคลัสเตอร์ — route งานไป node ที่พร้อม)
@@ -385,6 +386,11 @@ def make_handler(project_root: Path, auth_token: Optional[str],
 
         def _send_json(self, status: int, payload: dict):
             body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+            try:
+                ep = self.path.split("?")[0] if hasattr(self, "path") else "unknown"
+                stats_store.record(project_root, ep, status)
+            except Exception:
+                pass
             self.send_response(status)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
@@ -544,6 +550,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._handle_model_backend_settings_get()
             elif parsed.path == "/api/admin/hw-profile":
                 self._handle_hw_profile(parsed)
+            elif parsed.path == "/api/admin/stats":
+                self._handle_stats()
             elif parsed.path == "/api/admin/config/versions":
                 self._handle_config_versions_list()
             elif parsed.path == "/api/spaces":
@@ -1021,6 +1029,11 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._send_json(500, {"error": f"อ่านโปรไฟล์เครื่องไม่สำเร็จ: {e.__class__.__name__}"})
                 return
             self._send_json(200, {"profile": p})
+
+        def _handle_stats(self):
+            if self._require("ADMIN") is None:
+                return
+            self._send_json(200, stats_store.get_stats(project_root))
 
         # ---------- Spaces: พื้นที่ส่วนตัว/บริษัท (USER ขึ้นไป) ----------
         def _handle_spaces_list(self):
