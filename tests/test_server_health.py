@@ -133,7 +133,7 @@ class ServerHealthTest(unittest.TestCase):
 
 
 class HwProfileEndpointTest(unittest.TestCase):
-    """/api/admin/hw-profile — HTTP integration tests (local bind = CEO auto, ไม่ต้อง token)"""
+    """/api/admin/hw-profile — HTTP integration tests (local bind + session token = CEO auto)"""
 
     @classmethod
     def setUpClass(cls):
@@ -145,6 +145,7 @@ class HwProfileEndpointTest(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         root = Path(self._tmp.name)
         handler = server.make_handler(root, None)
+        self.session_token = handler.session_token
         self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
         self.port = self.httpd.server_address[1]
         self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
@@ -157,14 +158,14 @@ class HwProfileEndpointTest(unittest.TestCase):
 
     def _get(self, path):
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
-        conn.request("GET", path)
+        conn.request("GET", path, headers={"X-Auth-Token": self.session_token})
         resp = conn.getresponse()
         raw = resp.read().decode("utf-8")
         conn.close()
         return resp.status, json.loads(raw) if raw else {}
 
     def test_hw_profile_returns_200(self):
-        # local bind = CEO auto — ไม่ต้อง token → 200
+        # local bind + session token = CEO auto → 200
         st, _ = self._get("/api/admin/hw-profile?disk=0")
         self.assertEqual(st, 200)
 
