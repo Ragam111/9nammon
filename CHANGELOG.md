@@ -4,6 +4,20 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [0.2.4] — 2026-11-04 (LAN Discovery — `GET /api/nodes/discover`)
+
+ตามที่ user สั่ง: P6 LAN/IP 2-PC setup (software layer)
+
+### Added
+- `app/lan_discovery.py` — `discover(base_ip, port, timeout)`: scan /24 subnet ด้วย thread pool; ลอง `GET /api/version` แต่ละ IP; คืน `{nodes[], scanned, base_ip, elapsed_s}`; `get_local_ips()` รายการ IP เครื่องนี้ (กรอง loopback)
+- `GET /api/nodes/discover` — ADMIN-gated; `?port=`, `?timeout=`, `?base_ip=` override; เรียก `lan_discovery.discover()`
+- `tests/test_lan_discovery.py` — 10 tests: 6 HTTP + 4 unit (probe mock server, invalid IP, loopback scan)
+
+### Tests
++10 ใน `tests/test_lan_discovery.py`
+
+**1091 tests pass** (จาก 1081 → +10)
+
 ## [0.2.3] — 2026-11-04 (Multi-tier Ollama Selector — `GET /api/models/recommend`)
 
 ตามที่ user สั่ง: "PR TOdo ให้อัพเดท file แก้ อัพเดทงานตลอดและ pr วนลูปดูทางจริงทำงานยังไง"
