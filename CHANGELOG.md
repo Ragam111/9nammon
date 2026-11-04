@@ -4,6 +4,20 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [0.2.3] — 2026-11-04 (Multi-tier Ollama Selector — `GET /api/models/recommend`)
+
+ตามที่ user สั่ง: "PR TOdo ให้อัพเดท file แก้ อัพเดทงานตลอดและ pr วนลูปดูทางจริงทำงานยังไง"
+
+### Added
+- `app/router.py` — `recommend(project_root)` เรียก `hw_profile` ดู tier แล้วคืนรายการโมเดล Ollama ที่เหมาะ; เช็ค Ollama ผ่าน `GET /api/tags`; 5-min in-memory cache
+- `GET /api/models/recommend` — USER-gated; คืน tier, models[], top_pick, ollama_running, installed[]
+- `tests/test_router_api.py` — 11 tests: 8 HTTP + 3 unit; monkeypatch router.recommend + tearDownClass restore
+
+### Tests
++11 ใน `tests/test_router_api.py`
+
+**1081 tests pass** (จาก 1070 → +11)
+
 ## [0.2.2] — 2026-11-04 (Hardware Meter — `GET /api/metrics/hw`)
 
 ตามที่ user สั่ง: "PR TOdo ให้อัพเดท file แก้ อัพเดทงานตลอดและ pr วนลูปดูทางจริงทำงานยังไง"

@@ -1,16 +1,16 @@
 ---
 name: local-code-assistant
 description: >
-  LCA (Local Code Assistant) v0.2.2 — AI Coding Assistant + Desktop App แบบก้อนเดียว
-  รันบน Ollama (local/cloud hybrid), bind 127.0.0.1, 1070 tests pass.
+  LCA (Local Code Assistant) v0.2.3 — AI Coding Assistant + Desktop App แบบก้อนเดียว
+  รันบน Ollama (local/cloud hybrid), bind 127.0.0.1, 1081 tests pass.
   ใช้ skill นี้เมื่อผู้ใช้ต้องการ: ผู้ช่วยเขียนโค้ดที่รันใน terminal, แก้ไฟล์โค้ด
   อัตโนมัติแบบ diff, ใช้โมเดล local (Ollama) แทน Claude/OpenAI, desktop app (.exe
   ไฟล์เดียว), เซิร์ฟเวอร์ schedule gate, observability endpoints, news RSS feed,
   หรือพูดถึง "Aider", "coding agent ฟรี", "local LLM coding", "LCA Desktop"
 
 skill_memory_updated: "2026-11-04"
-version: "0.2.2"
-tests_pass: 1070
+version: "0.2.3"
+tests_pass: 1081
 ---
 
 # Local Code Assistant (Aider-style, powered by Ollama)
@@ -188,7 +188,8 @@ PowerShell/CMD ต้องติดตั้งสำเร็จได้เ�
 | #117 (updated) | v0.1.9 | 2026-11-04 | Review/Statistics API: stats_store + GET /api/admin/stats (+6 tests, 855 total) | 🔄 open |
 | #117 (updated) | v0.2.0 | 2026-11-04 | News RSS API: news_store + GET /api/news (+6 tests, 1055 total) | 🔄 open |
 | #117 (updated) | v0.2.1 | 2026-11-04 | DB layer: migration 0011 + db_manager + GET /api/admin/db/status (+9 tests, 1064 total) | 🔄 open |
-| #117 (updated) | v0.2.2 | 2026-11-04 | Hardware Meter: hw_meter + GET /api/metrics/hw (+6 tests, 1070 total) | 🚀 pushing |
+| #117 (updated) | v0.2.2 | 2026-11-04 | Hardware Meter: hw_meter + GET /api/metrics/hw (+6 tests, 1070 total) | 🔄 open |
+| #117 (updated) | v0.2.3 | 2026-11-04 | Multi-tier Ollama selector: router + GET /api/models/recommend (+11 tests, 1081 total) | 🚀 pushing |
 
 **หลักการ autopilot loop**: open atomic PR → CI → merge → sync branch → next PR
 Branch ทำงาน: `claude/windows-package-architecture-j4znro`
@@ -236,6 +237,7 @@ Branch ทำงาน: `claude/windows-package-architecture-j4znro`
 | **v0.2.0 News RSS API** | ✅ เสร็จ | `app/news_store.py`, `server.py`, `tests/test_news_api.py` | `GET /api/news` USER-gated; RSS/Atom fetcher + 15-min cache; `?feed=` override; 1055 tests total |
 | **v0.2.1 DB layer upgrade** | ✅ เสร็จ | `app/migrations/0011_*`, `app/db_manager.py`, `server.py`, `tests/test_db_manager.py` | migration 0011_server_events; `GET /api/admin/db/status` ADMIN-gated; 1064 tests total |
 | **v0.2.2 Hardware Meter** | ✅ เสร็จ | `app/hw_meter.py`, `server.py`, `tests/test_hw_meter_api.py` | `GET /api/metrics/hw` USER-gated; CPU %, RAM %, tier + recommended_model; `?interval=`; 1070 tests total |
+| **v0.2.3 Multi-tier Ollama Selector** | ✅ เสร็จ | `app/router.py`, `server.py`, `tests/test_router_api.py` | `GET /api/models/recommend` USER-gated; tier-based model list; Ollama installed check; 5-min cache; 1081 tests total |
 | **ตกแต่ง CLI (สี + banner)** | ✅ เสร็จ | `local_coder.py` (`Color` class, `print_banner()`) | ใช้ ANSI escape code, เปิดใช้งานบน Windows cmd.exe ด้วย `os.system("")`, ทดสอบแล้วว่าสีขึ้นจริงทั้งตอนรันตรงและตอนรันผ่าน launcher ที่ install.sh สร้าง — ยึดหลัก 9arm ข้อ 1 (ไม่แต่งเติม): ข้อความ banner บอกแค่ "รันในเครื่อง, ฟรี" ไม่อ้างว่าเก่งเท่า Claude |
 | **พื้นที่จัดเก็บข้อมูลถาวรที่เดสก์ท็อป** (`sync_project`) | ✅ เสร็จ | `app/desktop_archive.py` | sync `CHANGELOG_local.md` + `todos.json` ไป `~/Desktop/LocalCodeAssistant-Data/<โปรเจกต์>/` ทุกครั้งหลังแก้ไฟล์หรือแก้ todo, มี `index.json` รวมทุกโปรเจกต์, คำสั่ง `/archive` ดูตำแหน่ง — ทดสอบแล้วทั้ง 2 เส้นทาง (apply diff + todo) ผ่าน มี fallback ถ้าสร้างโฟลเดอร์ Desktop ไม่ได้ (แต่ทดสอบ permission-denied จริงไม่ได้เพราะรันเป็น root ในแซนด์บ็อกซ์) |
 | **`/websearch on\|off`** (switch 0/1 ต่อเน็ตจริง) | ✅ เสร็จ | `app/web_search.py` | ค้นหาจริงผ่าน Brave Search API แล้วแปะผลลัพธ์เข้า context ก่อนส่งโมเดล — ทดสอบ flow เต็มรูปแบบกับ mock Brave API + mock Ollama แล้วผ่าน ถ้าไม่มี key จะแจ้งเตือนแล้ว fallback เป็นโมเดล local ล้วนอัตโนมัติ (ไม่ crash) |

@@ -53,6 +53,7 @@ from app import stats_store  # noqa: E402  (สถิติ request/response —
 from app import news_store  # noqa: E402  (RSS feed fetcher พร้อม 15-min cache)
 from app import db_manager  # noqa: E402  (DB admin: status + migration + log_event)
 from app import hw_meter  # noqa: E402  (hardware meter: CPU %, RAM %, tier — real-time)
+from app import router  # noqa: E402  (multi-tier Ollama model selector — recommend per tier)
 from app import config_versions  # noqa: E402  (เวอร์ชัน + rollback ของ config — กัน incident)
 from app import space_store  # noqa: E402  (พื้นที่ส่วนตัว/บริษัท + ข้อความ — RBAC)
 from app import cluster_router  # noqa: E402  (สมองจัดคิวงานของคลัสเตอร์ — route งานไป node ที่พร้อม)
@@ -573,6 +574,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._handle_db_status()
             elif parsed.path == "/api/metrics/hw":
                 self._handle_hw_meter(parsed)
+            elif parsed.path == "/api/models/recommend":
+                self._handle_models_recommend()
             elif parsed.path == "/api/news":
                 self._handle_news(parsed)
             elif chat_hub.wants_get(parsed.path):
@@ -1056,6 +1059,12 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             except (TypeError, ValueError):
                 interval = 0.2
             self._send_json(200, hw_meter.snapshot(project_root, interval=interval))
+
+        # ---------- Multi-tier Ollama model selector (USER ขึ้นไป) ----------
+        def _handle_models_recommend(self):
+            if self._require("USER") is None:
+                return
+            self._send_json(200, router.recommend(project_root))
 
         # ---------- DB status (ADMIN) ----------
         def _handle_db_status(self):
