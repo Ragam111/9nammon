@@ -1,12 +1,16 @@
 ---
 name: local-code-assistant
 description: >
-  สร้าง AI Coding Assistant บน Terminal ของตัวเอง (คล้าย Aider / Claude Code)
-  โดยใช้ Ollama รันโมเดลฟรีในเครื่อง ไม่มีค่า API เลย เก็บข้อมูล/ประวัติงานไว้
-  ที่โฟลเดอร์เดสก์ท็อปถาวร อัปเดตต่อเนื่อง ใช้ skill นี้เมื่อผู้ใช้ต้องการ:
-  ผู้ช่วยเขียนโค้ดที่รันใน terminal, แก้ไฟล์โค้ดอัตโนมัติแบบ diff,
-  ใช้โมเดล local (Ollama) แทน Claude/OpenAI, ต้องการเก็บ log/ประวัติงานไว้ดูย้อนหลัง
-  ที่เดียวถาวร, หรือพูดถึง "Aider", "coding agent ฟรี", "local LLM coding"
+  LCA (Local Code Assistant) v0.1.7 — AI Coding Assistant + Desktop App แบบก้อนเดียว
+  รันบน Ollama (local/cloud hybrid), bind 127.0.0.1, 843 tests pass.
+  ใช้ skill นี้เมื่อผู้ใช้ต้องการ: ผู้ช่วยเขียนโค้ดที่รันใน terminal, แก้ไฟล์โค้ด
+  อัตโนมัติแบบ diff, ใช้โมเดล local (Ollama) แทน Claude/OpenAI, desktop app (.exe
+  ไฟล์เดียว), เซิร์ฟเวอร์ schedule gate, observability endpoints, หรือพูดถึง
+  "Aider", "coding agent ฟรี", "local LLM coding", "LCA Desktop"
+
+skill_memory_updated: "2026-11-04"
+version: "0.1.7"
+tests_pass: 843
 ---
 
 # Local Code Assistant (Aider-style, powered by Ollama)
@@ -51,7 +55,7 @@ Skill นี้คือชุดเครื่องมือ (CLI + หน้
 3. **ติดตั้ง Ollama** ถ้ายังไม่มี (ลิงก์จะโชว์ตอนรัน install.ps1) แล้วรัน
    `ollama pull <ชื่อโมเดลที่แนะนำ>`
 4. **เปิด terminal ใหม่** แล้วใช้คำสั่ง `lca <path โปรเจกต์>` (CLI) หรือ
-   `lca-web <path โปรเจกต์>` (หน้าเว็บที่ `http://127.0.0.1:8420`)
+   `start-lca.bat` (หน้าเว็บที่ `http://127.0.0.1:8420`) หรือ `LCA-Desktop.exe --version` เพื่อตรวจเวอร์ชัน
 5. **ตรวจสอบพื้นที่เก็บข้อมูลถาวร**: พิมพ์ `/archive` ใน CLI เพื่อดู path เดสก์ท็อป
    ที่ข้อมูลถูก sync ไปไว้ (ค่าเริ่มต้นคือ `Desktop\LocalCodeAssistant-Data\`
    บน Windows)
@@ -161,6 +165,23 @@ PowerShell/CMD ต้องติดตั้งสำเร็จได้เ�
   เขียน boilerplate, อธิบายโค้ด, ตอบคำถามทั่วไป — ไม่ใช่งาน architecture ระดับใหญ่
   หรือ agent ที่ทำงานอิสระเต็มรูปแบบแบบ Claude Code จริงๆ
 
+## PR History — ประวัติ PR ทั้งหมด (autopilot loop)
+
+| PR | Version | วันที่ | เรื่อง | สถานะ |
+|---|---|---|---|---|
+| #89–#93 | v0.1.0 | 2026-10-29 | Official Release: 812 tests, schedule gate, security fixes, disk check | ✅ merged |
+| #94 | v0.1.1 | 2026-10-29 | Bug fixes: SSL cert hotfix installer_gui, _schedule_gated trailing slash | ✅ merged |
+| #95–#101 | v0.1.1–v0.1.3 | 2026-10-30 | LCA-Desktop (.exe), file cleanup (install.sh/lca-web.bat ลบ) | ✅ merged |
+| #102 | v0.1.4 | 2026-10-30 | `GET /api/version` endpoint (public, schedule allowlist) | ✅ merged |
+| #103 | v0.1.5 | 2026-10-30 | Docs cleanup: stale refs, port 8420 fix | ✅ merged |
+| #104 | v0.1.6 | 2026-10-30 | `--version` CLI flag: server.py + lca_app.py (ตรงกับ /api/version) | ✅ merged |
+| #114 | v0.1.7 | 2026-11-04 | HTTP integration tests สำหรับ /api/admin/hw-profile (+6 tests) | 🔄 CI กำลังรัน |
+
+**หลักการ autopilot loop**: open atomic PR → CI → merge → sync branch → next PR
+Branch ทำงาน: `claude/windows-package-architecture-j4znro`
+
+---
+
 ## TODO — สถานะ Implement จริง (เช็คตรงนี้ที่เดียว)
 
 หัวข้ออื่นในเอกสารนี้พูดถึงฟีเจอร์ที่ "ยังไม่ implement" กระจายอยู่หลายจุด
@@ -189,6 +210,14 @@ PowerShell/CMD ต้องติดตั้งสำเร็จได้เ�
 | **Windows GUI Installer** (`installer.iss` → `setup.exe`) | ⚠️ เขียนแล้ว, ตรวจ static ครบ section | `windows-package/installer.iss` | ต้องคอมไพล์ด้วย Inno Setup Compiler (ฟรี, Windows เท่านั้น) — **ยังไม่เคยคอมไพล์/รันจริง** ไม่มี privilege ขอ admin (ติดตั้งใน `%LOCALAPPDATA%`), มีหน้า INFO_BEFORE เตือนสถานะ early-stage ก่อนติดตั้ง |
 | **Online One-liner Installer** (`install_online.ps1`) | ⚠️ เขียนแล้ว, มี guard ป้องกัน placeholder URL | `windows-package/install_online.ps1` | ดึง zip จาก URL (ต้องเป็น GitHub Releases จริงหรือที่ host อื่น) → แตกไฟล์ที่ `%TEMP%` → เรียก `install.ps1` ข้างในอัตโนมัติ → ลบไฟล์ชั่วคราว — **`$ZipUrl` ยังเป็น placeholder ต้องแก้ก่อนใช้จริง** ถ้าไม่แก้จะปฏิเสธทำงานทันที (fail ดัง ไม่ fail เงียบ) — ยังไม่เคยรันจริงบน Windows |
 | **Version 0.0.2** | ✅ เสร็จ | `local_coder.py` (`__version__`), banner, `install.ps1/.sh`, `installer.iss`, เอกสารทั้งหมด | bump จาก 0.0.1 → 0.0.2 (เคลียร์ `__pycache__` ก่อน bump), เลขเวอร์ชันตรงกันทุกไฟล์ ไม่ใช้ 1.0.0 (ยังไม่ stable จริง ตามหลัก 9arm ข้อ 1) — ทดสอบแล้วว่า banner แสดง v0.0.2 ถูกต้อง |
+| **v0.1.0 Official Release** | ✅ เสร็จ | หลายไฟล์ | 812 tests, schedule gate (06–20 TH), /api/status, system tray, security (hmac.compare_digest + body size limit), disk pre-check |
+| **v0.1.1 Bug fixes** | ✅ เสร็จ | `installer_gui.py`, `server.py` | `check_free_disk` ตรวจทั้ง install_dir + TEMP; `_schedule_gated` trailing slash fix (`_norm_path()`) |
+| **v0.1.2 SSL cert hotfix** | ✅ เสร็จ | `installer_gui.py` | `_download_zip()` fallback 2 ชั้น: urllib → curl.exe → RuntimeError |
+| **v0.1.3 File cleanup** | ✅ เสร็จ | หลายไฟล์ | ลบ `install.sh`, `install_online.ps1`, `lca-web.bat` (ซ้ำซ้อน) |
+| **v0.1.4 /api/version** | ✅ เสร็จ | `server.py`, `tests/test_server_health.py` | GET /api/version (public, schedule allowlist) → {version, python, name}; +4 tests |
+| **v0.1.5 Docs cleanup** | ✅ เสร็จ | `docs/APP_WALKTHROUGH.md`, `docs/GO_ONLINE_FREE.md`, `docs/RESOURCE_MANAGER_DESIGN.md`, `install.ps1` | ลบ stale refs ไฟล์ที่ลบใน v0.1.3; port 8420 ถูกต้อง |
+| **v0.1.6 --version CLI** | ✅ เสร็จ | `server.py`, `lca_app.py`, `tests/test_lca_app.py` | `server.py --version` + `lca_app.py --version` → exit 0; `read_version()` helper shared กับ /api/version; +7 tests |
+| **v0.1.7 hw-profile HTTP tests** | ✅ เสร็จ | `tests/test_server_health.py` | +6 `HwProfileEndpointTest`: 200 OK, shape, tier valid, recommended_config, next_upgrade string, no-disk-param safe; 843 tests total |
 | **ตกแต่ง CLI (สี + banner)** | ✅ เสร็จ | `local_coder.py` (`Color` class, `print_banner()`) | ใช้ ANSI escape code, เปิดใช้งานบน Windows cmd.exe ด้วย `os.system("")`, ทดสอบแล้วว่าสีขึ้นจริงทั้งตอนรันตรงและตอนรันผ่าน launcher ที่ install.sh สร้าง — ยึดหลัก 9arm ข้อ 1 (ไม่แต่งเติม): ข้อความ banner บอกแค่ "รันในเครื่อง, ฟรี" ไม่อ้างว่าเก่งเท่า Claude |
 | **พื้นที่จัดเก็บข้อมูลถาวรที่เดสก์ท็อป** (`sync_project`) | ✅ เสร็จ | `app/desktop_archive.py` | sync `CHANGELOG_local.md` + `todos.json` ไป `~/Desktop/LocalCodeAssistant-Data/<โปรเจกต์>/` ทุกครั้งหลังแก้ไฟล์หรือแก้ todo, มี `index.json` รวมทุกโปรเจกต์, คำสั่ง `/archive` ดูตำแหน่ง — ทดสอบแล้วทั้ง 2 เส้นทาง (apply diff + todo) ผ่าน มี fallback ถ้าสร้างโฟลเดอร์ Desktop ไม่ได้ (แต่ทดสอบ permission-denied จริงไม่ได้เพราะรันเป็น root ในแซนด์บ็อกซ์) |
 | **`/websearch on\|off`** (switch 0/1 ต่อเน็ตจริง) | ✅ เสร็จ | `app/web_search.py` | ค้นหาจริงผ่าน Brave Search API แล้วแปะผลลัพธ์เข้า context ก่อนส่งโมเดล — ทดสอบ flow เต็มรูปแบบกับ mock Brave API + mock Ollama แล้วผ่าน ถ้าไม่มี key จะแจ้งเตือนแล้ว fallback เป็นโมเดล local ล้วนอัตโนมัติ (ไม่ crash) |
@@ -463,6 +492,24 @@ uninstaller (copy ไปรันที่ `%TEMP%` ก่อนลบตัว�
     ต่างจากไฟล์อื่นในโปรเจกต์ ถ้ามี `.gitignore` ต้องเพิ่ม `config.json` เข้าไปด้วย
     เสมอ และห้าม print ค่า key เต็มๆ ออกจอ (ฟังก์ชัน `list_configured_keys()`
     คืนแค่ชื่อ key ไม่คืนค่าจริง ให้ยึดรูปแบบนี้ต่อไปถ้าจะเพิ่มฟังก์ชันโชว์ config)
+
+## Observability Chain (v0.1.4–v0.1.7) — ตรวจสอบสถานะระบบจากทุกจุด
+
+ออกแบบตาม "observability-first" principle: ผู้ใช้/support ต้องเช็กสถานะระบบได้เสมอ
+
+| endpoint / คำสั่ง | auth | คืนอะไร | ใช้ตอนไหน |
+|---|---|---|---|
+| `GET /api/health` | public | ok, ollama, ram_pressure, recommended_model, backend, network | liveness check, smoke test |
+| `GET /api/status` | public | isOpen, nextChange, Retry-After | ลูกค้าดูว่าเซิร์ฟเวอร์เปิดอยู่ไหม |
+| `GET /api/version` | public | version, python, name | QA/support ถามเวอร์ชัน |
+| `server.py --version` | CLI | LCA X.Y.Z (python X.Y.Z) | dev เช็กก่อนรัน, --no-GUI |
+| `lca_app.py --version` | CLI | LCA Desktop X.Y.Z (python X.Y.Z) | dev/sysadmin เช็ก bundle |
+| `GET /api/admin/hw-profile` | ADMIN+ | tier, cpu_model, ram_gb, recommended_config, next_upgrade | support ถามสเปกเครื่อง |
+
+ทุก endpoint ใช้ `VERSION` file ผ่าน `read_version()` helper เดียวกัน — ไม่มี drift
+กฎ: อย่าเพิ่ม observability endpoint ใหม่โดยไม่เพิ่มเข้าตารางนี้
+
+---
 
 ## แนวคิด
 
