@@ -189,7 +189,7 @@ PowerShell/CMD ต้องติดตั้งสำเร็จได้เ�
 | #117 (updated) | v0.2.0 | 2026-11-04 | News RSS API: news_store + GET /api/news (+6 tests, 1055 total) | 🔄 open |
 | #117 (updated) | v0.2.1 | 2026-11-04 | DB layer: migration 0011 + db_manager + GET /api/admin/db/status (+9 tests, 1064 total) | 🔄 open |
 | #117 (updated) | v0.2.2 | 2026-11-04 | Hardware Meter: hw_meter + GET /api/metrics/hw (+6 tests, 1070 total) | 🔄 open |
-| #117 (updated) | v0.2.3 | 2026-11-04 | Multi-tier Ollama selector: router + GET /api/models/recommend (+11 tests, 1081 total) | 🚀 pushing |
+| #117 (updated) | v0.2.3 | 2026-11-04 | Multi-tier Ollama selector: router + GET /api/models/recommend (+11 tests, 1081 total) | 🔄 open |
 
 **หลักการ autopilot loop**: open atomic PR → CI → merge → sync branch → next PR
 Branch ทำงาน: `claude/windows-package-architecture-j4znro`
