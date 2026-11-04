@@ -4,6 +4,20 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [0.2.5] — 2026-11-04 (Cluster Sync — `GET /api/nodes/sync`)
+
+ตามที่ user สั่ง: "PR TOdo ให้อัพเดท file แก้ อัพเดทงานตลอดและ pr วนลูปดูทางจริงทำงานยังไง"
+
+### Added
+- `app/cluster_sync.py` — `sync_discovered(project_root, base_ip, port, timeout)`: รัน LAN discovery แล้วลงทะเบียน node ที่พบใหม่เข้า cluster_store อัตโนมัติ; คืน `{added[], existing[], scanned, elapsed_s}`; ถ้า discover error คืน field `error` ด้วย
+- `GET /api/nodes/sync` — ADMIN-gated; `?port=`, `?timeout=`, `?base_ip=` เหมือน /discover; เรียก `cluster_sync.sync_discovered()`; bridges lan_discovery ↔ cluster_store
+- `tests/test_cluster_sync.py` — 10 tests: 6 HTTP + 4 unit (adds new node, skips existing, error passthrough, no nodes)
+
+### Tests
++10 ใน `tests/test_cluster_sync.py`
+
+**1101 tests pass** (จาก 1091 → +10)
+
 ## [0.2.4] — 2026-11-04 (LAN Discovery — `GET /api/nodes/discover`)
 
 ตามที่ user สั่ง: P6 LAN/IP 2-PC setup (software layer)

@@ -55,6 +55,7 @@ from app import db_manager  # noqa: E402  (DB admin: status + migration + log_ev
 from app import hw_meter  # noqa: E402  (hardware meter: CPU %, RAM %, tier — real-time)
 from app import router  # noqa: E402  (multi-tier Ollama model selector — recommend per tier)
 from app import lan_discovery  # noqa: E402  (LAN subnet scanner — auto-discover LCA nodes)
+from app import cluster_sync  # noqa: E402  (sync discovered nodes → cluster registry)
 from app import config_versions  # noqa: E402  (เวอร์ชัน + rollback ของ config — กัน incident)
 from app import space_store  # noqa: E402  (พื้นที่ส่วนตัว/บริษัท + ข้อความ — RBAC)
 from app import cluster_router  # noqa: E402  (สมองจัดคิวงานของคลัสเตอร์ — route งานไป node ที่พร้อม)
@@ -579,6 +580,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._handle_models_recommend()
             elif parsed.path == "/api/nodes/discover":
                 self._handle_nodes_discover(parsed)
+            elif parsed.path == "/api/nodes/sync":
+                self._handle_nodes_sync(parsed)
             elif parsed.path == "/api/news":
                 self._handle_news(parsed)
             elif chat_hub.wants_get(parsed.path):
@@ -1088,6 +1091,26 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             base_ip = (qs.get("base_ip") or [None])[0] or None
             self._send_json(200, lan_discovery.discover(
                 base_ip=base_ip, port=port, timeout=timeout))
+
+        # ---------- Cluster sync: discover → register nodes (ADMIN) ----------
+        def _handle_nodes_sync(self, parsed):
+            if self._require("ADMIN") is None:
+                return
+            from urllib.parse import parse_qs
+            qs = parse_qs(parsed.query)
+            try:
+                port = int(qs.get("port", ["8420"])[0])
+                port = max(1, min(port, 65535))
+            except (TypeError, ValueError):
+                port = 8420
+            try:
+                timeout = float(qs.get("timeout", ["0.5"])[0])
+                timeout = max(0.1, min(timeout, 5.0))
+            except (TypeError, ValueError):
+                timeout = 0.5
+            base_ip = (qs.get("base_ip") or [None])[0] or None
+            self._send_json(200, cluster_sync.sync_discovered(
+                project_root, base_ip=base_ip, port=port, timeout=timeout))
 
         # ---------- DB status (ADMIN) ----------
         def _handle_db_status(self):
