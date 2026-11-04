@@ -49,6 +49,13 @@ from app import chat_hub  # noqa: E402  (chat hub: providers + conversation DB; 
 from app import cluster_store  # noqa: E402  (ทะเบียน + มอนิเตอร์ health ของหลาย node)
 from app import admission  # noqa: E402  (ยามคุมจำนวน generation พร้อมกัน กัน RAM thrash เครื่องสเปกต่ำ)
 from app import hw_profile  # noqa: E402  (โปรไฟล์ฮาร์ดแวร์: จัดระดับเครื่อง + แนะนำ config)
+from app import stats_store  # noqa: E402  (สถิติ request/response — บันทึกทุก endpoint, SQLite)
+from app import news_store  # noqa: E402  (RSS feed fetcher พร้อม 15-min cache)
+from app import db_manager  # noqa: E402  (DB admin: status + migration + log_event)
+from app import hw_meter  # noqa: E402  (hardware meter: CPU %, RAM %, tier — real-time)
+from app import router  # noqa: E402  (multi-tier Ollama model selector — recommend per tier)
+from app import lan_discovery  # noqa: E402  (LAN subnet scanner — auto-discover LCA nodes)
+from app import cluster_sync  # noqa: E402  (sync discovered nodes → cluster registry)
 from app import config_versions  # noqa: E402  (เวอร์ชัน + rollback ของ config — กัน incident)
 from app import space_store  # noqa: E402  (พื้นที่ส่วนตัว/บริษัท + ข้อความ — RBAC)
 from app import cluster_router  # noqa: E402  (สมองจัดคิวงานของคลัสเตอร์ — route งานไป node ที่พร้อม)
@@ -385,6 +392,11 @@ def make_handler(project_root: Path, auth_token: Optional[str],
 
         def _send_json(self, status: int, payload: dict):
             body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+            try:
+                ep = self.path.split("?")[0] if hasattr(self, "path") else "unknown"
+                stats_store.record(project_root, ep, status)
+            except Exception:
+                pass
             self.send_response(status)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
@@ -544,6 +556,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._handle_model_backend_settings_get()
             elif parsed.path == "/api/admin/hw-profile":
                 self._handle_hw_profile(parsed)
+            elif parsed.path == "/api/admin/stats":
+                self._handle_stats()
             elif parsed.path == "/api/admin/config/versions":
                 self._handle_config_versions_list()
             elif parsed.path == "/api/spaces":
@@ -558,6 +572,18 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._handle_bots_list()
             elif parsed.path == "/api/connections/usage":
                 self._handle_connections_usage()
+            elif parsed.path == "/api/admin/db/status":
+                self._handle_db_status()
+            elif parsed.path == "/api/metrics/hw":
+                self._handle_hw_meter(parsed)
+            elif parsed.path == "/api/models/recommend":
+                self._handle_models_recommend()
+            elif parsed.path == "/api/nodes/discover":
+                self._handle_nodes_discover(parsed)
+            elif parsed.path == "/api/nodes/sync":
+                self._handle_nodes_sync(parsed)
+            elif parsed.path == "/api/news":
+                self._handle_news(parsed)
             elif chat_hub.wants_get(parsed.path):
                 chat_hub.handle_get(self, parsed, project_root)
             else:
@@ -1021,6 +1047,85 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._send_json(500, {"error": f"อ่านโปรไฟล์เครื่องไม่สำเร็จ: {e.__class__.__name__}"})
                 return
             self._send_json(200, {"profile": p})
+
+        def _handle_stats(self):
+            if self._require("ADMIN") is None:
+                return
+            self._send_json(200, stats_store.get_stats(project_root))
+
+        # ---------- Hardware Meter: CPU %, RAM, tier (USER ขึ้นไป) ----------
+        def _handle_hw_meter(self, parsed):
+            if self._require("USER") is None:
+                return
+            from urllib.parse import parse_qs
+            qs = parse_qs(parsed.query)
+            try:
+                interval = float(qs.get("interval", ["0.2"])[0])
+                interval = max(0.05, min(interval, 2.0))
+            except (TypeError, ValueError):
+                interval = 0.2
+            self._send_json(200, hw_meter.snapshot(project_root, interval=interval))
+
+        # ---------- Multi-tier Ollama model selector (USER ขึ้นไป) ----------
+        def _handle_models_recommend(self):
+            if self._require("USER") is None:
+                return
+            self._send_json(200, router.recommend(project_root))
+
+        # ---------- LAN discovery: scan subnet หา LCA nodes (ADMIN) ----------
+        def _handle_nodes_discover(self, parsed):
+            if self._require("ADMIN") is None:
+                return
+            from urllib.parse import parse_qs
+            qs = parse_qs(parsed.query)
+            try:
+                port = int(qs.get("port", ["8420"])[0])
+                port = max(1, min(port, 65535))
+            except (TypeError, ValueError):
+                port = 8420
+            try:
+                timeout = float(qs.get("timeout", ["0.5"])[0])
+                timeout = max(0.1, min(timeout, 5.0))
+            except (TypeError, ValueError):
+                timeout = 0.5
+            base_ip = (qs.get("base_ip") or [None])[0] or None
+            self._send_json(200, lan_discovery.discover(
+                base_ip=base_ip, port=port, timeout=timeout))
+
+        # ---------- Cluster sync: discover → register nodes (ADMIN) ----------
+        def _handle_nodes_sync(self, parsed):
+            if self._require("ADMIN") is None:
+                return
+            from urllib.parse import parse_qs
+            qs = parse_qs(parsed.query)
+            try:
+                port = int(qs.get("port", ["8420"])[0])
+                port = max(1, min(port, 65535))
+            except (TypeError, ValueError):
+                port = 8420
+            try:
+                timeout = float(qs.get("timeout", ["0.5"])[0])
+                timeout = max(0.1, min(timeout, 5.0))
+            except (TypeError, ValueError):
+                timeout = 0.5
+            base_ip = (qs.get("base_ip") or [None])[0] or None
+            self._send_json(200, cluster_sync.sync_discovered(
+                project_root, base_ip=base_ip, port=port, timeout=timeout))
+
+        # ---------- DB status (ADMIN) ----------
+        def _handle_db_status(self):
+            if self._require("ADMIN") is None:
+                return
+            self._send_json(200, db_manager.get_db_status(project_root))
+
+        # ---------- News: RSS feed (USER ขึ้นไป) ----------
+        def _handle_news(self, parsed):
+            if self._require("USER") is None:
+                return
+            from urllib.parse import parse_qs
+            qs = parse_qs(parsed.query)
+            feeds = qs.get("feed") or None
+            self._send_json(200, news_store.get_news(feeds))
 
         # ---------- Spaces: พื้นที่ส่วนตัว/บริษัท (USER ขึ้นไป) ----------
         def _handle_spaces_list(self):
