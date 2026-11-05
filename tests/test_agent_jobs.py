@@ -61,6 +61,39 @@ class AgentJobsTest(unittest.TestCase):
     def test_complete_unknown_id(self):
         self.assertFalse(jobs.complete(self.root, "job-nope", {"ok": True}))
 
+    def test_enqueue_returns_dict(self):
+        j = jobs.enqueue(self.root, "task")
+        self.assertIsInstance(j, dict)
+
+    def test_enqueue_has_required_keys(self):
+        j = jobs.enqueue(self.root, "task")
+        for key in ("id", "status", "task", "source"):
+            self.assertIn(key, j)
+
+    def test_enqueue_id_is_string(self):
+        j = jobs.enqueue(self.root, "task")
+        self.assertIsInstance(j["id"], str)
+        self.assertTrue(j["id"].startswith("job-"))
+
+    def test_enqueue_default_source_is_api(self):
+        j = jobs.enqueue(self.root, "task")
+        self.assertEqual(j["source"], "api")
+
+    def test_list_jobs_returns_list(self):
+        jobs.enqueue(self.root, "a")
+        result = jobs.list_jobs(self.root)
+        self.assertIsInstance(result, list)
+        self.assertEqual(len(result), 1)
+
+    def test_stats_returns_dict_with_total(self):
+        st = jobs.stats(self.root)
+        self.assertIsInstance(st, dict)
+        self.assertIn("total", st)
+        self.assertEqual(st["total"], 0)
+
+    def test_get_missing_returns_none(self):
+        self.assertIsNone(jobs.get(self.root, "job-nonexistent"))
+
 
 if __name__ == "__main__":
     unittest.main()
