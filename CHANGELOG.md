@@ -4,6 +4,16 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [0.3.6] — 2026-11-05
+
+### Added
+- tests/test_sha256_verify.py: 2 → 27 tests — installer_gui.py coverage:
+  ChecksumMismatch class, _normalize_sha256 (valid/uppercase/whitespace/invalid),
+  default_install_dir (LOCALAPPDATA/fallback), _discard (remove/silent),
+  _find_src_root (top-level/subdir/missing), _ensure_start_launcher (create/keep/content),
+  verify_sha256 edge cases (bad hash format, missing file)
+- Module constants: APP_NAME, COPY_DIRS, COPY_FILES, MIN_FREE_DISK_BYTES, ZIP_SHA256
+
 ## [0.3.4] — 2026-11-05 (Test Coverage — router unit tests)
 
 ### Added
