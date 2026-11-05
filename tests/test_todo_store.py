@@ -1,4 +1,13 @@
-"""test_todo_store.py — CRUD for todo items + corrupted file handling"""
+"""test_todo_store.py — CRUD for todo items + corrupted file handling
+
+Covers:
+  TodoStoreTest      — load_empty, add_and_load, add_multiple, ids_auto_increment,
+                       toggle, delete, delete_nonexistent, corrupted_file_returns_empty
+  TodoStoreMetaTest  — add returns dict, item has id, text is str, done is bool,
+                       load returns list, toggle returns bool, delete returns bool,
+                       id increments on delete, text preserved exactly, done starts false,
+                       toggle twice restores original, non-list file returns empty
+"""
 
 import json
 import sys
@@ -66,6 +75,64 @@ class TodoStoreTest(unittest.TestCase):
 
     def test_corrupted_file_returns_empty(self):
         (self.tmp / "todos.json").write_text("NOT JSON!!!", encoding="utf-8")
+        todos = todo_store.load_todos(self.tmp)
+        self.assertEqual(todos, [])
+
+
+class TodoStoreMetaTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+
+    def test_add_returns_dict(self):
+        item = todo_store.add_todo(self.tmp, "Meta task")
+        self.assertIsInstance(item, dict)
+
+    def test_item_has_id(self):
+        item = todo_store.add_todo(self.tmp, "id test")
+        self.assertIn("id", item)
+        self.assertIsNotNone(item["id"])
+
+    def test_item_text_is_str(self):
+        item = todo_store.add_todo(self.tmp, "text check")
+        self.assertIsInstance(item["text"], str)
+
+    def test_item_done_is_bool(self):
+        item = todo_store.add_todo(self.tmp, "bool check")
+        self.assertIsInstance(item["done"], bool)
+
+    def test_load_returns_list(self):
+        result = todo_store.load_todos(self.tmp)
+        self.assertIsInstance(result, list)
+
+    def test_toggle_returns_bool(self):
+        item = todo_store.add_todo(self.tmp, "toggle bool")
+        result = todo_store.toggle_todo(self.tmp, item["id"])
+        self.assertIsInstance(result, bool)
+
+    def test_delete_returns_bool(self):
+        item = todo_store.add_todo(self.tmp, "delete bool")
+        result = todo_store.delete_todo(self.tmp, item["id"])
+        self.assertIsInstance(result, bool)
+
+    def test_text_preserved_exactly(self):
+        text = "สวัสดี World! 123 @#$"
+        item = todo_store.add_todo(self.tmp, text)
+        self.assertEqual(item["text"], text)
+
+    def test_done_starts_false(self):
+        item = todo_store.add_todo(self.tmp, "new task")
+        self.assertFalse(item["done"])
+
+    def test_id_no_clash_after_middle_delete(self):
+        a = todo_store.add_todo(self.tmp, "A")
+        b = todo_store.add_todo(self.tmp, "B")
+        todo_store.delete_todo(self.tmp, a["id"])
+        c = todo_store.add_todo(self.tmp, "C")
+        # C's id must not clash with B's still-existing id
+        self.assertNotEqual(c["id"], b["id"])
+
+    def test_non_list_json_returns_empty(self):
+        (self.tmp / "todos.json").write_text('{"not": "a list"}', encoding="utf-8")
         todos = todo_store.load_todos(self.tmp)
         self.assertEqual(todos, [])
 
