@@ -4,6 +4,15 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [0.3.4] — 2026-11-05 (Test Coverage — router unit tests)
+
+### Added
+- `tests/test_router.py` — 27 unit tests covering `_TIER_MODELS` structure,
+  `_ollama_installed_models()` (success/URLError/bad-JSON), and `recommend()`
+  (shape, tier mapping, unknown-tier fallback, profile-exception, installed flags,
+  top_pick logic, cache hit, cached_until)
+- Test suite: 1246 → 1273 tests total
+
 ## [0.3.3] — 2026-11-05 (Test Coverage — cli_session unit tests)
 
 ### Added
