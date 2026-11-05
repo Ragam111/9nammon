@@ -70,5 +70,53 @@ class TodoStoreTest(unittest.TestCase):
         self.assertEqual(todos, [])
 
 
+class TodoStoreExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_add_todo_returns_dict(self):
+        result = todo_store.add_todo(self.tmp, "task")
+        self.assertIsInstance(result, dict)
+
+    def test_add_todo_id_is_int(self):
+        result = todo_store.add_todo(self.tmp, "task")
+        self.assertIsInstance(result["id"], int)
+
+    def test_add_todo_has_text_key(self):
+        result = todo_store.add_todo(self.tmp, "task text")
+        self.assertIn("text", result)
+        self.assertEqual(result["text"], "task text")
+
+    def test_load_todos_returns_list(self):
+        todo_store.add_todo(self.tmp, "t1")
+        todos = todo_store.load_todos(self.tmp)
+        self.assertIsInstance(todos, list)
+
+    def test_toggle_returns_bool(self):
+        t = todo_store.add_todo(self.tmp, "toggle me")
+        result = todo_store.toggle_todo(self.tmp, t["id"])
+        self.assertIsInstance(result, bool)
+
+    def test_delete_returns_bool(self):
+        t = todo_store.add_todo(self.tmp, "delete me")
+        result = todo_store.delete_todo(self.tmp, t["id"])
+        self.assertIsInstance(result, bool)
+        self.assertTrue(result)
+
+    def test_delete_missing_returns_false(self):
+        result = todo_store.delete_todo(self.tmp, 99999)
+        self.assertIsInstance(result, bool)
+        self.assertFalse(result)
+
+    def test_add_multiple_ids_unique(self):
+        t1 = todo_store.add_todo(self.tmp, "first")
+        t2 = todo_store.add_todo(self.tmp, "second")
+        self.assertNotEqual(t1["id"], t2["id"])
+
+
 if __name__ == "__main__":
     unittest.main()
