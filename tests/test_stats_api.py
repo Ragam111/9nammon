@@ -102,5 +102,51 @@ class StatsApiTest(unittest.TestCase):
         self.assertGreater(len(data["by_endpoint"]), 0)
 
 
+class StatsApiExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self._root = Path(self._tmp.name)
+        self.httpd, self.port, self.session_token = _make_server(self._root)
+
+    def tearDown(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        self._tmp.cleanup()
+
+    def _get(self, path, token=None):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        hdrs = {"X-Auth-Token": token} if token else {}
+        conn.request("GET", path, headers=hdrs)
+        resp = conn.getresponse()
+        body = resp.read()
+        conn.close()
+        return resp.status, json.loads(body) if body else {}
+
+    def test_stats_last_24h_is_int(self):
+        _, data = self._get("/api/admin/stats", token=self.session_token)
+        self.assertIsInstance(data["last_24h"], int)
+
+    def test_stats_total_requests_is_int(self):
+        _, data = self._get("/api/admin/stats", token=self.session_token)
+        self.assertIsInstance(data["total_requests"], int)
+
+    def test_stats_total_errors_is_int(self):
+        _, data = self._get("/api/admin/stats", token=self.session_token)
+        self.assertIsInstance(data["total_errors"], int)
+
+    def test_stats_error_rate_between_0_and_1(self):
+        _, data = self._get("/api/admin/stats", token=self.session_token)
+        self.assertGreaterEqual(data["error_rate"], 0.0)
+        self.assertLessEqual(data["error_rate"], 1.0)
+
+    def test_stats_by_endpoint_items_have_required_keys(self):
+        self._get("/api/health")
+        _, data = self._get("/api/admin/stats", token=self.session_token)
+        items = data["by_endpoint"]
+        self.assertGreater(len(items), 0)
+        for field in ("endpoint", "count"):
+            self.assertIn(field, items[0])
+
+
 if __name__ == "__main__":
     unittest.main()
