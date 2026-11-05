@@ -4,6 +4,13 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [0.2.9] — 2026-11-05 (Test Coverage — db unit tests)
+
+### Added
+- `tests/test_db.py` — 40 unit tests covering `split_sql`, `db_path`, `write_lock`,
+  `connect_raw` (WAL/FK/lca_seg), and `list_migrations` in `app/db.py`
+- Test suite: 1169 → 1209 tests total
+
 ## [0.2.8] — 2026-11-05 (Test Coverage — chat_search unit tests)
 
 ### Added
