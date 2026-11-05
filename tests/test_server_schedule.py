@@ -122,6 +122,34 @@ class ScheduleGateIntegrationTest(unittest.TestCase):
         self.assertNotEqual(status, 503,
                             "trailing slash บน allowlist ต้องไม่ถูก gate ปิด")
 
+    def test_closed_body_has_message(self):
+        self._set_closed()
+        _, body, _ = self._get("/api/me")
+        self.assertIn("message", body)
+
+    def test_closed_body_has_seconds_until_change(self):
+        self._set_closed()
+        _, body, _ = self._get("/api/me")
+        self.assertIn("seconds_until_change", body)
+
+    def test_closed_body_state_is_string(self):
+        self._set_closed()
+        _, body, _ = self._get("/api/me")
+        self.assertIsInstance(body.get("state"), str)
+
+    def test_open_then_close_is_blocked(self):
+        self._set_open()
+        st, _, _ = self._get("/api/me")
+        self.assertNotEqual(st, 503)  # open → ไม่บล็อก
+        self._set_closed()
+        st, _, _ = self._get("/api/me")
+        self.assertEqual(st, 503)    # closed → บล็อก
+
+    def test_retry_after_is_seconds_until_change(self):
+        self._set_closed()
+        _, _, retry = self._get("/api/me")
+        self.assertEqual(retry, "3600")
+
 
 if __name__ == "__main__":
     unittest.main()
