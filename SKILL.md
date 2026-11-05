@@ -1,7 +1,7 @@
 ---
 name: local-code-assistant
 description: >
-  LCA (Local Code Assistant) v0.2.6 — AI Coding Assistant + Desktop App แบบก้อนเดียว
+  LCA (Local Code Assistant) v0.2.7 — AI Coding Assistant + Desktop App แบบก้อนเดียว
   รันบน Ollama (local/cloud hybrid), bind 127.0.0.1, 1101 tests pass.
   ใช้ skill นี้เมื่อผู้ใช้ต้องการ: ผู้ช่วยเขียนโค้ดที่รันใน terminal, แก้ไฟล์โค้ด
   อัตโนมัติแบบ diff, ใช้โมเดล local (Ollama) แทน Claude/OpenAI, desktop app (.exe
@@ -9,7 +9,7 @@ description: >
   หรือพูดถึง "Aider", "coding agent ฟรี", "local LLM coding", "LCA Desktop"
 
 skill_memory_updated: "2026-11-04"
-version: "0.2.6"
+version: "0.2.7"
 tests_pass: 1101
 ---
 
@@ -177,22 +177,9 @@ PowerShell/CMD ต้องติดตั้งสำเร็จได้เ�
 
 | PR | Version | วันที่ | เรื่อง | สถานะ |
 |---|---|---|---|---|
-| #89–#93 | v0.1.0 | 2026-10-29 | Official Release: 812 tests, schedule gate, security fixes, disk check | ✅ merged |
-| #94 | v0.1.1 | 2026-10-29 | Bug fixes: SSL cert hotfix installer_gui, _schedule_gated trailing slash | ✅ merged |
-| #95–#101 | v0.1.1–v0.1.3 | 2026-10-30 | LCA-Desktop (.exe), file cleanup (install.sh/lca-web.bat ลบ) | ✅ merged |
-| #102 | v0.1.4 | 2026-10-30 | `GET /api/version` endpoint (public, schedule allowlist) | ✅ merged |
-| #103 | v0.1.5 | 2026-10-30 | Docs cleanup: stale refs, port 8420 fix | ✅ merged |
-| #104 | v0.1.6 | 2026-10-30 | `--version` CLI flag: server.py + lca_app.py (ตรงกับ /api/version) | ✅ merged |
-| #114 | v0.1.7 | 2026-11-04 | HTTP integration tests สำหรับ /api/admin/hw-profile (+6 tests) | ✅ merged |
-| #117 | v0.1.8 | 2026-11-04 | rate-limit 429 guard integration tests (+6 tests, 849 total) | ✅ merged |
-| #117 (updated) | v0.1.9 | 2026-11-04 | Review/Statistics API: stats_store + GET /api/admin/stats (+6 tests, 855 total) | 🔄 open |
-| #117 (updated) | v0.2.0 | 2026-11-04 | News RSS API: news_store + GET /api/news (+6 tests, 1055 total) | 🔄 open |
-| #117 (updated) | v0.2.1 | 2026-11-04 | DB layer: migration 0011 + db_manager + GET /api/admin/db/status (+9 tests, 1064 total) | 🔄 open |
-| #117 (updated) | v0.2.2 | 2026-11-04 | Hardware Meter: hw_meter + GET /api/metrics/hw (+6 tests, 1070 total) | 🔄 open |
-| #117 (updated) | v0.2.3 | 2026-11-04 | Multi-tier Ollama selector: router + GET /api/models/recommend (+11 tests, 1081 total) | 🔄 open |
-| #117 (updated) | v0.2.4 | 2026-11-04 | LAN Discovery: lan_discovery + GET /api/nodes/discover (+10 tests, 1091 total) | 🔄 open |
-| #117 (updated) | v0.2.5 | 2026-11-04 | Cluster Sync: cluster_sync + GET /api/nodes/sync (+10 tests, 1101 total) | 🔄 open |
-| #117 (updated) | v0.2.6 | 2026-11-04 | AI Cluster Setup: scripts/ai_cluster_setup.sh (Ollama+LiteLLM+WebUI+Cloudflare, single-file) + .claude/skills/ai-cluster-setup/SKILL.md | 🔄 open |
+| #89–#114 | v0.1.0–v0.1.7 | 2026-10-29–11-04 | Official Release → bug fixes → .exe → /api/version → --version → hw-profile tests | ✅ merged |
+| #117 | v0.1.8–v0.2.6 | 2026-11-04 | rate-limit tests → stats → news → DB → hw-meter → Ollama selector → LAN discovery → cluster sync → AI cluster setup (1101 tests) | ✅ merged |
+| #118 | v0.2.7 | 2026-11-04 | Storage Slim: docs/ 32→22 files, CHANGELOG compact, SKILL.md compact | 🔄 open |
 
 **หลักการ autopilot loop**: open atomic PR → CI → merge → sync branch → next PR
 Branch ทำงาน: `claude/windows-package-architecture-j4znro`
@@ -207,48 +194,9 @@ Branch ทำงาน: `claude/windows-package-architecture-j4znro`
 
 | ฟีเจอร์ | สถานะ | ไฟล์ | หมายเหตุ |
 |---|---|---|---|
-| Chat loop + diff engine (SEARCH/REPLACE) | ✅ เสร็จ | `local_coder.py` | ทดสอบแล้ว |
-| Workflow 4 ขั้นตอน (Read→Re-check→Fix→Report) | ✅ เสร็จ | `local_coder.py` → `apply_diff_blocks()` | ทดสอบแล้ว |
-| กันไฟล์นอกโปรเจกต์ (path traversal) | ✅ เสร็จ | `local_coder.py` | ทดสอบแล้ว |
-| `/add /files /undo` | ✅ เสร็จ | `local_coder.py` | ทดสอบแล้ว |
-| `/status` (ดู token/context) | ✅ เสร็จ | `local_coder.py` | ทดสอบแล้ว |
-| `/model <name>` (สลับโมเดล) | ✅ เสร็จ | `local_coder.py` | สลับตัวแปรได้ ยังไม่ validate ว่า pull โมเดลไว้จริงหรือยัง |
-| `/reset` (ล้าง context) | ✅ เสร็จ | `local_coder.py` | ทดสอบแล้ว |
-| `/todo add/list/done/del` | ✅ เสร็จ | `local_coder.py` + `app/todo_store.py` | ทดสอบแล้ว |
-| หน้าเว็บ Chat UI (`index.html`) | ✅ เสร็จ | `app/index.html` | ต่อ backend จริงแล้ว ใช้งานได้ครบ |
-| **Backend server** (`server.py`) รับ `/api/chat`, `/api/todos` | ✅ เสร็จ | `server.py` | ทดสอบ end-to-end กับ mock Ollama แล้ว: GET /, /api/chat, /api/todos ครบ CRUD |
-| `--lang th|en` flag + `/lang` command | ✅ เสร็จ | `local_coder.py`, `server.py` | ทดสอบสลับภาษาแล้ว ทั้ง CLI และผ่าน API (`lang` field) |
-| Skill-mode อัตโนมัติ (`classify_input`) | ✅ เสร็จ | `local_coder.py` | heuristic keyword-based ทดสอบผ่าน 4 เคส แม่นยำระดับ "คำแนะนำเส้นทาง" ไม่ใช่ NLU เต็มรูปแบบ |
-| เชื่อม Linear (`/linear sync`) | ✅ เสร็จ (อ่านอย่างเดียว) | `app/linear_connector.py` | ดึง issue → ใส่ todo ทดสอบกับ mock Linear API แล้ว ฟังก์ชันเขียนกลับสถานะมีแต่ปฏิเสธถ้าไม่ `confirm=True` (ยังไม่ผูกเข้า UI ยืนยัน) |
-| MVC Server (multi-device/มือถือ) | ✅ เสร็จ (ระดับ LAN) | `server.py` | Model=`call_ollama`, Controller=HTTP handler, View=`index.html`/JSON — ทดสอบ `--host 0.0.0.0 --token` ปฏิเสธถ้าไม่ตั้ง token, auth header ทำงานถูกต้อง |
-| Custom Instructions / SRS upload workflow | 📋 เป็นคำแนะนำการใช้งาน ไม่ใช่โค้ด | — | ทำที่หน้าเว็บ claude.ai โดยผู้ใช้เอง ไม่มีไฟล์เกี่ยวข้อง |
-| **Windows Installer + CLI** (install.ps1/bat, local_coder.py) | ✅ **ทดสอบจริงบน Windows สำเร็จแล้ว** (2 ส.ค. 2026, เครื่อง HP, RAM 7.9GB) | `install.ps1`, `install.bat`, `*.ps1`, `*.bat` (ราก repo) | รอบแรกพังเพราะไฟล์ `.ps1` ไม่มี UTF-8 BOM (ดู Troubleshooting + Rule ข้อ 22) — เติม BOM แก้แล้ว **ทดสอบซ้ำผ่านครบวงจรจริง**: ติดตั้งที่ D: → ตรวจ RAM/โมเดลถูกต้อง → เรียก `lca C:\Users\Hello\Documents` → เห็น banner สีขึ้นถูกต้อง (`Local Code Assistant v0.0.2`) พร้อมโมเดล/ภาษา/path ถูกต้องหมด — พบอาการ path ตัดครึ่ง (`C:\Users\Hello\C`) ตอนลอง `Desktop` ครั้งเดียว ไม่ reproduce ซ้ำตอนลอง `Documents` คาดว่าเป็น fluke ไม่ใช่บั๊กโค้ด ต้องเฝ้าดูถ้าเกิดซ้ำ |
-| **Linux/macOS Installer** (`install.sh`) | 🗑️ ลบใน v0.1.3 (#101) | — (ไฟล์ไม่มีแล้ว) | ทางติดตั้งปัจจุบัน: `pip install -r requirements.txt` แล้ว `python server.py <โฟลเดอร์โปรเจกต์>` — launcher `lca-web` ถูกลบด้วย บน Windows เปิดหน้าเว็บด้วย `start-lca.bat` |
-| **Windows GUI Installer** (`installer.iss` → `setup.exe`) | ⚠️ เขียนแล้ว, ตรวจ static ครบ section | `windows-package/installer.iss` | ต้องคอมไพล์ด้วย Inno Setup Compiler (ฟรี, Windows เท่านั้น) — **ยังไม่เคยคอมไพล์/รันจริง** ไม่มี privilege ขอ admin (ติดตั้งใน `%LOCALAPPDATA%`), มีหน้า INFO_BEFORE เตือนสถานะ early-stage ก่อนติดตั้ง |
-| **Online One-liner Installer** (`install_online.ps1`) | ⚠️ เขียนแล้ว, มี guard ป้องกัน placeholder URL | `windows-package/install_online.ps1` | ดึง zip จาก URL (ต้องเป็น GitHub Releases จริงหรือที่ host อื่น) → แตกไฟล์ที่ `%TEMP%` → เรียก `install.ps1` ข้างในอัตโนมัติ → ลบไฟล์ชั่วคราว — **`$ZipUrl` ยังเป็น placeholder ต้องแก้ก่อนใช้จริง** ถ้าไม่แก้จะปฏิเสธทำงานทันที (fail ดัง ไม่ fail เงียบ) — ยังไม่เคยรันจริงบน Windows · one-liner ปัจจุบัน (ใช้ `install.ps1` โดยตรง): `powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercontent.com/Ragam111/9nammon/main/install.ps1 | iex"` |
-| **Version 0.0.2** | ✅ เสร็จ | `local_coder.py` (`__version__`), banner, `install.ps1/.sh`, `installer.iss`, เอกสารทั้งหมด | bump จาก 0.0.1 → 0.0.2 (เคลียร์ `__pycache__` ก่อน bump), เลขเวอร์ชันตรงกันทุกไฟล์ ไม่ใช้ 1.0.0 (ยังไม่ stable จริง ตามหลัก 9arm ข้อ 1) — ทดสอบแล้วว่า banner แสดง v0.0.2 ถูกต้อง |
-| **v0.1.0 Official Release** | ✅ เสร็จ | หลายไฟล์ | 812 tests, schedule gate (06–20 TH), /api/status, system tray, security (hmac.compare_digest + body size limit), disk pre-check |
-| **v0.1.1 Bug fixes** | ✅ เสร็จ | `installer_gui.py`, `server.py` | `check_free_disk` ตรวจทั้ง install_dir + TEMP; `_schedule_gated` trailing slash fix (`_norm_path()`) |
-| **v0.1.2 SSL cert hotfix** | ✅ เสร็จ | `installer_gui.py` | `_download_zip()` fallback 2 ชั้น: urllib → curl.exe → RuntimeError |
-| **v0.1.3 File cleanup** | ✅ เสร็จ | หลายไฟล์ | ลบ `install.sh`, `install_online.ps1`, `lca-web.bat` (ซ้ำซ้อน) |
-| **v0.1.4 /api/version** | ✅ เสร็จ | `server.py`, `tests/test_server_health.py` | GET /api/version (public, schedule allowlist) → {version, python, name}; +4 tests |
-| **v0.1.5 Docs cleanup** | ✅ เสร็จ | `docs/APP_WALKTHROUGH.md`, `docs/GO_ONLINE_FREE.md`, `docs/RESOURCE_MANAGER_DESIGN.md`, `install.ps1` | ลบ stale refs ไฟล์ที่ลบใน v0.1.3; port 8420 ถูกต้อง |
-| **v0.1.6 --version CLI** | ✅ เสร็จ | `server.py`, `lca_app.py`, `tests/test_lca_app.py` | `server.py --version` + `lca_app.py --version` → exit 0; `read_version()` helper shared กับ /api/version; +7 tests |
-| **v0.1.7 hw-profile HTTP tests** | ✅ เสร็จ | `tests/test_server_health.py` | +6 `HwProfileEndpointTest`: 200 OK, shape, tier valid, recommended_config, next_upgrade string, no-disk-param safe; 843 tests total |
-| **v0.1.8 rate-limit tests** | ✅ เสร็จ | `tests/test_server_rate_limit.py` | +6 tests: 429 guard, within-limit OK, root/console exempt, disabled=no-429; 849 tests total |
-| **v0.1.9 Review/Statistics API** | ✅ เสร็จ | `app/stats_store.py`, `server.py`, `tests/test_stats_api.py` | `GET /api/admin/stats` ADMIN-gated; SQLite record per _send_json; 855 tests total |
-| **v0.2.0 News RSS API** | ✅ เสร็จ | `app/news_store.py`, `server.py`, `tests/test_news_api.py` | `GET /api/news` USER-gated; RSS/Atom fetcher + 15-min cache; `?feed=` override; 1055 tests total |
-| **v0.2.1 DB layer upgrade** | ✅ เสร็จ | `app/migrations/0011_*`, `app/db_manager.py`, `server.py`, `tests/test_db_manager.py` | migration 0011_server_events; `GET /api/admin/db/status` ADMIN-gated; 1064 tests total |
-| **v0.2.2 Hardware Meter** | ✅ เสร็จ | `app/hw_meter.py`, `server.py`, `tests/test_hw_meter_api.py` | `GET /api/metrics/hw` USER-gated; CPU %, RAM %, tier + recommended_model; `?interval=`; 1070 tests total |
-| **v0.2.3 Multi-tier Ollama Selector** | ✅ เสร็จ | `app/router.py`, `server.py`, `tests/test_router_api.py` | `GET /api/models/recommend` USER-gated; tier-based model list; Ollama installed check; 5-min cache; 1081 tests total |
-| **v0.2.4 LAN Discovery (P6 software)** | ✅ เสร็จ | `app/lan_discovery.py`, `server.py`, `tests/test_lan_discovery.py` | `GET /api/nodes/discover` ADMIN-gated; scan /24 subnet; thread pool; `_probe` ลอง /api/version; `get_local_ips()`; 1091 tests total |
-| **v0.2.5 Cluster Sync** | ✅ เสร็จ | `app/cluster_sync.py`, `server.py`, `tests/test_cluster_sync.py` | `GET /api/nodes/sync` ADMIN-gated; run LAN discovery → auto-register new nodes into cluster_store; skips existing; error passthrough; 1101 tests total |
-| **v0.2.6 AI Cluster Setup** | ✅ เสร็จ | `scripts/ai_cluster_setup.sh`, `.claude/skills/ai-cluster-setup/SKILL.md` | single-file bash: Ollama LAN + LiteLLM Docker (Ollama/Claude/Gemini) + Open WebUI + Cloudflare Tunnel; `/ai-cluster-setup` Claude Code skill; 3-agent pattern; 1101 tests total |
-| **ตกแต่ง CLI (สี + banner)** | ✅ เสร็จ | `local_coder.py` (`Color` class, `print_banner()`) | ใช้ ANSI escape code, เปิดใช้งานบน Windows cmd.exe ด้วย `os.system("")`, ทดสอบแล้วว่าสีขึ้นจริงทั้งตอนรันตรงและตอนรันผ่าน launcher ที่ install.sh สร้าง — ยึดหลัก 9arm ข้อ 1 (ไม่แต่งเติม): ข้อความ banner บอกแค่ "รันในเครื่อง, ฟรี" ไม่อ้างว่าเก่งเท่า Claude |
-| **พื้นที่จัดเก็บข้อมูลถาวรที่เดสก์ท็อป** (`sync_project`) | ✅ เสร็จ | `app/desktop_archive.py` | sync `CHANGELOG_local.md` + `todos.json` ไป `~/Desktop/LocalCodeAssistant-Data/<โปรเจกต์>/` ทุกครั้งหลังแก้ไฟล์หรือแก้ todo, มี `index.json` รวมทุกโปรเจกต์, คำสั่ง `/archive` ดูตำแหน่ง — ทดสอบแล้วทั้ง 2 เส้นทาง (apply diff + todo) ผ่าน มี fallback ถ้าสร้างโฟลเดอร์ Desktop ไม่ได้ (แต่ทดสอบ permission-denied จริงไม่ได้เพราะรันเป็น root ในแซนด์บ็อกซ์) |
-| **`/websearch on\|off`** (switch 0/1 ต่อเน็ตจริง) | ✅ เสร็จ | `app/web_search.py` | ค้นหาจริงผ่าน Brave Search API แล้วแปะผลลัพธ์เข้า context ก่อนส่งโมเดล — ทดสอบ flow เต็มรูปแบบกับ mock Brave API + mock Ollama แล้วผ่าน ถ้าไม่มี key จะแจ้งเตือนแล้ว fallback เป็นโมเดล local ล้วนอัตโนมัติ (ไม่ crash) |
-| **Hot-Swap Config** (`/config set`, ถาม key ตอนเปิด `/websearch on` ครั้งแรก) | ✅ เสร็จ | `app/config_manager.py` | เก็บ API key ลง `config.json` ต่อโปรเจกต์ ไม่ต้อง set env var เอง ลำดับความสำคัญ config.json > env var — ทดสอบแล้วทั้ง `/config set` ตรงๆ และ prompt อัตโนมัติตอนเปิด websearch ครั้งแรก, ยืนยันว่า `search_web()` อ่านจาก config.json ได้จริงโดยไม่มี env var เลย |
-| `/linear` เขียนสถานะกลับ | ⏸️ พักไว้ก่อน (ผู้ใช้สั่งเลื่อน) | `app/linear_connector.py` | ห้ามแตะจนกว่าผู้ใช้จะขอกลับมาทำต่อ — ดู Rule ข้อ 16 |
+| Core features (chat loop, diff, todo, web, CLI, server) v0.0.1–v0.2.6 | ✅ เสร็จครบ | `local_coder.py`, `server.py`, `app/*` | 1101 tests ผ่าน — ดูรายละเอียดใน CHANGELOG.md |
+| AI Cluster Setup (Ollama+LiteLLM+WebUI+Cloudflare) | ✅ เสร็จ | `scripts/ai_cluster_setup.sh`, `.claude/skills/ai-cluster-setup/SKILL.md` | single-file bash, 5 phases, `/ai-cluster-setup` skill |
+| `/linear` เขียนสถานะกลับ | ⏸️ พักไว้ก่อน | `app/linear_connector.py` | ห้ามแตะจนกว่าผู้ใช้จะขอกลับมาทำต่อ — ดู Rule ข้อ 16 |
 
 **สิ่งที่ยังไม่ครบแม้ฟีเจอร์หลักจะเสร็จแล้ว**:
 - `/linear` ยังไม่มีคำสั่งอัปเดตสถานะ ticket กลับ (มีแต่ฟังก์ชัน `update_issue_status()`
@@ -304,9 +252,8 @@ uninstaller (copy ไปรันที่ `%TEMP%` ก่อนลบตัว�
 | "install.bat ไม่มี" / "no file" error ตอนรัน installer | ผู้ใช้ได้ไฟล์มาไม่ครบชุด (ดาวน์โหลดทีละไฟล์แยกจากแชท แทนที่จะโหลดทั้งโฟลเดอร์) — `install.bat` ต้องอยู่โฟลเดอร์เดียวกับ `install.ps1` เพราะอ้างอิงกันด้วย `%~dp0` | **ส่งเป็น .zip รวมไฟล์เดียวเท่านั้น ห้ามส่งแยกไฟล์เมื่อมีไฟล์ที่อ้างอิงกัน** (เช่น .bat เรียก .ps1, หรือ installer.iss อ้างถึงไฟล์อื่นใน [Files]) — ทดสอบ extract แล้วรันจริงก่อนส่งมอบทุกครั้ง |
 | มองไม่เห็นนามสกุลไฟล์ (เห็น `install` เฉยๆ ไม่รู้ว่าเป็น `.bat` หรือ `.exe`) | Windows ซ่อนนามสกุลไฟล์ที่รู้จักเป็นค่าเริ่มต้น (`Hide extensions for known file types`) | บอกให้ดูไอคอน (`.bat` = จอดำเล็กๆ) หรือแนะนำเปิด File Explorer → View → ติ๊ก "File name extensions" เพื่อความชัดเจนถาวร |
 | **`ModuleNotFoundError: No module named 'folder_trust'`** (หรือ `context_manager`) ตอนรัน `lca` | `local_coder.py` import สองโมดูลนี้ผ่าน `sys.path` ที่ชี้ไปโฟลเดอร์ `app\` แต่ installer เดิม copy ไม่ครบ | **แก้แล้วถาวร**: `update.ps1` v0.1.0 (PR #86) ทำ recursive copy `app\` ทั้งโฟลเดอร์ (รวม `app\agent\*`) + ลบ `fix_missing_modules.ps1` ออกแล้ว (ไม่จำเป็นอีก) — รัน `update.ps1` ใหม่ครั้งเดียวแก้ได้ |
-
-| **ไฟล์ `.ps1` ไม่มี UTF-8 BOM ทั้งที่ SKILL.md บันทึกไว้ว่า "เติม BOM แก้แล้ว"** (พบจากการแพ็ก zip รอบล่าสุด 19 ส.ค. 2026) | เอกสารบันทึกผลลัพธ์ที่ตั้งใจไว้ ไม่ใช่สถานะไฟล์จริงเสมอไป — เมื่อไฟล์ถูกคัดลอก/ส่งต่อผ่านช่องทางอื่น BOM ที่เติมไว้อาจหายระหว่างทางได้ | **ห้ามเชื่อคำบรรยายในเอกสารเฉยๆ ว่า BOM มีอยู่แล้ว — ต้องเปิดไฟล์จริงเช็ค 3 byte แรกทุกครั้งก่อนแพ็ก zip ส่งมอบ** (`b'\xef\xbb\xbf'`) — เจอเคสนี้จริงกับ `install.ps1`/`uninstall.ps1`/`update.ps1` (`install_online.ps1` เคยเจอเคสเดียวกัน แต่ลบใน v0.1.3, #101) |
-| **ไฟล์ `app/*.py` (todo_store, linear_connector, desktop_archive, web_search, config_manager) + `app/index.html` หายไปทั้งหมดจาก working copy** (พบ 19 ส.ค. 2026 ตอนจะแพ็ก zip ส่งทดสอบ) | ไฟล์เหล่านี้เคยเขียนเสร็จจริงตามที่ตาราง TODO บันทึกไว้ แต่ไม่ได้อยู่ใน context/Project files ชุดล่าสุดที่ใช้แพ็ก — เป็นปัญหาการ sync ไฟล์เข้า Project knowledge ไม่ใช่โค้ดหาย | เขียนใหม่ทั้ง 6 ไฟล์จาก **interface ที่ `local_coder.py`/`server.py` เรียกใช้จริง** (อ่านทุกจุด `import`/เรียกฟังก์ชันก่อนเขียน ไม่เดา signature) แล้วทดสอบ: syntax check ผ่านทั้งหมด, รัน `local_coder.py` จริงกับ mock Ollama ผ่าน (`/todo`, `/model`, `/lang`, chat, `/status`, `/files`, catch-all error), รัน `server.py` จริงผ่าน `curl` ครบ endpoint (`GET /`, `/api/chat`, `/api/todos` CRUD), เรียก `lca` ผ่าน launcher ที่ติดตั้งเสร็จ (ตอนนั้นใช้ `install.sh` ซึ่งลบใน v0.1.3, #101 — วันนี้บน Linux ใช้ `pip install -r requirements.txt` แล้ว `python server.py`) — ไม่มี `ModuleNotFoundError` เลย — **ยังไม่ทดสอบบน Windows จริง** ต้องยืนยันซ้ำก่อนใช้งานจริงจัง |
+| **ไฟล์ `.ps1` ไม่มี UTF-8 BOM ทั้งที่ SKILL.md บันทึกไว้ว่า "เติม BOM แก้แล้ว"** (พบจากการแพ็ก zip รอบล่าสุด 19 ส.ค. 2026) | เอกสารบันทึกผลลัพธ์ที่ตั้งใจไว้ ไม่ใช่สถานะไฟล์จริงเสมอไป — เมื่อไฟล์ถูกคัดลอก/ส่งต่อผ่านช่องทางอื่น BOM ที่เติมไว้อาจหายระหว่างทางได้ | **ห้ามเชื่อคำบรรยายในเอกสารเฉยๆ ว่า BOM มีอยู่แล้ว — ต้องเปิดไฟล์จริงเช็ค 3 byte แรกทุกครั้งก่อนแพ็ก zip ส่งมอบ** (`b'\xef\xbb\xbf'`) — เจอเคสนี้จริงกับ `install.ps1`/`uninstall.ps1`/`update.ps1` |
+| **ไฟล์ `app/*.py` (todo_store, linear_connector, desktop_archive, web_search, config_manager) + `app/index.html` หายไปทั้งหมดจาก working copy** (พบ 19 ส.ค. 2026 ตอนจะแพ็ก zip ส่งทดสอบ) | ไฟล์เหล่านี้เคยเขียนเสร็จจริงตามที่ตาราง TODO บันทึกไว้ แต่ไม่ได้อยู่ใน context/Project files ชุดล่าสุดที่ใช้แพ็ก — เป็นปัญหาการ sync ไฟล์เข้า Project knowledge ไม่ใช่โค้ดหาย | เขียนใหม่ทั้ง 6 ไฟล์จาก **interface ที่ `local_coder.py`/`server.py` เรียกใช้จริง** (อ่านทุกจุด `import`/เรียกฟังก์ชันก่อนเขียน ไม่เดา signature) |
 
 **บทเรียนเชิงระบบจากรายการนี้**: ผู้ใช้ทั่วไปไม่คุ้นเคยกับ PowerShell/CMD/นามสกุลไฟล์ที่ซ่อนอยู่
 — เวลาส่งมอบไฟล์ติดตั้งให้ **(1)** always แพ็กเป็น zip เดียวเมื่อมีไฟล์เกิน 1 ไฟล์ที่ต้องอยู่ด้วยกัน
@@ -331,204 +278,66 @@ uninstaller (copy ไปรันที่ `%TEMP%` ก่อนลบตัว�
 รายละเอียด implementation ของ 4 สเต็ปนี้อยู่ในฟังก์ชัน `apply_diff_blocks()`
 ของ `local_coder.py`
 
-**ขั้นตอน Skill-mode อัตโนมัติ (ตรวจจับประเภทคำสั่งก่อนเข้า 4 สเต็ปหลัก):**
-1. รับ input ผู้ใช้ → จัดหมวดคร่าวๆ ว่าเข้าข่ายไหน: (ก) แก้โค้ดในไฟล์ local,
-   (ข) ค้นข้อมูล/ถามความรู้ทั่วไป, (ค) งานที่ต้องอ้างอิง project ภายนอก (เช่น Linear)
-2. ถ้าเป็น (ก) → เข้า flow 4 สเต็ปหลักตามปกติ
-3. ถ้าเป็น (ข) → ตอบตรงในแชท ไม่ต้อง apply diff, ไม่ต้องเขียน report
-4. ถ้าเป็น (ค) → เรียก connector ที่ตั้งค่าไว้ล่วงหน้า (ดูหัวข้อเชื่อม project ภายนอก)
-   ดึงข้อมูลงาน/ticket มาก่อน แล้วค่อยเข้า flow 4 สเต็ปหลักถ้ามีการแก้โค้ดตามมา
+**ขั้นตอน Skill-mode อัตโนมัติ:**
+1. รับ input ผู้ใช้ → จัดหมวด: (ก) แก้โค้ดในไฟล์ local, (ข) ค้นข้อมูล/ถามความรู้ทั่วไป, (ค) งานที่ต้องอ้างอิง project ภายนอก
+2. ถ้าเป็น (ก) → เข้า flow 4 สเต็ปหลัก
+3. ถ้าเป็น (ข) → ตอบตรงในแชท ไม่ต้อง apply diff
+4. ถ้าเป็น (ค) → เรียก connector → ดึงข้อมูลงาน → เข้า flow 4 สเต็ปถ้ามีการแก้โค้ด
 
 **การเชื่อมกับ project/product ภายนอก (เช่น Linear):**
-1. ผู้ใช้ตั้งค่า API key ของบริการนั้นไว้ล่วงหน้าใน environment variable
-   (เช่น `LINEAR_API_KEY`) — **ห้าม hardcode ค่า key ลงในสคริปต์**
-2. ผู้ใช้สั่งไว้เป็นคำสั่งมาตรฐาน เช่น `/linear sync` เพื่อดึงรายการ ticket
-   ที่ assign ให้ตัวเองมาเป็น context ให้โมเดล
-3. เมื่อแก้โค้ดเสร็จตาม ticket ใดต้องอัปเดตสถานะกลับ ให้ทำเป็นขั้นตอนแยก
-   ที่ต้องผู้ใช้ยืนยันก่อนเสมอ เหมือนการ apply diff (ห้ามอัปเดตสถานะ ticket
-   อัตโนมัติโดยไม่ถาม)
+1. ผู้ใช้ตั้งค่า API key ใน environment variable (เช่น `LINEAR_API_KEY`) — **ห้าม hardcode**
+2. ผู้ใช้สั่ง `/linear sync` เพื่อดึง ticket มาเป็น context
+3. เมื่อแก้โค้ดเสร็จ ต้องผู้ใช้ยืนยันก่อนอัปเดตสถานะกลับเสมอ
 4. ฟีเจอร์นี้เป็น *ส่วนขยาย* ที่ยังไม่รวมอยู่ใน `local_coder.py` เวอร์ชันปัจจุบัน
-   — ต้องเพิ่ม module connector แยกต่างหากก่อนใช้งานจริง
 
 **แผนขยายเป็น MVC Server (multi-device access — ยังไม่ implement, เป็น roadmap):**
-1. **Model** — ห่อ `call_ollama()` และ `apply_diff_blocks()` ปัจจุบันเป็น service
-   layer แยกจาก CLI ไม่ต้องแก้ logic เดิม
-2. **Controller** — เพิ่ม web server (แนะนำ FastAPI เพราะเบา เหมาะกับ RAM น้อย)
-   รับ request จากอุปกรณ์ภายนอก แปลงเป็นเรียก Model เดิม
-3. **View** — ทำ endpoint ตอบกลับแบบ JSON (สำหรับแอปมือถือ) และหน้าเว็บเบาๆ
-   (สำหรับ browser บน PC/มือถือ) แชร์ logic เดียวกัน
-4. **ความปลอดภัย** — เปิด server เฉพาะ local network (bind `127.0.0.1` หรือ
-   IP วง LAN เท่านั้น) ต้องใส่ auth token ขั้นต่ำก่อนรับคำสั่งแก้ไฟล์จากอุปกรณ์อื่น
-   ห้าม expose ออก internet ตรงๆ โดยไม่มีการป้องกันเพิ่ม
-
-**การเริ่มต้นโปรเจกต์ใหม่บนหน้าเว็บ Claude (claude.ai) — ก่อนลงมือเขียนโค้ดจริง:**
-
-เมื่อผู้ใช้ต้องการเริ่มงานชิ้นใหญ่ (ไม่ใช่แค่แก้บั๊กเล็กๆ) แนะนำให้ตั้งค่าแบบนี้ก่อน:
-
-1. **สร้าง Project ใหม่บนหน้าเว็บ** แยกจากแชททั่วไป เพื่อให้มี context/ไฟล์
-   ของงานนี้อยู่ในที่เดียว ไม่ปนกับงานอื่น
-2. **ตั้งค่า Custom Instructions ของ Project** ให้ระบุชัดเจน:
-   - เป้าหมายของงาน (objective) เป็นประโยคเดียวที่วัดผลได้
-   - เทคโนโลยีที่ใช้ (ภาษา, framework, เวอร์ชัน) — ห้ามปล่อยให้ Claude เดาเอง
-   - กฎระเบียบเฉพาะของทีม/งานนี้ (code style, ห้าม dependency ตัวไหน,
-     ต้องผ่าน test แบบไหนก่อน merge ฯลฯ)
-3. **อัปโหลดเอกสารข้อกำหนด (SRS)** หรือ **โครงสร้างโฟลเดอร์ตัวอย่าง** เข้า
-   Project knowledge — ให้ Claude อ้างอิงของจริงแทนการสมมติ spec เอง
-4. **สั่งให้ Claude ทำหน้าที่ Lead Architect / ผู้จัดการโปรเจกต์ก่อนเริ่มเขียนโค้ด**:
-   - วางแผนภาพรวมทั้งหมดก่อน (module ไหนทำอะไร, ลำดับที่ควรสร้างก่อน-หลัง,
-     จุดเสี่ยง/dependency ระหว่าง module)
-   - เสนอแผนเป็นข้อความให้ผู้ใช้ตรวจสอบ/แก้ไข **ก่อน** ลงมือเขียนไฟล์จริง
-   - แตกงานใหญ่เป็น task ย่อยแล้วใส่เข้า todo system (`/todo add`) ของ skill นี้
-     เพื่อ track ความคืบหน้าอย่างเป็นระบบ แทนที่จะเขียนไล่ไปเรื่อยๆ โดยไม่มีแผน
-5. เมื่อผู้ใช้อนุมัติแผนแล้วเท่านั้น ค่อยเข้าสู่ workflow 4 ขั้นตอนปกติ
-   (Read → Re-check → Fix → Report) ทีละ task ตาม todo list ที่วางไว้
-
-**ทำไมต้องทำแบบนี้**: งานที่ให้ Claude ลงมือเขียนทันทีโดยไม่มีแผนภาพรวม
-มักจะแตกไฟล์/โครงสร้างไม่สอดคล้องกันเมื่องานใหญ่ขึ้น การบังคับให้วางแผนก่อน
-(เหมือนมี Lead Architect ตรวจทานก่อน) ช่วยลดการแก้งานซ้ำในภายหลัง
-
-**Windows Installer (CLI, PowerShell/CMD, AMD64, Windows 10/11) — งานปัจจุบัน:**
-
-1. **รวมไฟล์ทั้งหมดเป็น package เดียว** ที่ราก repo (โฟลเดอร์ `windows-package/` ไม่มีแล้ว) ประกอบด้วย
-   `local_coder.py`, `server.py`, `app/` (index.html, todo_store.py, linear_connector.py)
-2. **`install.ps1`** — สคริปต์หลัก:
-   - ตรวจ RAM เครื่องด้วย `Get-CimInstance Win32_ComputerSystem`
-   - แนะนำ/เลือกโมเดลอัตโนมัติตามตาราง RAM → โมเดล (ดู Context ด้านบน ขยายถึง 64GB)
-   - เช็คว่ามี Python 3 และ Ollama ติดตั้งหรือยัง ถ้าไม่มีแนะนำลิงก์ติดตั้ง
-   - copy ไฟล์ทั้งหมดไปที่ `%LOCALAPPDATA%\LocalCodeAssistant`
-   - สร้างคำสั่ง launcher (`lca.bat`) ให้เรียกจาก terminal ไหนก็ได้
-   - เขียน `version.txt` ไว้เทียบตอน update
-3. **`install.bat`** — wrapper สำหรับคนที่เปิด CMD ตรงๆ (เรียก `install.ps1`
-   ผ่าน `powershell -ExecutionPolicy Bypass` ให้ ไม่ต้องให้ผู้ใช้ตั้ง policy เอง)
-4. **`uninstall.ps1`** — ลบโฟลเดอร์ติดตั้ง + ลบ launcher ออกจาก PATH
-5. **`update.ps1`** — เทียบ `version.txt` เดิมกับไฟล์ใหม่ที่ผู้ใช้วางแทนที่ แล้ว
-   copy ทับเฉพาะไฟล์ที่เปลี่ยน (ไม่ลบ `todos.json`/`CHANGELOG_local.md` ของผู้ใช้)
+1. **Model** — ห่อ `call_ollama()` และ `apply_diff_blocks()` ปัจจุบันเป็น service layer
+2. **Controller** — เพิ่ม web server (FastAPI) รับ request จากอุปกรณ์ภายนอก
+3. **View** — endpoint JSON (สำหรับแอปมือถือ) และหน้าเว็บเบาๆ
+4. **ความปลอดภัย** — เปิด server เฉพาะ local network, ใส่ auth token ก่อนรับคำสั่งแก้ไฟล์
 
 ## Rules — กฎตายตัว ห้ามทำผิด
 
-1. **ห้าม apply diff โดยไม่ผ่านการยืนยันจากผู้ใช้ (y/n) เด็ดขาด** — แม้ผู้ใช้จะสั่ง
-   "แก้เลย" ก็ยังต้องแสดง diff ให้ดูก่อน apply เพราะโมเดลเล็กพลาดบ่อย
-2. **ห้ามข้ามขั้นตอนใดใน 4 สเต็ป (Read → Re-check → Fix → Report)** แม้เป็นการแก้
-   ไฟล์เดียวเล็กๆ ก็ต้องครบทุกครั้ง
-3. **ห้ามเขียนทับไฟล์โดยไม่ backup ก่อน** — ทุกไฟล์ที่มีอยู่แล้วต้อง copy ไป
-   `.local_coder_backup/` ก่อน `write_text()` เสมอ
-4. **ห้ามใช้โมเดลใหญ่กว่าที่ RAM รองรับ** — ถ้าเครื่อง 8GB ห้ามแนะนำ/ตั้งค่าเริ่มต้น
-   เป็นโมเดล 7b ขึ้นไป เพราะจะค้างหรือ crash
+1. **ห้าม apply diff โดยไม่ผ่านการยืนยันจากผู้ใช้ (y/n) เด็ดขาด**
+2. **ห้ามข้ามขั้นตอนใดใน 4 สเต็ป (Read → Re-check → Fix → Report)**
+3. **ห้ามเขียนทับไฟล์โดยไม่ backup ก่อน** — ทุกไฟล์ที่มีอยู่แล้วต้อง copy ไป `.local_coder_backup/`
+4. **ห้ามใช้โมเดลใหญ่กว่าที่ RAM รองรับ** — เครื่อง 8GB ห้ามแนะนำโมเดล 7b ขึ้นไป
 5. **ห้าม log ข้อมูลอ่อนไหว** (API key, password, token) ลงใน `CHANGELOG_local.md`
-   — ถ้า diff มีคำที่ดูเหมือน secret ให้เตือนผู้ใช้ก่อน apply
-6. **ถ้า SEARCH block ไม่ match ไฟล์จริง ให้ข้ามไฟล์นั้นและรายงานว่าล้มเหลว**
-   ห้ามพยายาม "เดา" ตำแหน่งแล้ว apply แบบไม่ตรงเป๊ะ
-7. **เมื่อแนะนำโมเดลให้ผู้ใช้ ต้องอิงชื่อโมเดลที่มีอยู่จริงใน Ollama registry เท่านั้น**
-   ห้ามสมมติชื่อรุ่น/เวอร์ชันที่ยังไม่เคยเปิดตัว
-8. **ห้าม hardcode API key ของบริการภายนอก (Linear ฯลฯ) ลงในโค้ด** ต้องอ่านจาก
-   environment variable เท่านั้น
-9. **ห้ามอัปเดตสถานะ/เขียนข้อมูลกลับไปยัง project ภายนอก (เช่น ปิด ticket, comment)
-   โดยไม่ผ่านการยืนยันจากผู้ใช้ก่อนทุกครั้ง** เหมือนกฎข้อ 1 ที่ใช้กับการ apply diff
-10. **ห้ามใส่ context เกินความจำเป็นเข้า prompt** — ส่งเฉพาะไฟล์ที่เกี่ยวข้องกับคำขอ
-    ปัจจุบันเท่านั้น เพื่อประหยัด token และลดภาระ RAM ตอนประมวลผล
-11. **เมื่อ Aider หรือเครื่องมือสำเร็จรูปอื่นใช้ไม่ได้จริงในสภาพแวดล้อมของผู้ใช้
-    ห้ามพยายามยัดเยียดให้ติดตั้งซ้ำๆ** ให้ยึด `local_coder.py` เป็นทางออกหลักแทน
-12. **ถ้าขยายเป็น MVC server เพื่อรับคำสั่งจากมือถือ/อุปกรณ์ภายนอก ห้าม bind
-    server ออก internet โดยตรงโดยไม่มี auth** ต้องจำกัดที่ local network และ
-    ใส่ token ยืนยันตัวตนขั้นต่ำก่อนอนุญาตให้แก้ไฟล์จากระยะไกล
-13. **เมื่อ Claude เป็นคนเขียน/แก้โค้ดในโปรเจกต์นี้เอง (ไม่ใช่โมเดล Ollama)
-    ต้องทำตามมาตรฐานนี้เสมอ:**
-    - เขียนโค้ดให้รันได้จริงก่อนส่งมอบ — ทดสอบด้วย syntax check หรือรันจริง
-      อย่างน้อย 1 ครั้งก่อนบอกว่าเสร็จ ห้ามส่งโค้ดที่ยังไม่ได้ลองรัน
-    - คอมเมนต์เฉพาะจุดที่ตรรกะไม่ชัดเจนในตัวเอง ไม่ต้องคอมเมนต์ทุกบรรทัด
-    - ตั้งชื่อฟังก์ชัน/ตัวแปรสื่อความหมาย ไม่ใช้ชื่อย่อกำกวม (เช่น `x`, `tmp2`)
+6. **ถ้า SEARCH block ไม่ match ไฟล์จริง ให้ข้ามและรายงานว่าล้มเหลว** ห้ามเดาตำแหน่ง
+7. **เมื่อแนะนำโมเดล ต้องอิงชื่อที่มีอยู่จริงใน Ollama registry เท่านั้น**
+8. **ห้าม hardcode API key** ของบริการภายนอกลงในโค้ด
+9. **ห้ามอัปเดตสถานะ/เขียนข้อมูลกลับไปยัง project ภายนอกโดยไม่ผ่านการยืนยัน**
+10. **ห้ามใส่ context เกินความจำเป็นเข้า prompt**
+11. **เมื่อ Aider ใช้ไม่ได้จริง ห้ามพยายามยัดเยียดให้ติดตั้งซ้ำๆ** ให้ยึด `local_coder.py`
+12. **ถ้าขยายเป็น MVC server ห้าม bind ออก internet โดยตรงโดยไม่มี auth**
+13. **เมื่อ Claude เขียน/แก้โค้ดในโปรเจกต์นี้เอง ต้องทำตามมาตรฐาน:**
+    - เขียนโค้ดให้รันได้จริงก่อนส่งมอบ — ทดสอบด้วย syntax check หรือรันจริงก่อนบอกว่าเสร็จ
     - แก้ไฟล์เดิมด้วย `str_replace` แบบ targeted เท่านั้น ห้ามเขียนทับทั้งไฟล์
-      ถ้าแก้แค่บางส่วน เพื่อไม่ให้ประวัติ/ส่วนอื่นของไฟล์หายไปโดยไม่ตั้งใจ
     - ห้ามเพิ่ม dependency ภายนอกใหม่โดยไม่จำเป็น — ยึด Python standard library
-      เป็นหลักเพื่อคงความเบาให้เหมาะกับเครื่อง RAM 8GB
     - ทุกครั้งที่แก้ `local_coder.py` ต้องอัปเดตส่วนที่เกี่ยวข้องใน `SKILL.md`
-      ให้ตรงกันเสมอ (ห้ามให้ doc กับโค้ดไม่ตรงกัน)
-14. **มาตรฐานเข้มงวดเพิ่มเติม (Claude แนะนำ) — ห้ามละเลยแม้เป็นการแก้เล็กน้อย:**
-    - **Error handling บังคับ**: ทุกจุดที่เรียก network (`urllib.request` ไปหา
-      Ollama), อ่าน/เขียนไฟล์, หรือ parse ข้อมูลจากโมเดล ต้องมี `try/except`
-      ที่ระบุชนิด exception ชัดเจน ห้ามใช้ `except:` เปล่าๆ ที่กลืน error ทั้งหมด
-    - **ห้ามไว้ใจ input จากโมเดลโดยไม่ตรวจสอบ** — ก่อน apply diff หรือรันคำสั่งใดๆ
-      ที่มาจากคำตอบโมเดล ต้อง validate รูปแบบก่อนเสมอ (เช่น path ที่โมเดลให้มา
-      ต้องอยู่ภายใน `project_root` เท่านั้น ห้ามให้แก้ไฟล์นอกโปรเจกต์ได้
-      แม้โมเดลจะพยายามระบุ path แบบ `../../` ก็ตาม)
-    - **Fail loudly ไม่ใช่ fail silently** — ถ้าขั้นตอนไหนล้มเหลว (Ollama ต่อไม่ติด,
-      ไฟล์ไม่มีสิทธิ์เขียน) ต้องพิมพ์ข้อความแจ้งเตือนชัดเจนให้ผู้ใช้เห็นทันที
-      ห้ามให้โปรแกรมเงียบแล้วทำงานต่อราวกับไม่มีอะไรเกิดขึ้น
-    - **Idempotency สำหรับ backup**: ก่อนเขียนทับไฟล์ทุกครั้งต้อง backup
-      แม้จะ backup ซ้ำในรอบเดิมมาแล้วก็ตาม ห้ามข้ามด้วยเหตุผลว่า "backup ไปแล้ว
-      รอบก่อนหน้า"
-    - **ตรวจสอบทุกครั้งก่อนบอกว่า "เสร็จแล้ว"**: ต้องแสดงผลการทดสอบ/รันจริงให้เห็น
-      ในคำตอบ (เช่น output ของคำสั่งทดสอบ) ห้ามสรุปว่าใช้งานได้จากการอ่านโค้ดเฉยๆ
-      โดยไม่ได้รันจริง
-15. **ห้ามเริ่มเขียนโค้ดทันทีสำหรับงานใหญ่ที่มีหลาย module/หลายไฟล์ โดยไม่เสนอ
-    แผนภาพรวมให้ผู้ใช้อนุมัติก่อน** — ถ้าคำขอมีขอบเขตกว้าง (เช่น "สร้างระบบ...",
-    "ทำแอป...") ให้ทำหน้าที่เหมือน Lead Architect: สรุปแผน module/ลำดับงาน
-    เป็นข้อความสั้นๆ ก่อน แล้วค่อยลงมือเมื่อผู้ใช้ยืนยัน งานเล็ก (แก้บั๊กจุดเดียว,
-    เพิ่มฟังก์ชันเดียว) ไม่ต้องผ่านขั้นตอนนี้
-16. **⚠️ พักฟีเจอร์ Linear ไว้ก่อน (ผู้ใช้สั่งเลื่อนไปทำทีหลัง)** — ห้ามเพิ่ม/แก้โค้ด
-    ส่วน `/linear` หรือ `app/linear_connector.py` จนกว่าผู้ใช้จะขอกลับมาทำต่อ
-    อย่างชัดเจน แม้จะเห็นว่ายังมีของค้าง (เช่น คำสั่งอัปเดตสถานะกลับ) ก็อย่าแตะ
-    เพื่อไม่ให้เบี่ยงโฟกัสจากงานที่ผู้ใช้กำลังให้ความสำคัญอยู่ ณ ตอนนี้
-    (ดูตาราง TODO ด้านบนว่างานลำดับไหนกำลังทำอยู่จริง)
-17. **ทุกฟังก์ชันที่เปลี่ยนแปลงข้อมูลถาวร (แก้ไฟล์, เพิ่ม/แก้/ลบ todo, sync จาก
-    Linear) ต้องเรียก `sync_project()` จาก `app/desktop_archive.py` ทันทีหลังทำสำเร็จ**
-    เพื่อให้โฟลเดอร์เดสก์ท็อปเป็นข้อมูลล่าสุดตลอดเวลาตามที่ผู้ใช้ต้องการ — ถ้าเพิ่ม
-    คำสั่งใหม่ที่เปลี่ยนข้อมูลในอนาคต (เช่น features ใหม่หลัง Linear กลับมาทำต่อ)
-    ต้องเพิ่ม `sync_project()` เข้าไปด้วยเสมอ ห้ามลืม
+14. **มาตรฐานเพิ่มเติม — ห้ามละเลยแม้เป็นการแก้เล็กน้อย:**
+    - Error handling บังคับ: ทุกจุดที่เรียก network, อ่าน/เขียนไฟล์, หรือ parse ข้อมูลจากโมเดล
+    - ห้ามไว้ใจ input จากโมเดลโดยไม่ตรวจสอบ — path ต้องอยู่ภายใน `project_root`
+    - Fail loudly ไม่ใช่ fail silently
+    - Idempotency สำหรับ backup
+15. **ห้ามเริ่มเขียนโค้ดทันทีสำหรับงานใหญ่โดยไม่เสนอแผนภาพรวมให้ผู้ใช้อนุมัติก่อน**
+16. **⚠️ พักฟีเจอร์ Linear ไว้ก่อน** — ห้ามเพิ่ม/แก้โค้ดส่วน `/linear` จนกว่าผู้ใช้จะขอกลับมาทำต่อ
+17. **ทุกฟังก์ชันที่เปลี่ยนแปลงข้อมูลถาวรต้องเรียก `sync_project()` ทันทีหลังทำสำเร็จ**
 18. **`/websearch` ต้องปิด (0) เป็นค่าเริ่มต้นเสมอ** — ผู้ใช้ต้องเปิดเองทุกครั้ง
-    ที่เริ่มโปรแกรมใหม่ (ไม่ persist ข้ามเซสชัน) เพื่อไม่ให้แอบส่ง query ออก
-    อินเทอร์เน็ตโดยผู้ใช้ไม่รู้ตัว และถ้าค้นหาไม่สำเร็จ (ไม่มี key/ต่อเน็ตไม่ได้)
-    ต้อง fallback เป็นโหมด LLM local ล้วนอัตโนมัติ ห้ามทำให้โปรแกรมค้างหรือ
-    ปฏิเสธตอบคำถามเพียงเพราะค้นหาไม่ได้
-19. **งานตกแต่ง UX/UI (สี, banner, ข้อความต้อนรับ) ต้องยึดหลัก 9arm ข้อ 1
-    "ไม่แต่งเติม"** — ข้อความใน banner/README ห้ามอวดอ้างความสามารถเกินจริง
-    (เช่น ห้ามเขียนว่า "เก่งเท่า Claude Code" หรือ "แม่นยำสูง" ทั้งที่โมเดลเล็ก
-    บน RAM 8GB ยังพลาด diff บ่อย) ให้บอกแค่สิ่งที่ระบบทำได้จริงตามที่ทดสอบแล้ว
-    และยึดข้อ 4 "เชื่อม theory กับ practice" — ทุกฟีเจอร์ใหม่ที่เพิ่มต้องมีคำอธิบาย
-    สั้นๆ ว่า "ใช้ประโยชน์ตรงไหนจริง" ไม่ใช่ใส่เพราะดูดีเฉยๆ
+19. **งานตกแต่ง UX/UI ต้องยึดหลัก 9arm ข้อ 1 "ไม่แต่งเติม"** — ห้ามอวดอ้างความสามารถเกินจริง
 20. **ก่อนช่วย debug ปัญหาการติดตั้ง ต้องเช็คตาราง Troubleshooting ก่อนเสมอ**
-    ว่าเคยเจอปัญหานี้มาก่อนหรือยัง — ถ้าเคยเจอ ใช้วิธีแก้ที่ยืนยันแล้วในตารางก่อน
-    ไม่เดาสาเหตุใหม่ตั้งแต่ศูนย์ **และห้ามส่งไฟล์ที่อ้างอิงกัน (เช่น .bat เรียก .ps1,
-    หรือไฟล์ installer ที่อ้างถึงไฟล์อื่น) แยกเป็นไฟล์เดี่ยวๆ เด็ดขาด — ต้องแพ็กเป็น
-    .zip เดียวเสมอ** และทดสอบ extract+รันจริงก่อนส่งมอบทุกครั้ง (ไม่ใช่แค่ syntax
-    check) — ถ้าเจอปัญหาใหม่ที่ไม่อยู่ในตาราง ให้เพิ่มเข้าไปหลังแก้เสร็จทันที
-21. **Rule of Scrutiny for AI Refactoring** — เมื่อผู้ใช้แปะโค้ด/เอกสารสถาปัตยกรรม
-    ที่มาจาก AI ตัวอื่น (ไม่ใช่จากบทสนทนานี้) อ้างว่าเป็นเวอร์ชันปรับปรุง/refactor
-    ของโปรเจกต์นี้ ต้องยึด 3 ข้อนี้เสมอ:
-    - **Never Replace, Only Patch** — ห้ามเอาโค้ดจากเอกสารนั้นไปทับไฟล์หลักทั้งไฟล์
-      เด็ดขาด แม้เอกสารจะดูเป็นระบบ/มั่นใจแค่ไหนก็ตาม ให้ตรวจแยกทีละจุดว่าอะไรดีจริง
-      แล้ว patch เฉพาะจุดนั้นเข้าโค้ดที่ผ่านการทดสอบแล้วเท่านั้น
-    - **Cross-Platform First** — ฟังก์ชันระดับ system call ใดๆ (เช็ก RAM/CPU/OS info)
-      ที่เสนอมาจากเอกสารภายนอก ถ้าเขียนมาเฉพาะ Windows เท่านั้น (เช่น `ctypes.windll`
-      ตรงๆ ไม่มี branch อื่น) ต้องแก้ให้รองรับ Linux (`/proc/meminfo`) และ macOS
-      (`sysctl`) ก่อนนำมาใช้เสมอ ห้ามปล่อยผ่านทั้งที่รู้ว่าจะ crash บน platform อื่น
-    - **Preserve Stateful Conversations** — payload ที่ส่งไป Ollama/LLM API ต้องรักษา
-      โครงสร้าง `messages: [...]` (มี conversation history) เสมอ ห้ามยอมรับข้อเสนอ
-      ที่ถอยไปใช้ `prompt: "..."` แบบ single-turn แม้จะดูเรียบง่ายกว่าก็ตาม เพราะทำลาย
-      ความสามารถคุยต่อเนื่องหลายรอบซึ่งเป็นฟีเจอร์หลักของ chat loop
-22. **ทุกไฟล์ `.ps1`/`.iss` ที่มีข้อความไทย (แสดงผลจริงหรือเป็น string literal)
-    ต้องมี UTF-8 BOM (`\xef\xbb\xbf`) นำหน้าเสมอ** — ยืนยันจากบั๊กจริงบน Windows:
-    PowerShell 5.1 อ่านไฟล์ไม่มี BOM ด้วย codepage เก่า ทำให้ข้อความไทยเพี้ยนจน
-    parse ทั้งไฟล์ไม่ผ่าน (`ParserError`/`MissingExpressionAfterToken`) — **ห้ามเติม
-    BOM ให้ `.bat`** เพราะ `cmd.exe` ตีความ BOM ผิดได้ (ถ้า `.bat` มีข้อความไทยแค่ใน
-    `REM` comment ไม่ต้องแก้ เพราะไม่ execute) ทุกครั้งที่สร้างไฟล์ `.ps1`/`.iss` ใหม่
-    ที่มีข้อความไทย ต้องเช็ค 3 byte แรกว่าเป็น BOM ก่อนส่งมอบเสมอ
-23. **`config.json` (เก็บ API key แบบ hot-swap ผ่าน `/config set`) ต้องไม่ถูก commit
-    เข้า git หรือแนบไปกับไฟล์ที่ส่งให้คนอื่นเด็ดขาด** — เป็นไฟล์ที่มี secret จริง
-    ต่างจากไฟล์อื่นในโปรเจกต์ ถ้ามี `.gitignore` ต้องเพิ่ม `config.json` เข้าไปด้วย
-    เสมอ และห้าม print ค่า key เต็มๆ ออกจอ (ฟังก์ชัน `list_configured_keys()`
-    คืนแค่ชื่อ key ไม่คืนค่าจริง ให้ยึดรูปแบบนี้ต่อไปถ้าจะเพิ่มฟังก์ชันโชว์ config)
+21. **Rule of Scrutiny for AI Refactoring** — Never Replace Only Patch; Cross-Platform First; Preserve Stateful Conversations
+22. **ทุกไฟล์ `.ps1`/`.iss` ที่มีข้อความไทยต้องมี UTF-8 BOM นำหน้าเสมอ** — ห้ามเติม BOM ให้ `.bat`
+23. **`config.json` ต้องไม่ถูก commit เข้า git เด็ดขาด** — ต้องอยู่ใน `.gitignore` และห้าม print ค่า key เต็มๆ ออกจอ
 
-## Observability Chain (v0.1.4–v0.1.7) — ตรวจสอบสถานะระบบจากทุกจุด
-
-ออกแบบตาม "observability-first" principle: ผู้ใช้/support ต้องเช็กสถานะระบบได้เสมอ
+## Observability Chain (v0.1.4–v0.1.7)
 
 | endpoint / คำสั่ง | auth | คืนอะไร | ใช้ตอนไหน |
 |---|---|---|---|
 | `GET /api/health` | public | ok, ollama, ram_pressure, recommended_model, backend, network | liveness check, smoke test |
 | `GET /api/status` | public | isOpen, nextChange, Retry-After | ลูกค้าดูว่าเซิร์ฟเวอร์เปิดอยู่ไหม |
 | `GET /api/version` | public | version, python, name | QA/support ถามเวอร์ชัน |
-| `server.py --version` | CLI | LCA X.Y.Z (python X.Y.Z) | dev เช็กก่อนรัน, --no-GUI |
+| `server.py --version` | CLI | LCA X.Y.Z (python X.Y.Z) | dev เช็กก่อนรัน |
 | `lca_app.py --version` | CLI | LCA Desktop X.Y.Z (python X.Y.Z) | dev/sysadmin เช็ก bundle |
 | `GET /api/admin/hw-profile` | ADMIN+ | tier, cpu_model, ram_gb, recommended_config, next_upgrade | support ถามสเปกเครื่อง |
 
@@ -561,47 +370,24 @@ uninstaller (copy ไปรันที่ `%TEMP%` ก่อนลบตัว�
 - เครื่องกลาง (16GB RAM): `qwen2.5-coder:7b` หรือ `deepseek-coder-v2:16b`
 - เครื่องแรง (32GB+ / มี GPU): `qwen2.5-coder:32b`, `codellama:34b`
 
-`qwen2.5-coder` เป็นตระกูลที่เก่งเรื่องโค้ดที่สุดในกลุ่มโมเดลฟรีตอนนี้
-
 ## ขั้นตอนติดตั้ง
 
-### 1. ติดตั้ง Ollama
-
 ```bash
-# macOS / Linux
 curl -fsSL https://ollama.com/install.sh | sh
-
-# Windows: ดาวน์โหลดตัวติดตั้งจาก https://ollama.com/download
-```
-
-### 2. ดึงโมเดลมาไว้ในเครื่อง
-
-```bash
 ollama pull qwen2.5-coder:3b
-```
-
-### 3. ทดสอบว่า Ollama รันอยู่
-
-```bash
-ollama serve   # ถ้ายังไม่รันเป็น background service
 curl http://localhost:11434/api/tags
 ```
 
-## โครงสร้างสคริปต์ผู้ช่วย (Python)
+## โครงสร้างสคริปต์ผู้ช่วย
 
-ไฟล์หลักคือ `local_coder.py` — ทำหน้าที่:
+`local_coder.py` ทำหน้าที่:
 1. รับ path ไฟล์/โฟลเดอร์ที่จะแก้
 2. อ่านเนื้อหาไฟล์ ใส่ใน prompt เป็น context
-3. ส่งไปที่ Ollama API (`/api/chat`) พร้อม system prompt ที่บังคับให้ตอบเป็น
-   diff block รูปแบบตายตัว
+3. ส่งไปที่ Ollama API (`/api/chat`) พร้อม system prompt บังคับตอบเป็น diff block
 4. Parse diff แล้ว apply ลงไฟล์จริงด้วยการยืนยันจากผู้ใช้ก่อนทุกครั้ง
 5. เก็บ conversation history ไว้คุยต่อเนื่องได้
 
-ดูโค้ดเต็มที่ `local_coder.py` ในโฟลเดอร์เดียวกับ skill นี้
-
-### รูปแบบ diff ที่บังคับให้โมเดลตอบ
-
-ใช้ format คล้าย Aider's SEARCH/REPLACE block เพราะโมเดลเล็กทำตามได้ง่ายกว่า unified diff:
+### รูปแบบ diff (SEARCH/REPLACE block)
 
 ```
 path/to/file.py
@@ -612,68 +398,17 @@ path/to/file.py
 >>>>>>> REPLACE
 ```
 
-กฎสำคัญที่ต้องใส่ใน system prompt:
-- SEARCH block ต้อง match เนื้อหาไฟล์เป๊ะๆ (รวม indentation)
-- ถ้าเป็นไฟล์ใหม่ ให้ SEARCH block ว่างเปล่า
-- ห้ามตอบอย่างอื่นนอกจาก block พวกนี้ถ้าโหมดคือ "edit"
+## เทคนิคสำหรับเครื่องสเปกต่ำ
 
-## การใช้งาน
+1. ใช้โมเดลขนาด 1.5b–3b เท่านั้น
+2. จำกัด context — ส่งแค่ไฟล์ที่เกี่ยวข้อง
+3. ตั้ง `num_ctx` ไม่เกิน 4096–8192 token
+4. ปิด GUI อื่นๆ ตอนรันโมเดล
 
-```bash
-python3 local_coder.py --model qwen2.5-coder:3b ./my_project
-```
+## ทำไมไม่ใช้ Aider ของจริง
 
-จากนั้นจะเข้าสู่ chat loop:
-```
-> เพิ่มฟังก์ชัน validate_email ในไฟล์ utils.py
-[โมเดลตอบ diff] → ถามยืนยัน (y/n) → apply ไฟล์จริง
-> /files          # ดูว่ามีไฟล์ไหนอยู่ใน context บ้าง
-> /add path.py    # เพิ่มไฟล์เข้า context
-> /undo           # ย้อนกลับการแก้ล่าสุด (ใช้ git diff เก็บ backup)
-> /exit
-```
+- เครื่อง/สภาพแวดล้อมอาจไม่มีสิทธิ์ `pip install` ได้ตลอดเวลา
+- Aider ผูกกับ dependency เยอะ กิน RAM ตอนติดตั้ง/รันบนเครื่อง 8GB
+- ต้องการ workflow เฉพาะทาง (บังคับ 4 ขั้นตอน, ภาษาไทยเป็นหลัก, เชื่อม Linear)
 
-## เทคนิคสำหรับเครื่องสเปกต่ำ (netbook)
-
-1. **ใช้โมเดลขนาด 1.5b–3b เท่านั้น** — โมเดลใหญ่กว่านี้จะช้ามากถ้าไม่มี GPU
-2. **จำกัด context** — ส่งแค่ไฟล์ที่เกี่ยวข้อง ไม่ใช่ทั้งโปรเจกต์
-3. **ตั้ง `num_ctx` ให้พอดี** ไม่เกิน 4096–8192 token เพื่อประหยัด RAM
-4. **ปิด GUI อื่นๆ** ตอนรันโมเดล เพราะ RAM ถูกกินหนัก
-5. ถ้าเครื่องแรงไม่พอจริงๆ ให้พิจารณา **hybrid mode**: ใช้ Ollama สำหรับงานง่าย
-   (autocomplete, explain code) และสลับไป Claude Haiku ผ่าน API (ตามที่ตั้งไว้แล้ว
-   ใน `CLAUDE.md`) สำหรับงานซับซ้อน — ประหยัดทั้งเงินและแรงเครื่อง
-
-## Workflow บังคับทุกครั้งที่บันทึกไฟล์ (4 ขั้นตอน)
-
-ทุกครั้งที่ผู้ช่วยจะแก้/เซฟไฟล์ ต้องทำครบ 4 ขั้นตอนนี้เสมอ ห้ามข้าม:
-
-1. **อ่านไฟล์ (Read)** — อ่านเนื้อหาไฟล์เป้าหมายจากดิสก์ล่าสุดก่อนทุกครั้ง
-   ห้ามใช้เนื้อหาที่ cache ไว้ใน context เก่า เพราะไฟล์อาจถูกแก้จากที่อื่นระหว่างทาง
-2. **ตรวจสอบโปรเจกต์ซ้ำ (Re-check Project)** — สแกนโครงสร้างโปรเจกต์คร่าวๆ
-   (รายชื่อไฟล์ + ไฟล์ที่เกี่ยวข้องโดยตรง) เพื่อดูว่าการแก้ไขนี้กระทบไฟล์อื่นไหม
-   ก่อนตัดสินใจ apply diff
-3. **แก้ไข (Fix/Apply)** — apply SEARCH/REPLACE block ลงไฟล์จริง พร้อม backup
-   อัตโนมัติก่อนเขียนทับทุกครั้ง (ไว้ใช้กับ `/undo`)
-4. **เขียนรายงาน (Write Report)** — หลัง apply เสร็จ บันทึก log ลงไฟล์
-   `CHANGELOG_local.md` ในโปรเจกต์ ระบุ: เวลา, ไฟล์ที่แก้, สรุปการเปลี่ยนแปลง,
-   สถานะ (สำเร็จ/ข้าม/ล้มเหลว) — เพื่อให้ตรวจสอบย้อนหลังได้ว่าเกิดอะไรขึ้นบ้าง
-
-ลำดับนี้บังคับใช้เสมอไม่ว่าจะแก้ไฟล์เดียวหรือหลายไฟล์ในคำขอเดียวกัน
-(วนครบ 4 ขั้นตอนต่อไฟล์ แล้วค่อยไปไฟล์ถัดไป)
-
-## ทำไมไม่ใช้ Aider ของจริง (ต้องสร้างเอง)
-
-ปกติแนะนำ Aider สำเร็จรูปได้ (`pip install aider-chat`) แต่ **ในสถานการณ์ของ skill นี้
-ใช้ไม่ได้จริง** เพราะข้อจำกัดที่พบบ่อย:
-
-- เครื่อง/สภาพแวดล้อมของผู้ใช้อาจไม่มีสิทธิ์ต่อ internet แบบเปิดกว้างให้ `pip install`
-  จาก PyPI ได้ตลอดเวลา (firewall/allowlist องค์กร หรือเน็ตบุ๊กที่จำกัดการเข้าถึง)
-- Aider ผูกกับ dependency เยอะ (litellm ฯลฯ) ซึ่งกิน RAM ตอนติดตั้ง/รัน
-  บนเครื่อง 8GB ได้ยากกว่าที่คิด และ debug เวลาเกิด error ยากกว่าโค้ดที่เราคุมเอง
-- Aider ออกแบบมาให้ generic ใช้ได้กับทุก provider — แต่ผู้ใช้ต้องการ workflow
-  เฉพาะทาง (บังคับ 4 ขั้นตอน Read→Re-check→Fix→Report, ภาษาไทยเป็นหลัก,
-  เชื่อมกับ project ภายนอกอย่าง Linear) ซึ่งปรับแต่ง Aider จากนอกให้ทำแบบนี้ได้ยาก
-  กว่าเขียนเองตรงๆ
-
-**ข้อสรุป**: ให้ใช้ `local_coder.py` ที่สร้างเองในโฟลเดอร์นี้เป็นหลัก ไม่ต้องพึ่ง Aider
-เลย — ควบคุมได้ทุกจุด ไม่มี dependency ภายนอกนอกจาก Python มาตรฐาน + Ollama
+**ข้อสรุป**: ให้ใช้ `local_coder.py` เป็นหลัก — ควบคุมได้ทุกจุด ไม่มี dependency ภายนอกนอกจาก Python มาตรฐาน + Ollama
