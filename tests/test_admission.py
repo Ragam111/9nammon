@@ -5,6 +5,15 @@
 - เครื่องเต็ม + รอเกิน max_wait → Busy (timeout)
 - คิวเต็ม (waiting >= max_queue) → Busy ทันที
 - gate_from_config: อ่าน config, ค่าพัง/ไม่ตั้ง → default 1
+
+Covers:
+  AdmissionGateTest    — sequential OK, concurrent timeout, queue full immediate,
+                         busy no waiting leak, stats waiting zero after bust
+  GateFromConfigTest   — default when unset, reads config value, bad value fallback,
+                         zero clamped to 1
+  AdmissionMetaTest    — Busy is Exception, stats returns dict with keys, max_concurrent
+                         stored, stats waiting zero at start, max_queue stored,
+                         large max_concurrent accepted, negative max_wait no crash
 """
 
 import sys
@@ -103,6 +112,16 @@ class AdmissionGateTest(unittest.TestCase):
         release.set()
         t.join(2)
 
+    def test_stats_waiting_zero_after_all_released(self):
+        g = admission.AdmissionGate(max_concurrent=2, max_wait=0.1, max_queue=4)
+        for _ in range(3):
+            try:
+                with g.slot():
+                    pass
+            except admission.Busy:
+                pass
+        self.assertEqual(g.stats()["waiting"], 0)
+
 
 class GateFromConfigTest(unittest.TestCase):
     def test_default_when_unset(self):
@@ -120,6 +139,49 @@ class GateFromConfigTest(unittest.TestCase):
     def test_zero_or_negative_clamped_to_1(self):
         g = admission.gate_from_config(None, config_get=lambda root, k: "0")
         self.assertEqual(g.max_concurrent, 1)
+
+    def test_negative_clamped_to_1(self):
+        g = admission.gate_from_config(None, config_get=lambda root, k: "-5")
+        self.assertEqual(g.max_concurrent, 1)
+
+    def test_large_value_accepted(self):
+        g = admission.gate_from_config(None, config_get=lambda root, k: "16")
+        self.assertEqual(g.max_concurrent, 16)
+
+
+class AdmissionMetaTest(unittest.TestCase):
+    def test_busy_is_exception_subclass(self):
+        self.assertTrue(issubclass(admission.Busy, Exception))
+
+    def test_stats_returns_dict(self):
+        g = admission.AdmissionGate()
+        st = g.stats()
+        self.assertIsInstance(st, dict)
+
+    def test_stats_has_required_keys(self):
+        g = admission.AdmissionGate()
+        st = g.stats()
+        for key in ("max_concurrent", "waiting", "max_queue"):
+            self.assertIn(key, st, f"stats ต้องมี key: {key}")
+
+    def test_max_concurrent_stored(self):
+        g = admission.AdmissionGate(max_concurrent=4)
+        self.assertEqual(g.max_concurrent, 4)
+
+    def test_stats_waiting_zero_at_start(self):
+        g = admission.AdmissionGate()
+        self.assertEqual(g.stats()["waiting"], 0)
+
+    def test_max_queue_stored(self):
+        g = admission.AdmissionGate(max_queue=5)
+        self.assertEqual(g.stats()["max_queue"], 5)
+
+    def test_slot_context_manager_works(self):
+        g = admission.AdmissionGate(max_concurrent=1)
+        entered = []
+        with g.slot():
+            entered.append(True)
+        self.assertEqual(entered, [True])
 
 
 if __name__ == "__main__":
