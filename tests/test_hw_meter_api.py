@@ -105,6 +105,23 @@ class HwMeterApiTest(unittest.TestCase):
         _, data = self._get("/api/metrics/hw", token=self.session_token)
         self.assertIsInstance(data["cpu_per_core"], list)
 
+    def test_hw_meter_logical_cores_is_int(self):
+        _, data = self._get("/api/metrics/hw", token=self.session_token)
+        self.assertIsInstance(data["logical_cores"], int)
+
+    def test_hw_meter_ram_total_gb_is_number(self):
+        _, data = self._get("/api/metrics/hw", token=self.session_token)
+        self.assertIsInstance(data["ram_total_gb"], (int, float))
+
+    def test_hw_meter_recommended_model_is_string(self):
+        _, data = self._get("/api/metrics/hw", token=self.session_token)
+        self.assertIsInstance(data["recommended_model"], str)
+
+    def test_hw_meter_values_match_fake(self):
+        _, data = self._get("/api/metrics/hw", token=self.session_token)
+        self.assertAlmostEqual(data["cpu_pct"], _FAKE_SNAPSHOT["cpu_pct"], places=1)
+        self.assertAlmostEqual(data["ram_pct"], _FAKE_SNAPSHOT["ram_pct"], places=1)
+
 
 if __name__ == "__main__":
     unittest.main()
