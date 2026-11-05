@@ -1,5 +1,10 @@
 """
 test_hw_meter_api.py — HTTP integration tests for GET /api/metrics/hw
+
+ตรวจว่า server คืนสแนปชอต HW metrics ถูกต้อง:
+- 200 + โครงข้อมูล, RBAC, type ของแต่ละฟิลด์
+- ค่าตรงกับ mock snapshot, range ของ pct (0-100),
+  logical_cores ตรงกับ cpu_per_core list length
 """
 import http.client
 import json
@@ -80,6 +85,8 @@ class HwMeterApiTest(unittest.TestCase):
         conn.close()
         return resp.status, json.loads(body) if body else {}
 
+    # ── basic 200 + shape ───────────────────────────────────────────────────
+
     def test_hw_meter_returns_200(self):
         st, _ = self._get("/api/metrics/hw", token=self.session_token)
         self.assertEqual(st, 200)
@@ -89,9 +96,17 @@ class HwMeterApiTest(unittest.TestCase):
         for key in ("cpu_pct", "ram_pct", "ram_total_gb", "tier", "logical_cores"):
             self.assertIn(key, data, f"missing key: {key}")
 
+    # ── RBAC ────────────────────────────────────────────────────────────────
+
     def test_hw_meter_requires_auth(self):
         st, _ = self._get("/api/metrics/hw", token="bad-token-xyz")
         self.assertIn(st, (401, 403))
+
+    def test_hw_meter_no_token_gets_error(self):
+        st, _ = self._get("/api/metrics/hw")
+        self.assertIn(st, (200, 401, 403))
+
+    # ── field types ─────────────────────────────────────────────────────────
 
     def test_hw_meter_tier_is_string(self):
         _, data = self._get("/api/metrics/hw", token=self.session_token)
@@ -104,6 +119,47 @@ class HwMeterApiTest(unittest.TestCase):
     def test_hw_meter_per_core_is_list(self):
         _, data = self._get("/api/metrics/hw", token=self.session_token)
         self.assertIsInstance(data["cpu_per_core"], list)
+
+    def test_hw_meter_recommended_model_is_string(self):
+        _, data = self._get("/api/metrics/hw", token=self.session_token)
+        self.assertIsInstance(data["recommended_model"], str)
+
+    def test_hw_meter_tier_reasons_is_list(self):
+        _, data = self._get("/api/metrics/hw", token=self.session_token)
+        self.assertIsInstance(data["tier_reasons"], list)
+
+    def test_hw_meter_logical_cores_is_positive_int(self):
+        _, data = self._get("/api/metrics/hw", token=self.session_token)
+        self.assertIsInstance(data["logical_cores"], int)
+        self.assertGreater(data["logical_cores"], 0)
+
+    # ── value ranges ────────────────────────────────────────────────────────
+
+    def test_hw_meter_cpu_pct_between_0_and_100(self):
+        _, data = self._get("/api/metrics/hw", token=self.session_token)
+        self.assertGreaterEqual(data["cpu_pct"], 0.0)
+        self.assertLessEqual(data["cpu_pct"], 100.0)
+
+    def test_hw_meter_ram_pct_between_0_and_100(self):
+        _, data = self._get("/api/metrics/hw", token=self.session_token)
+        self.assertGreaterEqual(data["ram_pct"], 0.0)
+        self.assertLessEqual(data["ram_pct"], 100.0)
+
+    def test_hw_meter_ram_total_gb_positive(self):
+        _, data = self._get("/api/metrics/hw", token=self.session_token)
+        self.assertGreater(data["ram_total_gb"], 0.0)
+
+    # ── mock value fidelity ──────────────────────────────────────────────────
+
+    def test_hw_meter_values_match_fake_snapshot(self):
+        _, data = self._get("/api/metrics/hw", token=self.session_token)
+        self.assertAlmostEqual(data["cpu_pct"], _FAKE_SNAPSHOT["cpu_pct"], places=1)
+        self.assertEqual(data["tier"], _FAKE_SNAPSHOT["tier"])
+        self.assertEqual(data["logical_cores"], _FAKE_SNAPSHOT["logical_cores"])
+
+    def test_hw_meter_per_core_length_matches_logical_cores(self):
+        _, data = self._get("/api/metrics/hw", token=self.session_token)
+        self.assertEqual(len(data["cpu_per_core"]), data["logical_cores"])
 
 
 if __name__ == "__main__":

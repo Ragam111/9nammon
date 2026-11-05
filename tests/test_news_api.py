@@ -1,5 +1,10 @@
 """
 test_news_api.py — HTTP integration tests for GET /api/news
+
+ตรวจว่า server คืนข่าว RSS ถูกต้อง:
+- 200 + โครงข้อมูล, RBAC, field types
+- articles มี required fields, count ตรง, cache ทำงาน
+- feeds/errors/cached_until types ถูกต้อง
 """
 import http.client
 import json
@@ -23,6 +28,7 @@ _FAKE_ARTICLES = [
 ]
 
 _ORIG_FETCH = news_store._fetch_feed
+_ORIG_GENERATE = model_backend.generate
 
 
 def _mock_fetch(url: str, timeout: int = 10) -> list:
@@ -48,6 +54,7 @@ class NewsApiTest(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        model_backend.generate = _ORIG_GENERATE
         news_store._fetch_feed = _ORIG_FETCH
 
     def setUp(self):
@@ -72,6 +79,8 @@ class NewsApiTest(unittest.TestCase):
         conn.close()
         return resp.status, json.loads(body) if body else {}
 
+    # ── basic 200 + shape ───────────────────────────────────────────────────
+
     def test_news_returns_200(self):
         st, _ = self._get("/api/news", token=self.session_token)
         self.assertEqual(st, 200)
@@ -85,9 +94,17 @@ class NewsApiTest(unittest.TestCase):
         _, data = self._get("/api/news", token=self.session_token)
         self.assertIsInstance(data["articles"], list)
 
+    # ── RBAC ────────────────────────────────────────────────────────────────
+
     def test_news_requires_auth(self):
         st, _ = self._get("/api/news", token="bad-token-xyz")
         self.assertIn(st, (401, 403), f"ต้องได้ 401/403 ด้วย token ผิด แต่ได้ {st}")
+
+    def test_news_bad_token_gets_error(self):
+        st, data = self._get("/api/news", token="wrong-token")
+        self.assertIn(st, (401, 403))
+
+    # ── content ─────────────────────────────────────────────────────────────
 
     def test_news_count_matches_articles(self):
         _, data = self._get("/api/news", token=self.session_token)
@@ -99,6 +116,47 @@ class NewsApiTest(unittest.TestCase):
         article = data["articles"][0]
         for field in ("title", "link", "pubDate", "source"):
             self.assertIn(field, article, f"missing field: {field}")
+
+    def test_news_count_at_least_fake_articles(self):
+        _, data = self._get("/api/news", token=self.session_token)
+        self.assertGreaterEqual(data["count"], len(_FAKE_ARTICLES))
+
+    def test_news_articles_title_is_nonempty_string(self):
+        _, data = self._get("/api/news", token=self.session_token)
+        article = data["articles"][0]
+        self.assertIsInstance(article["title"], str)
+        self.assertGreater(len(article["title"]), 0)
+
+    def test_news_articles_link_is_nonempty_string(self):
+        _, data = self._get("/api/news", token=self.session_token)
+        article = data["articles"][0]
+        self.assertIsInstance(article["link"], str)
+        self.assertGreater(len(article["link"]), 0)
+
+    # ── field types ─────────────────────────────────────────────────────────
+
+    def test_news_feeds_is_list_or_int(self):
+        _, data = self._get("/api/news", token=self.session_token)
+        self.assertIsInstance(data["feeds"], (list, int))
+
+    def test_news_errors_is_list(self):
+        _, data = self._get("/api/news", token=self.session_token)
+        self.assertIsInstance(data["errors"], list)
+
+    def test_news_cached_until_is_number(self):
+        _, data = self._get("/api/news", token=self.session_token)
+        self.assertIsInstance(data["cached_until"], (int, float))
+
+    def test_news_count_is_int(self):
+        _, data = self._get("/api/news", token=self.session_token)
+        self.assertIsInstance(data["count"], int)
+
+    # ── cache ────────────────────────────────────────────────────────────────
+
+    def test_news_second_call_returns_same_count(self):
+        _, first = self._get("/api/news", token=self.session_token)
+        _, second = self._get("/api/news", token=self.session_token)
+        self.assertEqual(first["count"], second["count"])
 
 
 if __name__ == "__main__":
