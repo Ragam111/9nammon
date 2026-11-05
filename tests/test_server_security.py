@@ -62,6 +62,30 @@ class TimingSafeTokenCompareTest(unittest.TestCase):
         status = self._get("/api/me", headers={})
         self.assertEqual(status, 401)
 
+    def test_health_is_public(self):
+        # /api/health ไม่ต้องใช้ token
+        status = self._get("/api/health", headers={})
+        self.assertEqual(status, 200)
+
+    def test_session_token_also_authenticates(self):
+        # server.make_handler สร้าง session_token ด้วย
+        handler_cls = server.make_handler(Path(self._tmp.name), None)
+        st = handler_cls.session_token
+        httpd2 = ThreadingHTTPServer(("127.0.0.1", 0), handler_cls)
+        t2 = threading.Thread(target=httpd2.serve_forever, daemon=True)
+        t2.start()
+        port2 = httpd2.server_address[1]
+        try:
+            conn = http.client.HTTPConnection("127.0.0.1", port2, timeout=5)
+            conn.request("GET", "/api/me", headers={"X-Auth-Token": st})
+            resp = conn.getresponse()
+            resp.read()
+            conn.close()
+            self.assertEqual(resp.status, 200)
+        finally:
+            httpd2.shutdown()
+            httpd2.server_close()
+
 
 class RequestBodySizeLimitTest(unittest.TestCase):
     """ตรวจว่า Content-Length ที่ใหญ่เกินจะถูกปฏิเสธด้วย 400 (ไม่ใช่ล้ม RAM)"""
@@ -117,6 +141,20 @@ class RequestBodySizeLimitTest(unittest.TestCase):
         status, _ = self._post_raw("/api/todos", body)
         self.assertNotEqual(status, 400,
                             "payload ภายใน limit ต้องไม่ถูกปฏิเสธด้วย body size")
+
+    def test_oversized_exact_boundary(self):
+        # 2 MiB + 1 byte ต้อง reject
+        boundary_plus = 2 * 1024 * 1024 + 1
+        body = b'{"text":"x"}'
+        status, raw = self._post_raw("/api/todos", body, content_length=boundary_plus)
+        self.assertEqual(status, 400)
+
+    def test_very_large_content_length_rejected(self):
+        # 1 GB declared → ต้อง reject ทันที ไม่ block server
+        huge_cl = 1 * 1024 * 1024 * 1024
+        body = b'{"text":"x"}'
+        status, raw = self._post_raw("/api/todos", body, content_length=huge_cl)
+        self.assertEqual(status, 400)
 
 
 if __name__ == "__main__":
