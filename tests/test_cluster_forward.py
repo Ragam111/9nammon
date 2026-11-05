@@ -19,10 +19,85 @@ import server  # noqa: E402
 from app import cluster_forward, cluster_store, config_manager  # noqa: E402
 
 
-class _StubNode(unittest.TestCase):
-    """node ปลายทางจิ๋ว: /api/chat คืน reply, /api/chat/stream คืน SSE"""
-    pass
+# ---------------------------------------------------------------------------
+# Module-level constants
+# ---------------------------------------------------------------------------
 
+class TestModuleConstants(unittest.TestCase):
+    def test_chat_path_starts_with_slash(self):
+        self.assertTrue(cluster_forward.CHAT_PATH.startswith("/"))
+
+    def test_chat_stream_path_starts_with_slash(self):
+        self.assertTrue(cluster_forward.CHAT_STREAM_PATH.startswith("/"))
+
+    def test_default_timeout_positive(self):
+        self.assertGreater(cluster_forward.DEFAULT_TIMEOUT, 0)
+
+    def test_forward_error_is_exception(self):
+        self.assertTrue(issubclass(cluster_forward.ForwardError, Exception))
+
+
+# ---------------------------------------------------------------------------
+# is_enabled — truthy/falsy values
+# ---------------------------------------------------------------------------
+
+class TestIsEnabled(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_disabled_by_default(self):
+        self.assertFalse(cluster_forward.is_enabled(self.root))
+
+    def test_enabled_by_true(self):
+        config_manager.set_key(self.root, "CLUSTER_FORWARD_ENABLED", "true")
+        self.assertTrue(cluster_forward.is_enabled(self.root))
+
+    def test_enabled_by_1(self):
+        config_manager.set_key(self.root, "CLUSTER_FORWARD_ENABLED", "1")
+        self.assertTrue(cluster_forward.is_enabled(self.root))
+
+    def test_enabled_by_yes(self):
+        config_manager.set_key(self.root, "CLUSTER_FORWARD_ENABLED", "yes")
+        self.assertTrue(cluster_forward.is_enabled(self.root))
+
+    def test_enabled_by_on(self):
+        config_manager.set_key(self.root, "CLUSTER_FORWARD_ENABLED", "on")
+        self.assertTrue(cluster_forward.is_enabled(self.root))
+
+    def test_disabled_by_false(self):
+        config_manager.set_key(self.root, "CLUSTER_FORWARD_ENABLED", "false")
+        self.assertFalse(cluster_forward.is_enabled(self.root))
+
+    def test_disabled_by_zero(self):
+        config_manager.set_key(self.root, "CLUSTER_FORWARD_ENABLED", "0")
+        self.assertFalse(cluster_forward.is_enabled(self.root))
+
+    def test_case_insensitive(self):
+        config_manager.set_key(self.root, "CLUSTER_FORWARD_ENABLED", "TRUE")
+        self.assertTrue(cluster_forward.is_enabled(self.root))
+
+
+# ---------------------------------------------------------------------------
+# ForwardError
+# ---------------------------------------------------------------------------
+
+class TestForwardError(unittest.TestCase):
+    def test_raises_as_exception(self):
+        with self.assertRaises(cluster_forward.ForwardError):
+            raise cluster_forward.ForwardError("test error")
+
+    def test_message_preserved(self):
+        err = cluster_forward.ForwardError("custom msg")
+        self.assertIn("custom msg", str(err))
+
+
+# ---------------------------------------------------------------------------
+# ForwardUnitTest (original + expanded)
+# ---------------------------------------------------------------------------
 
 class ForwardUnitTest(unittest.TestCase):
     def setUp(self):
@@ -49,6 +124,21 @@ class ForwardUnitTest(unittest.TestCase):
             cluster_forward.forward_chat("http://127.0.0.1:9", "tok",
                                          {"messages": []}, timeout=0.5)
 
+    def test_pick_target_returns_dict_with_expected_keys(self):
+        res = cluster_forward.pick_target(self.root, rr_index=0)
+        for key in ("node", "reason", "rr_index"):
+            self.assertIn(key, res)
+
+    def test_forward_chat_stream_raises_on_unreachable(self):
+        with self.assertRaises(cluster_forward.ForwardError):
+            # exhaust generator to trigger the error
+            list(cluster_forward.forward_chat_stream(
+                "http://127.0.0.1:9", "tok", {"messages": []}, timeout=0.5))
+
+
+# ---------------------------------------------------------------------------
+# ForwardIntegrationTest
+# ---------------------------------------------------------------------------
 
 class ForwardIntegrationTest(unittest.TestCase):
     """hub รับ /api/chat → forward ไป node จริง → เอา reply กลับมา"""
