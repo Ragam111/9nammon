@@ -4,6 +4,13 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [0.3.0] — 2026-11-05 (Test Coverage — stats_store unit tests)
+
+### Added
+- `tests/test_stats_store.py` — 31 unit tests covering `record` and `get_stats`
+  in `app/stats_store.py`: empty db, counts, error_rate, top-20 by_endpoint, last_24h
+- Test suite: 1209 → 1240 tests total
+
 ## [0.2.9] — 2026-11-05 (Test Coverage — db unit tests)
 
 ### Added
