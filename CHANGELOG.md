@@ -4,6 +4,14 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [0.3.6] — 2026-11-05
+
+### Tests
+- test_chat_page: 2 → 29 tests (ChatPageBudgetTest, ChatHtmlStructureTest, ChatJsStructureTest, ChatCssStructureTest, ChatFilesExistTest)
+- test_conn_usage: 5 → 17 tests (estimate_tokens edge cases, messages_tokens, summary keys/fields, degrade safety)
+- test_feature_flags: 5 → 15 tests (meta-structure, bool returns, isolation, error messages)
+- test_rate_limit: 5 → 13 tests (bool return, negative max, reset-all, boundary, many clients)
+
 ## [0.3.4] — 2026-11-05 (Test Coverage — router unit tests)
 
 ### Added
