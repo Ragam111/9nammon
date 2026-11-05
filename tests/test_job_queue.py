@@ -76,5 +76,59 @@ class JobQueueTest(unittest.TestCase):
         self.assertFalse(job_queue.delete_job(self.root, job["id"]))
 
 
+class JobQueueMetaTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_enqueue_returns_dict(self):
+        job = job_queue.enqueue(self.root, "meta")
+        self.assertIsInstance(job, dict)
+
+    def test_enqueue_result_has_id(self):
+        job = job_queue.enqueue(self.root, "meta")
+        self.assertIn("id", job)
+        self.assertIsInstance(job["id"], int)
+
+    def test_enqueue_result_has_name(self):
+        job = job_queue.enqueue(self.root, "my-job")
+        self.assertEqual(job["name"], "my-job")
+
+    def test_enqueue_result_has_status_pending(self):
+        job = job_queue.enqueue(self.root, "meta")
+        self.assertEqual(job["status"], "pending")
+
+    def test_enqueue_result_has_created_at(self):
+        job = job_queue.enqueue(self.root, "meta")
+        self.assertIn("created_at", job)
+        self.assertIsNotNone(job["created_at"])
+
+    def test_list_returns_list(self):
+        result = job_queue.list_jobs(self.root)
+        self.assertIsInstance(result, list)
+
+    def test_valid_status_set_contains_expected(self):
+        for s in ("pending", "running", "done", "failed"):
+            self.assertIn(s, job_queue.VALID_STATUS)
+
+    def test_null_payload_allowed(self):
+        job = job_queue.enqueue(self.root, "nopayload", payload=None)
+        self.assertIsNone(job.get("payload"))
+
+    def test_jobs_db_name_is_string(self):
+        self.assertIsInstance(job_queue.JOBS_DB_NAME, str)
+        self.assertTrue(job_queue.JOBS_DB_NAME.endswith(".db"))
+
+    def test_set_status_failed_valid(self):
+        job = job_queue.enqueue(self.root, "fail-me")
+        ok = job_queue.set_status(self.root, job["id"], "failed")
+        self.assertTrue(ok)
+        fetched = job_queue.get_job(self.root, job["id"])
+        self.assertEqual(fetched["status"], "failed")
+
+
 if __name__ == "__main__":
     unittest.main()
