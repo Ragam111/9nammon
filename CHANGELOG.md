@@ -4,6 +4,14 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [0.3.1] — 2026-11-05 (Test Coverage — news_store unit tests)
+
+### Added
+- `tests/test_news_store.py` — 19 unit tests covering `_fetch_feed` and `get_news`
+  in `app/news_store.py`: RSS parse, Atom parse, 20-item cap, title-less skip,
+  network error handling, 15-min cache hit/miss, error tracking
+- Test suite: 1240 → 1259 tests total
+
 ## [0.3.0] — 2026-11-05 (Test Coverage — stats_store unit tests)
 
 ### Added
