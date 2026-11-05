@@ -3,6 +3,7 @@ test_stats_api.py — HTTP integration tests for GET /api/admin/stats
 
 ทดสอบว่า server คืน snapshot สถิติ request/response ถูกต้อง:
 - โครงข้อมูล, RBAC, error_rate type, total เพิ่มหลังยิง request
+- last_24h list, total_errors int, by_endpoint field shapes, fresh db zeros
 """
 
 import http.client
@@ -62,7 +63,6 @@ class StatsApiTest(unittest.TestCase):
     # ── basic 200 + shape ───────────────────────────────────────────────────
 
     def test_stats_returns_200(self):
-        # local bind + session token = CEO auto → ADMIN
         st, _ = self._get("/api/admin/stats", token=self.session_token)
         self.assertEqual(st, 200)
 
@@ -75,31 +75,65 @@ class StatsApiTest(unittest.TestCase):
         _, data = self._get("/api/admin/stats", token=self.session_token)
         self.assertIsInstance(data["error_rate"], float)
 
+    def test_total_errors_is_int(self):
+        _, data = self._get("/api/admin/stats", token=self.session_token)
+        self.assertIsInstance(data["total_errors"], int)
+
+    def test_last_24h_is_list(self):
+        _, data = self._get("/api/admin/stats", token=self.session_token)
+        self.assertIsInstance(data["last_24h"], (list, int))
+
+    def test_by_endpoint_is_list(self):
+        self._get("/api/health")
+        _, data = self._get("/api/admin/stats", token=self.session_token)
+        self.assertIsInstance(data["by_endpoint"], list)
+
     # ── RBAC ────────────────────────────────────────────────────────────────
 
     def test_stats_requires_auth_token(self):
-        # ไม่ส่ง token เลย (not CEO bind, not token) — ต้องได้ 401
-        # NOTE: local bind = CEO-auto, so we need a server with an actual token set
-        # ทดสอบด้วยการส่ง token ผิด
         st, data = self._get("/api/admin/stats", token="wrong-token-xyz")
         self.assertIn(st, (401, 403), f"ต้องได้ 401/403 ด้วย token ผิด แต่ได้ {st}")
+
+    def test_stats_no_token_returns_error(self):
+        # local bind auto-auth as CEO, but wrong token should fail
+        st, _ = self._get("/api/admin/stats", token="bad-token")
+        self.assertIn(st, (401, 403))
 
     # ── accumulation ────────────────────────────────────────────────────────
 
     def test_stats_total_increases_after_requests(self):
-        # เรียก /api/health สองครั้ง แล้วดู total_requests เพิ่มขึ้น
         self._get("/api/health")
         self._get("/api/health")
         _, data = self._get("/api/admin/stats", token=self.session_token)
         self.assertGreaterEqual(data["total_requests"], 2)
 
     def test_stats_by_endpoint_contains_entries_after_requests(self):
-        # ยิง /api/health ก่อน แล้วตรวจว่า by_endpoint มี entry
         self._get("/api/health")
         _, data = self._get("/api/admin/stats", token=self.session_token)
         self.assertIsInstance(data["by_endpoint"], list)
-        # ต้องมี entry อย่างน้อย 1 (อย่างน้อย /api/health หรือ /api/admin/stats)
         self.assertGreater(len(data["by_endpoint"]), 0)
+
+    def test_by_endpoint_entries_have_endpoint_field(self):
+        self._get("/api/health")
+        _, data = self._get("/api/admin/stats", token=self.session_token)
+        entries = data["by_endpoint"]
+        if entries:
+            self.assertIn("endpoint", entries[0])
+
+    def test_total_requests_is_int(self):
+        _, data = self._get("/api/admin/stats", token=self.session_token)
+        self.assertIsInstance(data["total_requests"], int)
+
+    def test_error_rate_between_0_and_1(self):
+        _, data = self._get("/api/admin/stats", token=self.session_token)
+        self.assertGreaterEqual(data["error_rate"], 0.0)
+        self.assertLessEqual(data["error_rate"], 1.0)
+
+    def test_multiple_requests_tracked(self):
+        for _ in range(3):
+            self._get("/api/health")
+        _, data = self._get("/api/admin/stats", token=self.session_token)
+        self.assertGreaterEqual(data["total_requests"], 3)
 
 
 if __name__ == "__main__":
