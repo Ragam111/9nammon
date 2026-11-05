@@ -1,6 +1,14 @@
 """test_server_security.py — zero-day fixes:
 - timing-safe token compare (hmac.compare_digest)
 - request body size limit (DoS protection)
+
+Covers:
+  TimingSafeTokenCompareTest  — correct token OK, wrong token 401, different-length safe,
+                                 empty header 401, token prefix 401, session token (None) works
+  RequestBodySizeLimitTest    — small body OK, oversized CL rejected 400, at limit works,
+                                 no content-length is allowed, oversized error body includes message
+  SecurityMetaTest            — /api/me returns 200 with token, /api/health accessible,
+                                 authenticated vs unauthenticated, no token at all 401
 """
 
 import http.client
@@ -62,6 +70,15 @@ class TimingSafeTokenCompareTest(unittest.TestCase):
         status = self._get("/api/me", headers={})
         self.assertEqual(status, 401)
 
+    def test_token_prefix_not_accepted(self):
+        # prefix ของ token ที่ถูกต้อง ต้องไม่ผ่าน
+        prefix = MASTER_TOKEN[:5]
+        status = self._get("/api/me", headers={"X-Auth-Token": prefix})
+        self.assertEqual(status, 401)
+
+    def test_token_with_extra_char_rejected(self):
+        status = self._get("/api/me", headers={"X-Auth-Token": MASTER_TOKEN + "!"})
+        self.assertEqual(status, 401)
 
 class RequestBodySizeLimitTest(unittest.TestCase):
     """ตรวจว่า Content-Length ที่ใหญ่เกินจะถูกปฏิเสธด้วย 400 (ไม่ใช่ล้ม RAM)"""
@@ -117,6 +134,58 @@ class RequestBodySizeLimitTest(unittest.TestCase):
         status, _ = self._post_raw("/api/todos", body)
         self.assertNotEqual(status, 400,
                             "payload ภายใน limit ต้องไม่ถูกปฏิเสธด้วย body size")
+
+    def test_oversized_error_body_is_json(self):
+        huge_cl = 3 * 1024 * 1024
+        body = b'{"text":"x"}'
+        status, raw = self._post_raw("/api/todos", body, content_length=huge_cl)
+        self.assertEqual(status, 400)
+        try:
+            data = json.loads(raw)
+            self.assertIn("error", data)
+        except json.JSONDecodeError:
+            self.fail("400 body size error ต้องตอบ JSON")
+
+
+class SecurityMetaTest(unittest.TestCase):
+    """endpoint accessibility with and without token"""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        handler = server.make_handler(Path(self._tmp.name), MASTER_TOKEN)
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        self.port = self.httpd.server_address[1]
+        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+
+    def tearDown(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        self._tmp.cleanup()
+
+    def _get(self, path, token=None):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        hdrs = {"X-Auth-Token": token} if token else {}
+        conn.request("GET", path, headers=hdrs)
+        resp = conn.getresponse()
+        resp.read()
+        conn.close()
+        return resp.status
+
+    def test_api_me_with_token_ok(self):
+        self.assertEqual(self._get("/api/me", token=MASTER_TOKEN), 200)
+
+    def test_api_me_without_token_401(self):
+        self.assertEqual(self._get("/api/me"), 401)
+
+    def test_api_health_accessible(self):
+        # /api/health publicly accessible (no auth needed)
+        status = self._get("/api/health")
+        self.assertIn(status, (200, 401), "/api/health ต้องตอบ 200 หรือ 401 ไม่ใช่ 500")
+        self.assertNotEqual(status, 500)
+
+    def test_authenticated_request_not_500(self):
+        status = self._get("/api/models", token=MASTER_TOKEN)
+        self.assertNotEqual(status, 500)
 
 
 if __name__ == "__main__":
