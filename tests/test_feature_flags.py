@@ -48,5 +48,42 @@ class FeatureFlagsTest(unittest.TestCase):
         self.assertTrue(cluster_forward.is_enabled(self.root))
 
 
+class FeatureFlagsExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_features_is_list(self):
+        self.assertIsInstance(ff.FEATURES, list)
+
+    def test_features_nonempty(self):
+        self.assertGreater(len(ff.FEATURES), 0)
+
+    def test_each_feature_has_key_and_name(self):
+        for f in ff.FEATURES:
+            self.assertIn("key", f)
+            self.assertIn("name", f)
+
+    def test_is_on_returns_bool(self):
+        key = ff.FEATURES[0]["key"]
+        result = ff.is_on(self.root, key)
+        self.assertIsInstance(result, bool)
+
+    def test_status_returns_list(self):
+        result = ff.status(self.root)
+        self.assertIsInstance(result, list)
+
+    def test_set_flag_returns_dict(self):
+        key = ff.FEATURES[0]["key"]
+        result = ff.set_flag(self.root, key, True)
+        self.assertIsInstance(result, dict)
+
+    def test_is_on_unknown_key_returns_false(self):
+        self.assertFalse(ff.is_on(self.root, "definitely_not_a_real_key_xyz"))
+
+
 if __name__ == "__main__":
     unittest.main()
