@@ -4,6 +4,16 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [0.3.5] — 2026-11-05 (Test Coverage — conn_usage extended tests)
+
+### Added
+- `tests/test_conn_usage.py` — expanded from 5 to 33 tests: boundary cases for
+  `estimate_tokens` (empty/4-char/8-char/min-1), `estimate_messages_tokens` (None/empty
+  list/non-dict items/missing-content/None-content), `record_usage` (None conn_id/name,
+  zero tokens, multiple endpoints), `summary` shape (all 7 keys, `price_per_1k_tokens`,
+  ordering by requests DESC, aggregation), and `_cost` helper (0/500/1000 tokens)
+- Test suite: 1273 → 1301 tests total
+
 ## [0.3.4] — 2026-11-05 (Test Coverage — router unit tests)
 
 ### Added
