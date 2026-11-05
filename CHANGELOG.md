@@ -4,6 +4,14 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [0.3.3] — 2026-11-05 (Test Coverage — cli_session unit tests)
+
+### Added
+- `tests/test_cli_session.py` — 32 unit tests covering `data_dir`, `sessions_dir`,
+  `SessionLog.append` (create/write/OSError fallback), `load_messages` (parse/filter),
+  and `latest_session` (match by project field) in `app/cli_session.py`
+- Test suite: 1282 → 1246 (after squash: 1214 baseline + 32 new = 1246)
+
 ## [0.3.2] — 2026-11-05 (Test Coverage — hw_meter unit tests)
 
 ### Added
