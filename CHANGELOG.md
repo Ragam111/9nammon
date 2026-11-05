@@ -4,6 +4,20 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [0.3.6] — 2026-11-05 (Test Coverage — dataset_store extended tests)
+
+### Added
+- `tests/test_dataset_store.py` — expanded from 7 to 44 tests: module constants
+  (DATASET_DB_NAME, VALID_FORMATS, _MAX_LEN), `add_sample` validation (empty/whitespace
+  prompt/response, boundary at _MAX_LEN, over-limit raises, bad rating string, rating 0/6
+  out-of-range), `add_sample` shape (all 7 fields, empty/None model→None stored, rating
+  string coercion, custom source, empty source→None), `list_samples` (empty→[], newest-first,
+  min_rating filter, no-match→[], limit), `count` (empty→0, after adds, after delete),
+  `delete_sample` (True on delete, False unknown, False double-delete), `export_jsonl`
+  (empty→"", bad fmt raises, case-insensitive fmt, messages structure, alpaca structure,
+  ASC ordering, min_rating filter, multi-line count)
+- Test suite: 1273 → 1310 tests total
+
 ## [0.3.4] — 2026-11-05 (Test Coverage — router unit tests)
 
 ### Added
