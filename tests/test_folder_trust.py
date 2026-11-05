@@ -61,5 +61,49 @@ class EnsureTrustedTest(unittest.TestCase):
             self.assertTrue(result)
 
 
+class FolderTrustExtraTest(unittest.TestCase):
+    def test_trust_marker_name_constant(self):
+        self.assertEqual(folder_trust.TRUST_MARKER_NAME, ".lca_trust")
+
+    def test_is_trusted_returns_bool(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = folder_trust.is_trusted(Path(tmp))
+            self.assertIsInstance(result, bool)
+
+    def test_mark_trusted_idempotent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            folder_trust.mark_trusted(p)
+            folder_trust.mark_trusted(p)
+            self.assertTrue(folder_trust.is_trusted(p))
+
+    def test_marker_content_is_key_value_format(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            folder_trust.mark_trusted(p)
+            content = (p / ".lca_trust").read_text(encoding="utf-8")
+            self.assertIn("=", content)
+
+    def test_marker_content_ends_with_newline(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            folder_trust.mark_trusted(p)
+            content = (p / ".lca_trust").read_text(encoding="utf-8")
+            self.assertTrue(content.endswith("\n"))
+
+    @patch("builtins.input", return_value="y")
+    def test_ensure_trusted_returns_bool(self, _mock):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = folder_trust.ensure_trusted(Path(tmp))
+            self.assertIsInstance(result, bool)
+
+    def test_ensure_already_trusted_no_prompt_needed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            folder_trust.mark_trusted(p)
+            result = folder_trust.ensure_trusted(p)
+            self.assertTrue(result)
+
+
 if __name__ == "__main__":
     unittest.main()

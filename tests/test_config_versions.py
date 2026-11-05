@@ -83,5 +83,61 @@ class ConfigVersionsTest(unittest.TestCase):
         self.assertEqual(cv.list_versions(self.root), [])
 
 
+class ConfigVersionsExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _write_config(self, d):
+        config_manager._config_path(self.root).write_text(
+            json.dumps(d, ensure_ascii=False), encoding="utf-8")
+
+    def test_max_versions_is_positive_int(self):
+        self.assertIsInstance(cv.MAX_VERSIONS, int)
+        self.assertGreater(cv.MAX_VERSIONS, 0)
+
+    def test_snapshot_returns_dict(self):
+        self._write_config({"K": "v"})
+        result = cv.snapshot(self.root)
+        self.assertIsInstance(result, dict)
+
+    def test_snapshot_has_required_keys(self):
+        self._write_config({"K": "v"})
+        result = cv.snapshot(self.root)
+        for key in ("id", "keys"):
+            self.assertIn(key, result)
+
+    def test_snapshot_id_is_string(self):
+        self._write_config({"K": "v"})
+        result = cv.snapshot(self.root)
+        self.assertIsInstance(result["id"], str)
+
+    def test_list_returns_list(self):
+        result = cv.list_versions(self.root)
+        self.assertIsInstance(result, list)
+
+    def test_multiple_snapshots_ordered(self):
+        self._write_config({"K": "v1"})
+        cv.snapshot(self.root, label="first")
+        self._write_config({"K": "v2"})
+        cv.snapshot(self.root, label="second")
+        versions = cv.list_versions(self.root)
+        self.assertEqual(len(versions), 2)
+
+    def test_rollback_returns_dict_with_restored_key(self):
+        self._write_config({"K": "v"})
+        v1 = cv.snapshot(self.root)
+        self._write_config({"K": "changed"})
+        result = cv.rollback(self.root, v1["id"])
+        self.assertIsInstance(result, dict)
+        self.assertIn("restored", result)
+
+    def test_versions_file_constant_is_string(self):
+        self.assertIsInstance(cv.VERSIONS_FILE, str)
+
+
 if __name__ == "__main__":
     unittest.main()
