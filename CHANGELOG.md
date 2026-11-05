@@ -4,12 +4,20 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [0.3.2] — 2026-11-05 (Test Coverage — hw_meter unit tests)
+
+### Added
+- `tests/test_hw_meter.py` — 23 unit tests covering `snapshot()` in `app/hw_meter.py`:
+  CPU/RAM rounding, freq/load None-when-falsy, tier+model from hw_profile,
+  profile-exception fallback. Uses setUp/tearDown sys.modules injection for
+  isolation without polluting the full suite.
+- Test suite: 1259 → 1282 tests total
+
 ## [0.3.1] — 2026-11-05 (Test Coverage — news_store unit tests)
 
 ### Added
 - `tests/test_news_store.py` — 19 unit tests covering `_fetch_feed` and `get_news`
-  in `app/news_store.py`: RSS parse, Atom parse, 20-item cap, title-less skip,
-  network error handling, 15-min cache hit/miss, error tracking
+  in `app/news_store.py`: RSS/Atom parse, 20-item cap, cache hit/TTL, error tracking
 - Test suite: 1240 → 1259 tests total
 
 ## [0.3.0] — 2026-11-05 (Test Coverage — stats_store unit tests)
