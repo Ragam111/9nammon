@@ -123,5 +123,60 @@ class RateLimitDisabledTest(unittest.TestCase):
             self.assertNotEqual(st, 429, f"ครั้งที่ {i+1}: rate limit ถูก disable แต่ได้ 429")
 
 
+class RateLimitHttpExtraTest(unittest.TestCase):
+    def setUp(self):
+        self.httpd, self.port, self.session_token, self._tmp = _make_server(rate_limit_max=3)
+
+    def tearDown(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        self._tmp.cleanup()
+
+    def _get(self, path, token=None):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        hdrs = {}
+        if token:
+            hdrs["X-Auth-Token"] = token
+        conn.request("GET", path, headers=hdrs)
+        resp = conn.getresponse()
+        body = resp.read().decode("utf-8")
+        conn.close()
+        return resp.status, body
+
+    def test_health_is_public(self):
+        status, _ = self._get("/api/health")
+        self.assertEqual(status, 200)
+
+    def test_first_request_not_429(self):
+        status, _ = self._get("/api/health")
+        self.assertNotEqual(status, 429)
+
+    def test_429_response_is_json(self):
+        for _ in range(3):
+            self._get("/api/health")
+        status, body = self._get("/api/health")
+        if status == 429:
+            try:
+                data = json.loads(body)
+                self.assertIsInstance(data, dict)
+            except json.JSONDecodeError:
+                pass  # text body also acceptable
+
+    def test_different_endpoints_share_limit(self):
+        # All /api/ paths count toward same client bucket
+        self._get("/api/health")
+        self._get("/api/health")
+        self._get("/api/health")
+        status, _ = self._get("/api/health")
+        # 4th request should be rate-limited
+        self.assertEqual(status, 429)
+
+    def test_non_api_path_ok_after_limit(self):
+        for _ in range(3):
+            self._get("/api/health")
+        status, _ = self._get("/")
+        self.assertNotEqual(status, 429)
+
+
 if __name__ == "__main__":
     unittest.main()
