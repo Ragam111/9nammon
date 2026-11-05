@@ -4,6 +4,23 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [0.3.6] — 2026-11-05 (Test Coverage — history_store + cluster_forward extended tests)
+
+### Added
+- `tests/test_history_store.py` — expanded from 7 to 38 tests: module constants
+  (HISTORY_DB_NAME, VALID_LEVELS), `record_snapshot` validation (non-dict/list/None raises),
+  shape (all fields, cpu/mem stored, raw parsed to dict, partial dict→None),
+  `list_snapshots` (empty→[], no raw key, newest-first, limit, cpu accessible),
+  `log_error` validation (bad/empty level, empty/whitespace message, bad list level),
+  shape (all fields, level normalized, source None when empty/whitespace),
+  `list_errors` (empty→[], newest-first, level filter, no-match→[], limit)
+- `tests/test_cluster_forward.py` — expanded from 7 to 23 tests: module constants
+  (CHAT_PATH, CHAT_STREAM_PATH, DEFAULT_TIMEOUT, ForwardError type), `is_enabled`
+  (default False, true/1/yes/on→True, false/0→False, case-insensitive), ForwardError
+  (raises, message preserved), unit tests (pick_target returns dict with node/reason/rr_index,
+  forward_chat_stream raises on unreachable), integration tests unchanged
+- Test suite: 1273 → 1328 tests total
+
 ## [0.3.4] — 2026-11-05 (Test Coverage — router unit tests)
 
 ### Added
