@@ -4,6 +4,18 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [0.3.5] — 2026-11-05 (Test Coverage — rate_limit + feature_flags extended tests)
+
+### Added
+- `tests/test_rate_limit.py` — expanded from 5 to 13 tests: negative max_requests
+  disables, exact boundary expiry, `allow()` without `now=` uses monotonic, multi-client
+  independence, `reset(None)` clears all, reset-one-not-other independence, unknown
+  client reset doesn't raise
+- `tests/test_feature_flags.py` — expanded from 5 to 21 tests: registry structure
+  (`FEATURES` list, `_BY_KEY` completeness), `is_on` unknown-key/toggle-all, `set_flag`
+  return shape/key/enabled, `status` list type/count/all-keys/required-fields/enabled-state
+- Test suite: 1273 → 1297 tests total
+
 ## [0.3.4] — 2026-11-05 (Test Coverage — router unit tests)
 
 ### Added
