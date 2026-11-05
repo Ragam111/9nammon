@@ -91,6 +91,39 @@ class LcaContextTest(unittest.TestCase):
         self.assertFalse(out["memory_pressure"])
         self.assertEqual(out["ollama_rss"], 0)
 
+    def test_correlate_returns_dict(self):
+        out = lca_context.correlate(self._report(_snapshot(20)))
+        self.assertIsInstance(out, dict)
+
+    def test_correlate_has_required_keys(self):
+        out = lca_context.correlate(self._report(_snapshot(20)))
+        for key in ("ollama_running", "ollama_rss", "memory_pressure", "note"):
+            self.assertIn(key, out)
+
+    def test_detect_ollama_returns_list(self):
+        snap = _snapshot(20)
+        result = lca_context.detect_ollama(snap)
+        self.assertIsInstance(result, list)
+
+    def test_ollama_rss_is_int(self):
+        out = lca_context.correlate(self._report(_snapshot(20)))
+        self.assertIsInstance(out["ollama_rss"], int)
+
+    def test_memory_pressure_is_bool(self):
+        out = lca_context.correlate(self._report(_snapshot(20)))
+        self.assertIsInstance(out["memory_pressure"], bool)
+
+    def test_note_is_string(self):
+        out = lca_context.correlate(self._report(_snapshot(20)))
+        self.assertIsInstance(out["note"], str)
+
+    def test_ollama_rss_nonzero_when_running(self):
+        snap = _snapshot(30, procs=[
+            ProcessInfo(pid=10, name="ollama", memory_percent=20.0, memory_rss=1 * GB),
+        ])
+        out = lca_context.correlate(self._report(snap))
+        self.assertGreater(out["ollama_rss"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()
