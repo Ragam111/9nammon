@@ -62,5 +62,50 @@ class AgentJobsTest(unittest.TestCase):
         self.assertFalse(jobs.complete(self.root, "job-nope", {"ok": True}))
 
 
+class AgentJobsExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_enqueue_returns_dict(self):
+        result = jobs.enqueue(self.root, "task")
+        self.assertIsInstance(result, dict)
+
+    def test_job_has_required_keys(self):
+        j = jobs.enqueue(self.root, "task")
+        for key in ("id", "status", "task"):
+            self.assertIn(key, j)
+
+    def test_status_constants_are_strings(self):
+        for s in (jobs.QUEUED, jobs.RUNNING, jobs.DONE, jobs.ERROR):
+            self.assertIsInstance(s, str)
+
+    def test_queued_initial_status(self):
+        j = jobs.enqueue(self.root, "my task")
+        self.assertEqual(j["status"], jobs.QUEUED)
+
+    def test_stats_returns_dict(self):
+        result = jobs.stats(self.root)
+        self.assertIsInstance(result, dict)
+
+    def test_stats_has_total_key(self):
+        result = jobs.stats(self.root)
+        self.assertIn("total", result)
+
+    def test_get_returns_none_for_missing(self):
+        result = jobs.get(self.root, "job-nonexistent")
+        self.assertIsNone(result)
+
+    def test_job_id_starts_with_job(self):
+        j = jobs.enqueue(self.root, "task")
+        self.assertTrue(j["id"].startswith("job-"))
+
+    def test_max_jobs_constant_positive(self):
+        self.assertGreater(jobs.MAX_JOBS, 0)
+
+
 if __name__ == "__main__":
     unittest.main()
