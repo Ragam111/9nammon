@@ -61,5 +61,44 @@ class EnsureTrustedTest(unittest.TestCase):
             self.assertTrue(result)
 
 
+class FolderTrustExtraTest(unittest.TestCase):
+    def test_is_trusted_returns_bool(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = folder_trust.is_trusted(Path(tmp))
+            self.assertIsInstance(result, bool)
+
+    def test_mark_trusted_returns_none_or_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            result = folder_trust.mark_trusted(p)
+            self.assertTrue(result is None or isinstance(result, Path))
+
+    def test_marker_file_name_is_lca_trust(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            folder_trust.mark_trusted(p)
+            self.assertTrue((p / ".lca_trust").exists())
+
+    def test_idempotent_mark(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            folder_trust.mark_trusted(p)
+            folder_trust.mark_trusted(p)
+            self.assertTrue(folder_trust.is_trusted(p))
+
+    def test_different_dirs_independent(self):
+        with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:
+            folder_trust.mark_trusted(Path(a))
+            self.assertTrue(folder_trust.is_trusted(Path(a)))
+            self.assertFalse(folder_trust.is_trusted(Path(b)))
+
+    def test_ensure_trusted_already_trusted_no_prompt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            folder_trust.mark_trusted(p)
+            result = folder_trust.ensure_trusted(p)
+            self.assertTrue(result)
+
+
 if __name__ == "__main__":
     unittest.main()
