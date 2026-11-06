@@ -101,5 +101,39 @@ class NotifierTest(unittest.TestCase):
         self.assertEqual(res["carrier-pigeon"], "error: unknown channel")
 
 
+class NotifierExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_notify_returns_dict(self):
+        result = notifier.notify(self.root, "deploy", "text")
+        self.assertIsInstance(result, dict)
+
+    def test_default_result_has_discord_key(self):
+        result = notifier.notify(self.root, "deploy", "text")
+        self.assertIn("discord", result)
+
+    def test_default_result_has_email_key(self):
+        result = notifier.notify(self.root, "deploy", "text")
+        self.assertIn("email", result)
+
+    def test_channels_discord_only_has_discord_key(self):
+        result = notifier.notify(self.root, "evt", "text", channels=("discord",))
+        self.assertIn("discord", result)
+
+    def test_unknown_channel_value_is_string(self):
+        result = notifier.notify(self.root, "evt", "text", channels=("alien",))
+        self.assertIsInstance(result["alien"], str)
+
+    def test_multiple_channels_both_keys_present(self):
+        result = notifier.notify(self.root, "evt", "text", channels=("discord", "email"))
+        self.assertIn("discord", result)
+        self.assertIn("email", result)
+
+
 if __name__ == "__main__":
     unittest.main()
