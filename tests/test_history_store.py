@@ -74,5 +74,47 @@ class HistoryStoreTest(unittest.TestCase):
         self.assertEqual(errs[0]["message"], "two")
 
 
+class HistoryStoreExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _report(self, cpu=12.0, mem=34.0, verdict="ok", worst="OK"):
+        return {
+            "snapshot": {"cpu": {"percent": cpu}, "memory": {"percent": mem}},
+            "verdict": verdict,
+            "worst_severity": worst,
+        }
+
+    def test_record_returns_dict(self):
+        result = history_store.record_snapshot(self.root, self._report())
+        self.assertIsInstance(result, dict)
+
+    def test_snapshot_has_id_field(self):
+        result = history_store.record_snapshot(self.root, self._report())
+        self.assertIn("id", result)
+
+    def test_list_snapshots_empty_initially(self):
+        rows = history_store.list_snapshots(self.root)
+        self.assertEqual(rows, [])
+
+    def test_list_errors_empty_initially(self):
+        errs = history_store.list_errors(self.root)
+        self.assertEqual(errs, [])
+
+    def test_log_error_returns_dict_with_level(self):
+        result = history_store.log_error(self.root, "info", "source", "message")
+        self.assertIsInstance(result, dict)
+        self.assertEqual(result["level"], "info")
+
+    def test_snapshot_verdict_stored(self):
+        history_store.record_snapshot(self.root, self._report(verdict="warn"))
+        rows = history_store.list_snapshots(self.root)
+        self.assertEqual(rows[0]["verdict"], "warn")
+
+
 if __name__ == "__main__":
     unittest.main()
