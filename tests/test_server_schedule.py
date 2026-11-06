@@ -123,5 +123,89 @@ class ScheduleGateIntegrationTest(unittest.TestCase):
                             "trailing slash บน allowlist ต้องไม่ถูก gate ปิด")
 
 
+class ScheduleGateExtraTest(unittest.TestCase):
+    def setUp(self):
+        schedule_gate.invalidate_cache()
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        handler = server.make_handler(self.root, MASTER_TOKEN)
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        self.port = self.httpd.server_address[1]
+        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+        self._orig_status = schedule_gate.status
+        self._orig_enabled = schedule_gate.enabled
+
+    def tearDown(self):
+        schedule_gate.status = self._orig_status
+        schedule_gate.enabled = self._orig_enabled
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        self._tmp.cleanup()
+
+    def _get(self, path, headers=None):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("GET", path, headers=headers or {})
+        resp = conn.getresponse()
+        raw = resp.read().decode("utf-8")
+        retry = resp.getheader("Retry-After")
+        conn.close()
+        try:
+            body = json.loads(raw) if raw else {}
+        except json.JSONDecodeError:
+            body = {"_raw": raw}
+        return resp.status, body, retry
+
+    def _set_closed(self):
+        schedule_gate.enabled = lambda root: True
+        schedule_gate.status = lambda root, now_utc=None: {
+            "enabled": True, "state": "closed", "open_hour": 6, "close_hour": 20,
+            "next_change_at_th": "2026-10-30T06:00:00+07:00",
+            "seconds_until_change": 7200,
+            "message": "ปิดตามตารางเวลา",
+        }
+
+    def _set_open(self):
+        schedule_gate.enabled = lambda root: True
+        schedule_gate.status = lambda root, now_utc=None: {
+            "enabled": True, "state": "open", "seconds_until_change": 3600,
+        }
+
+    def test_closed_body_has_state_field(self):
+        self._set_closed()
+        _, body, _ = self._get("/api/me")
+        self.assertEqual(body.get("state"), "closed")
+
+    def test_closed_body_has_message_field(self):
+        self._set_closed()
+        _, body, _ = self._get("/api/me")
+        self.assertIn("message", body)
+
+    def test_closed_retry_after_is_numeric_string(self):
+        self._set_closed()
+        _, _, retry = self._get("/api/me")
+        self.assertIsNotNone(retry)
+        self.assertTrue(retry.isdigit(), f"Retry-After should be numeric, got {retry!r}")
+
+    def test_open_state_no_retry_after(self):
+        self._set_open()
+        _, _, retry = self._get("/api/health")
+        self.assertIsNone(retry)
+
+    def test_version_endpoint_bypasses_gate_when_closed(self):
+        self._set_closed()
+        st, _, _ = self._get("/api/version")
+        self.assertNotEqual(st, 503)
+
+    def test_chat_route_bypasses_gate_when_closed(self):
+        self._set_closed()
+        st, _, _ = self._get("/chat")
+        self.assertNotEqual(st, 503)
+
+    def test_closed_blocked_endpoint_returns_503(self):
+        self._set_closed()
+        st, _, _ = self._get("/api/me")
+        self.assertEqual(st, 503)
+
+
 if __name__ == "__main__":
     unittest.main()
