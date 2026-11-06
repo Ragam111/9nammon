@@ -39,5 +39,28 @@ class ChatPageBudgetTest(unittest.TestCase):
         self.assertNotIn("vue", js.lower())
 
 
+class ChatPageExtraTest(unittest.TestCase):
+    def test_chat_html_exists(self):
+        self.assertTrue((ROOT / "app" / "chat.html").is_file())
+
+    def test_chat_css_exists(self):
+        self.assertTrue((ROOT / "app" / "chat.css").is_file())
+
+    def test_chat_js_exists(self):
+        self.assertTrue((ROOT / "app" / "chat.js").is_file())
+
+    def test_chat_html_has_title_tag(self):
+        html = (ROOT / "app" / "chat.html").read_text(encoding="utf-8")
+        self.assertIn("<title>", html)
+
+    def test_chat_html_has_viewport_meta(self):
+        html = (ROOT / "app" / "chat.html").read_text(encoding="utf-8")
+        self.assertIn("viewport", html)
+
+    def test_chat_html_references_chat_css(self):
+        html = (ROOT / "app" / "chat.html").read_text(encoding="utf-8")
+        self.assertIn("chat.css", html)
+
+
 if __name__ == "__main__":
     unittest.main()

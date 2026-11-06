@@ -17,7 +17,7 @@ class RateLimiterTest(unittest.TestCase):
         self.assertTrue(rl.allow("ip1", now=0))
         self.assertTrue(rl.allow("ip1", now=1))
         self.assertTrue(rl.allow("ip1", now=2))
-        self.assertFalse(rl.allow("ip1", now=3))  # ครั้งที่ 4 ในหน้าต่างเดียว -> บล็อก
+        self.assertFalse(rl.allow("ip1", now=3))  # ครั้งที่ 4 ในหน้าต่างเดียว -> บล็อค
 
     def test_window_slides(self):
         rl = RateLimiter(max_requests=2, window_seconds=10)
@@ -44,6 +44,39 @@ class RateLimiterTest(unittest.TestCase):
         self.assertFalse(rl.allow("ip1", now=0))
         rl.reset("ip1")
         self.assertTrue(rl.allow("ip1", now=0))
+
+
+class RateLimiterExtraTest(unittest.TestCase):
+    def test_new_client_is_allowed(self):
+        rl = RateLimiter(max_requests=5, window_seconds=60)
+        self.assertTrue(rl.allow("brand-new-client", now=0))
+
+    def test_multiple_clients_independent(self):
+        rl = RateLimiter(max_requests=1, window_seconds=60)
+        self.assertTrue(rl.allow("a", now=0))
+        self.assertTrue(rl.allow("b", now=0))
+        self.assertTrue(rl.allow("c", now=0))
+
+    def test_allow_returns_bool(self):
+        rl = RateLimiter(max_requests=5, window_seconds=60)
+        result = rl.allow("ip1", now=0)
+        self.assertIsInstance(result, bool)
+
+    def test_max_requests_one_allows_exactly_one(self):
+        rl = RateLimiter(max_requests=1, window_seconds=60)
+        self.assertTrue(rl.allow("ip1", now=0))
+        self.assertFalse(rl.allow("ip1", now=1))
+
+    def test_reset_clears_history(self):
+        rl = RateLimiter(max_requests=1, window_seconds=60)
+        rl.allow("ip1", now=0)
+        rl.reset("ip1")
+        self.assertTrue(rl.allow("ip1", now=0))
+
+    def test_window_exact_boundary(self):
+        rl = RateLimiter(max_requests=1, window_seconds=10)
+        rl.allow("ip1", now=0)
+        self.assertTrue(rl.allow("ip1", now=11))
 
 
 if __name__ == "__main__":
