@@ -50,3 +50,37 @@ class FeatureFlagsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FeatureFlagsExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_features_is_list(self):
+        self.assertIsInstance(ff.FEATURES, list)
+
+    def test_features_nonempty(self):
+        self.assertGreater(len(ff.FEATURES), 0)
+
+    def test_each_feature_has_key(self):
+        for f in ff.FEATURES:
+            self.assertIn("key", f, f"feature missing 'key': {f}")
+
+    def test_each_feature_has_name(self):
+        for f in ff.FEATURES:
+            self.assertIn("name", f, f"feature missing 'name': {f}")
+
+    def test_set_true_persists_across_calls(self):
+        key = ff.FEATURES[0]["key"]
+        ff.set_flag(self.root, key, True)
+        self.assertTrue(ff.is_on(self.root, key))
+
+    def test_set_false_after_true_persists(self):
+        key = ff.FEATURES[0]["key"]
+        ff.set_flag(self.root, key, True)
+        ff.set_flag(self.root, key, False)
+        self.assertFalse(ff.is_on(self.root, key))
