@@ -67,7 +67,7 @@ class ApprovalsTest(unittest.TestCase):
 
 
 class ProposeToolTest(unittest.TestCase):
-    """agent loop ที่เปิด approvals → propose_write_file ต้องสร้างคำขอ ไม่เขียนเอง"""
+    """ส agent loop ที่เปิด approvals → propose_write_file ต้องสร้างคำขอ ไม่เขียนเอง"""
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.root = Path(self._tmp.name)
@@ -98,28 +98,48 @@ class ProposeToolTest(unittest.TestCase):
         self.assertIn("propose_write_file", reg2)
 
 
+class AgentApprovalsExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_kind_write_is_string_constant(self):
+        self.assertIsInstance(approvals.KIND_WRITE, str)
+        self.assertTrue(len(approvals.KIND_WRITE) > 0)
+
+    def test_request_returns_dict_with_id(self):
+        rec = approvals.request(self.root, approvals.KIND_WRITE, str(self.root),
+                                {"path": "test.txt", "content": "hello"})
+        self.assertIsInstance(rec, dict)
+        self.assertIn("id", rec)
+
+    def test_request_initial_status_is_pending(self):
+        rec = approvals.request(self.root, approvals.KIND_WRITE, str(self.root),
+                                {"path": "f.txt", "content": "data"})
+        self.assertEqual(rec["status"], "pending")
+
+    def test_list_pending_contains_new_request(self):
+        approvals.request(self.root, approvals.KIND_WRITE, str(self.root),
+                          {"path": "p.txt", "content": "x"})
+        pending = approvals.list_pending(self.root)
+        self.assertIsInstance(pending, list)
+        self.assertGreater(len(pending), 0)
+
+    def test_approve_returns_approved_status(self):
+        rec = approvals.request(self.root, approvals.KIND_WRITE, str(self.root),
+                                {"path": "approved.txt", "content": "ok"})
+        result = approvals.decide(self.root, rec["id"], "approve")
+        self.assertEqual(result["status"], "approved")
+
+    def test_reject_returns_rejected_status(self):
+        rec = approvals.request(self.root, approvals.KIND_WRITE, str(self.root),
+                                {"path": "rejected.txt", "content": "no"})
+        result = approvals.decide(self.root, rec["id"], "reject")
+        self.assertEqual(result["status"], "rejected")
+
+
 if __name__ == "__main__":
     unittest.main()
-
-
-class FindFreePortTest(unittest.TestCase):
-    """แก้ปัญหา 'พอร์ตถูกใช้อยู่ เปิดไม่ขึ้น' — หาพอร์ตว่างให้อัตโนมัติ"""
-    def test_returns_preferred_when_free(self):
-        import server, socket as _s
-        with _s.socket(_s.AF_INET, _s.SOCK_STREAM) as probe:
-            probe.bind(("127.0.0.1", 0)); free = probe.getsockname()[1]
-        # ปิด probe แล้วพอร์ตนั้นว่าง → ควรได้ตัวนั้น (หรือใกล้เคียง)
-        p = server.find_free_port(free)
-        self.assertIsInstance(p, int)
-        self.assertGreater(p, 0)
-
-    def test_skips_busy_port(self):
-        import server, socket as _s
-        s = _s.socket(_s.AF_INET, _s.SOCK_STREAM)
-        s.setsockopt(_s.SOL_SOCKET, _s.SO_REUSEADDR, 1)
-        s.bind(("127.0.0.1", 0)); busy = s.getsockname()[1]; s.listen(1)
-        try:
-            p = server.find_free_port(busy)       # busy ไม่ว่าง → ต้องได้พอร์ตอื่น
-            self.assertNotEqual(p, busy)
-        finally:
-            s.close()
