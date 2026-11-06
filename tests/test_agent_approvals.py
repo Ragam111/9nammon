@@ -123,3 +123,37 @@ class FindFreePortTest(unittest.TestCase):
             self.assertNotEqual(p, busy)
         finally:
             s.close()
+
+
+class ApprovalsExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_list_pending_initially_empty(self):
+        self.assertEqual(approvals.list_pending(self.root), [])
+
+    def test_request_adds_to_pending(self):
+        approvals.request(self.root, approvals.KIND_WRITE, str(self.root),
+                          {"path": "x.txt", "content": "hi"})
+        self.assertEqual(len(approvals.list_pending(self.root)), 1)
+
+    def test_reject_clears_from_pending(self):
+        rec = approvals.request(self.root, approvals.KIND_WRITE, str(self.root),
+                                {"path": "y.txt", "content": "z"})
+        approvals.decide(self.root, rec["id"], "reject")
+        self.assertEqual(approvals.list_pending(self.root), [])
+
+    def test_kind_write_is_string(self):
+        self.assertIsInstance(approvals.KIND_WRITE, str)
+
+    def test_kind_command_is_string(self):
+        self.assertIsInstance(approvals.KIND_COMMAND, str)
+
+    def test_pending_record_has_kind(self):
+        rec = approvals.request(self.root, approvals.KIND_WRITE, str(self.root),
+                                {"path": "z.txt", "content": "abc"})
+        self.assertEqual(rec["kind"], approvals.KIND_WRITE)
