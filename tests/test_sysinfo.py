@@ -68,3 +68,26 @@ class SystemInfoTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SysinfoExtraTest(unittest.TestCase):
+    def test_human_bytes_zero(self):
+        self.assertEqual(sysinfo._human_bytes(0), "0.0 B")
+
+    def test_human_bytes_kib(self):
+        self.assertIn("KiB", sysinfo._human_bytes(2048))
+
+    def test_nvidia_is_compute_capable(self):
+        self.assertTrue(sysinfo._guess_compute_capable("NVIDIA Tesla K80"))
+
+    def test_intel_hd_is_not_compute_capable(self):
+        self.assertFalse(sysinfo._guess_compute_capable("Intel HD Graphics 4000"))
+
+    def test_system_info_to_dict_has_memory(self):
+        d = get_system_info().to_dict()
+        self.assertIn("memory", d)
+
+    def test_detect_gpus_elements_are_dicts(self):
+        gpus = sysinfo.detect_gpus()
+        for gpu in gpus:
+            self.assertIsInstance(gpu, dict)

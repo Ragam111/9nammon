@@ -62,7 +62,6 @@ class JobQueueTest(unittest.TestCase):
         claimed = job_queue.claim_next(self.root)
         self.assertEqual(claimed["id"], first["id"])
         self.assertEqual(claimed["status"], "running")
-        # claim ครั้งถัดไปได้ตัวที่สอง (ตัวแรกไม่ pending แล้ว)
         claimed2 = job_queue.claim_next(self.root)
         self.assertEqual(claimed2["name"], "second")
 
@@ -78,3 +77,38 @@ class JobQueueTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class JobQueueExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_enqueue_returns_dict_with_id(self):
+        job = job_queue.enqueue(self.root, "myjob")
+        self.assertIsInstance(job, dict)
+        self.assertIn("id", job)
+
+    def test_enqueue_status_is_pending(self):
+        job = job_queue.enqueue(self.root, "myjob")
+        self.assertEqual(job["status"], "pending")
+
+    def test_list_jobs_empty_returns_list(self):
+        result = job_queue.list_jobs(self.root)
+        self.assertIsInstance(result, list)
+        self.assertEqual(len(result), 0)
+
+    def test_get_job_unknown_returns_none(self):
+        self.assertIsNone(job_queue.get_job(self.root, 999999))
+
+    def test_delete_unknown_returns_false(self):
+        self.assertFalse(job_queue.delete_job(self.root, 999999))
+
+    def test_claim_next_marks_status_running(self):
+        job_queue.enqueue(self.root, "task")
+        claimed = job_queue.claim_next(self.root)
+        self.assertIsNotNone(claimed)
+        self.assertEqual(claimed["status"], "running")

@@ -57,13 +57,13 @@ class WatchdogTickTest(unittest.TestCase):
 
     def test_debounce_no_repeat_within_gap(self):
         w = self._wd([{"key": "ollama", "level": "critical", "msg": "ล่ม"}])
-        w.tick(); w.tick(); w.tick()           # เวลาไม่ขยับ → เตือนครั้งเดียว
+        w.tick(); w.tick(); w.tick()
         self.assertEqual(len(self.sent), 1)
 
     def test_notifies_again_after_gap(self):
         w = self._wd([{"key": "ollama", "level": "critical", "msg": "ล่ม"}])
         w.tick()
-        self.clock.t = 301.0                   # เลย min_notify_gap → เตือนซ้ำได้
+        self.clock.t = 301.0
         w.tick()
         self.assertEqual(len(self.sent), 2)
 
@@ -76,7 +76,6 @@ class WatchdogTickTest(unittest.TestCase):
         def boom(lvl, msg): raise RuntimeError("notify พัง")
         w = wd.Watchdog(check_fn=lambda: [{"key": "x", "level": "warning", "msg": "y"}],
                         notify_fn=boom, clock=self.clock)
-        # tick ต้องไม่โยน error ออกมา (การเตือนล้ม ต้องไม่ล้ม watchdog)
         self.assertEqual(w.tick()[0]["key"], "x")
 
     def test_last_findings_recorded(self):
@@ -87,3 +86,44 @@ class WatchdogTickTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WatchdogExtraTest(unittest.TestCase):
+    def test_critical_constant_is_string(self):
+        self.assertIsInstance(wd.CRITICAL, str)
+
+    def test_warning_constant_is_string(self):
+        self.assertIsInstance(wd.WARNING, str)
+
+    def test_evaluate_returns_list(self):
+        result = wd.evaluate(ollama_up=True, ram_pressure=False)
+        self.assertIsInstance(result, list)
+
+    def test_finding_has_key_level_msg(self):
+        f = wd.evaluate(ollama_up=False, ram_pressure=False)
+        self.assertEqual(len(f), 1)
+        finding = f[0]
+        self.assertIn("key", finding)
+        self.assertIn("level", finding)
+        self.assertIn("msg", finding)
+
+    def test_watchdog_tick_returns_list(self):
+        clock = _FakeClock()
+        w = wd.Watchdog(
+            check_fn=lambda: [],
+            notify_fn=lambda lvl, msg: None,
+            min_notify_gap=300.0,
+            clock=clock,
+        )
+        result = w.tick()
+        self.assertIsInstance(result, list)
+
+    def test_watchdog_last_findings_initially_empty(self):
+        clock = _FakeClock()
+        w = wd.Watchdog(
+            check_fn=lambda: [],
+            notify_fn=lambda lvl, msg: None,
+            min_notify_gap=300.0,
+            clock=clock,
+        )
+        self.assertEqual(w.last_findings, [])
