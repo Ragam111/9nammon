@@ -297,5 +297,97 @@ class ChatApiTest(unittest.TestCase):
         self.assertIn("unknown provider", data["error"])
 
 
+class ChatApiExtraTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+
+        def _chat(messages, model, *, provider, project_root=None, **_opts):
+            return _response(f"{provider}:{model}", provider, model)
+
+        self.patch = mock.patch("app.providers.chat", _chat)
+        self.patch.start()
+        handler = server.make_handler(self.root, None)
+        self.auth = {"X-Auth-Token": handler.session_token}
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        self.port = self.httpd.server_address[1]
+        self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
+        self.thread.start()
+
+    def tearDown(self):
+        self.patch.stop()
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        self.tmp.cleanup()
+
+    def _get(self, path):
+        import http.client
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("GET", path, headers=self.auth)
+        resp = conn.getresponse()
+        raw = resp.read().decode("utf-8")
+        conn.close()
+        return resp.status, json.loads(raw) if raw else {}
+
+    def _post(self, path, payload):
+        import http.client
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        body = json.dumps(payload).encode("utf-8")
+        conn.request("POST", path, body=body, headers={"Content-Type": "application/json", **self.auth})
+        resp = conn.getresponse()
+        raw = resp.read().decode("utf-8")
+        conn.close()
+        return resp.status, json.loads(raw) if raw else {}
+
+    def test_providers_endpoint_returns_list(self):
+        st, data = self._get("/api/chat/providers")
+        self.assertEqual(st, 200)
+        providers = data.get("providers", data)
+        self.assertIsInstance(providers, list)
+
+    def test_providers_each_has_id(self):
+        st, data = self._get("/api/chat/providers")
+        self.assertEqual(st, 200)
+        providers = data.get("providers", data)
+        for p in providers:
+            self.assertIn("id", p)
+
+    def test_create_conversation_returns_id(self):
+        st, data = self._post("/api/chat/conversations", {"title": "test"})
+        self.assertEqual(st, 200)
+        self.assertIn("id", data["conversation"])
+
+    def test_list_conversations_returns_list(self):
+        st, data = self._get("/api/chat/conversations")
+        self.assertEqual(st, 200)
+        convs = data.get("conversations", data)
+        self.assertIsInstance(convs, list)
+
+    def test_chat_requires_auth(self):
+        import http.client
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        body = json.dumps({"messages": [{"role": "user", "content": "hi"}]}).encode()
+        conn.request("POST", "/api/chat", body=body, headers={"Content-Type": "application/json"})
+        resp = conn.getresponse()
+        resp.read()
+        conn.close()
+        self.assertEqual(resp.status, 401)
+
+    def test_chat_reply_has_reply_field(self):
+        st, data = self._post("/api/chat", {
+            "provider": "ollama", "model": "qwen",
+            "messages": [{"role": "user", "content": "hi"}],
+        })
+        self.assertEqual(st, 200)
+        self.assertIn("reply", data)
+
+    def test_unknown_provider_returns_400(self):
+        st, data = self._post("/api/chat", {
+            "provider": "bogus_provider_xyz", "model": "x",
+            "messages": [{"role": "user", "content": "hi"}],
+        })
+        self.assertEqual(st, 400)
+
+
 if __name__ == "__main__":
     unittest.main()
