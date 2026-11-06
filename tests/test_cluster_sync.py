@@ -160,5 +160,66 @@ class ClusterSyncUnitTest(unittest.TestCase):
         self.assertEqual(result["added"], [])
 
 
+class ClusterSyncExtraTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        model_backend.generate = (
+            lambda project_root, model, messages, num_ctx=8192, options=None: f"MODEL={model}"
+        )
+        cls._orig_sync = cluster_sync.sync_discovered
+        cluster_sync.sync_discovered = _mock_sync
+
+    @classmethod
+    def tearDownClass(cls):
+        model_backend.generate = _ORIG_GENERATE
+        cluster_sync.sync_discovered = cls._orig_sync
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.httpd, self.port, self.session_token = _make_server(self.root)
+
+    def tearDown(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        self._tmp.cleanup()
+
+    def _get(self, path, token=None):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        hdrs = {}
+        if token:
+            hdrs["X-Auth-Token"] = token
+        conn.request("GET", path, headers=hdrs)
+        resp = conn.getresponse()
+        body = resp.read().decode("utf-8")
+        conn.close()
+        return resp.status, json.loads(body) if body else {}
+
+    def test_sync_200_with_token(self):
+        st, _ = self._get("/api/nodes/sync", token=self.session_token)
+        self.assertEqual(st, 200)
+
+    def test_sync_response_is_dict(self):
+        _, data = self._get("/api/nodes/sync", token=self.session_token)
+        self.assertIsInstance(data, dict)
+
+    def test_sync_elapsed_s_is_number(self):
+        _, data = self._get("/api/nodes/sync", token=self.session_token)
+        self.assertIsInstance(data["elapsed_s"], (int, float))
+
+    def test_sync_no_token_401(self):
+        st, _ = self._get("/api/nodes/sync")
+        self.assertIn(st, (401, 403))
+
+    def test_sync_added_contains_expected_node(self):
+        _, data = self._get("/api/nodes/sync", token=self.session_token)
+        self.assertEqual(len(data["added"]), 1)
+        self.assertEqual(data["added"][0]["name"], "lca-192.168.1.50")
+
+    def test_sync_scanned_matches_fake(self):
+        _, data = self._get("/api/nodes/sync", token=self.session_token)
+        self.assertEqual(data["scanned"], 255)
+
+
 if __name__ == "__main__":
     unittest.main()

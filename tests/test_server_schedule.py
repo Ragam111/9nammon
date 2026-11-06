@@ -123,5 +123,76 @@ class ScheduleGateIntegrationTest(unittest.TestCase):
                             "trailing slash บน allowlist ต้องไม่ถูก gate ปิด")
 
 
+class ScheduleGateExtraTest(unittest.TestCase):
+    def setUp(self):
+        schedule_gate.invalidate_cache()
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        handler = server.make_handler(self.root, MASTER_TOKEN)
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        self.port = self.httpd.server_address[1]
+        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+        self._orig_status = schedule_gate.status
+        self._orig_enabled = schedule_gate.enabled
+
+    def tearDown(self):
+        schedule_gate.status = self._orig_status
+        schedule_gate.enabled = self._orig_enabled
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        self._tmp.cleanup()
+
+    def _get(self, path, headers=None):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("GET", path, headers=headers or {})
+        resp = conn.getresponse()
+        raw = resp.read().decode("utf-8")
+        conn.close()
+        try:
+            body = json.loads(raw) if raw else {}
+        except json.JSONDecodeError:
+            body = {}
+        return resp.status, body
+
+    def _set_closed(self):
+        schedule_gate.enabled = lambda root: True
+        schedule_gate.status = lambda root, now_utc=None: {
+            "enabled": True, "state": "closed", "open_hour": 6, "close_hour": 20,
+            "next_change_at_th": "2026-10-30T06:00:00+07:00",
+            "seconds_until_change": 3600, "message": "ปิดตามตารางเวลา",
+        }
+
+    def test_health_always_200(self):
+        st, body = self._get("/api/health")
+        self.assertEqual(st, 200)
+        self.assertTrue(body.get("ok"))
+
+    def test_status_has_state_key(self):
+        st, body = self._get("/api/status")
+        self.assertEqual(st, 200)
+        self.assertIn("state", body)
+
+    def test_closed_anonymous_gets_503(self):
+        self._set_closed()
+        st, _ = self._get("/api/me")
+        self.assertEqual(st, 503)
+
+    def test_closed_master_token_bypasses(self):
+        self._set_closed()
+        st, _ = self._get("/api/me", headers={"X-Auth-Token": MASTER_TOKEN})
+        self.assertNotEqual(st, 503)
+
+    def test_closed_health_still_200(self):
+        self._set_closed()
+        st, _ = self._get("/api/health")
+        self.assertEqual(st, 200)
+
+    def test_closed_body_has_state_closed(self):
+        self._set_closed()
+        st, body = self._get("/api/me")
+        self.assertEqual(st, 503)
+        self.assertEqual(body.get("state"), "closed")
+
+
 if __name__ == "__main__":
     unittest.main()

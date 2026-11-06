@@ -101,5 +101,33 @@ class WorkerTest(unittest.TestCase):
         self.assertTrue(rec["ok"])
 
 
+class StatsExtraTest(unittest.TestCase):
+    def test_stats_summary_returns_dict(self):
+        s = stats_mod.Stats()
+        self.assertIsInstance(s.summary(), dict)
+
+    def test_stats_count_starts_zero(self):
+        s = stats_mod.Stats()
+        self.assertEqual(s.summary()["count"], 0)
+
+    def test_stats_ok_count_zero_initially(self):
+        s = stats_mod.Stats()
+        self.assertEqual(s.summary()["ok"], 0)
+
+    def test_recent_returns_list(self):
+        s = stats_mod.Stats()
+        self.assertIsInstance(s.recent(10), list)
+
+    def test_max_recent_is_positive_int(self):
+        self.assertIsInstance(stats_mod.MAX_RECENT, int)
+        self.assertGreater(stats_mod.MAX_RECENT, 0)
+
+    def test_run_one_returns_dict(self):
+        with mock.patch.object(core, "run",
+                               lambda *a, **k: {"final": "ok", "steps": [], "stopped_reason": "final"}):
+            rec = worker.run_one(".", "task", ".", clock=_Clock())
+        self.assertIsInstance(rec, dict)
+
+
 if __name__ == "__main__":
     unittest.main()
