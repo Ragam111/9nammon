@@ -89,23 +89,26 @@ class DatasetStoreExtraTest(unittest.TestCase):
         self.assertIsInstance(s, dict)
         self.assertIn("id", s)
 
-    def test_count_zero_initially(self):
+    def test_count_increases_after_add(self):
         self.assertEqual(dataset_store.count(self.root), 0)
+        dataset_store.add_sample(self.root, "q", "a")
+        self.assertEqual(dataset_store.count(self.root), 1)
 
-    def test_list_samples_returns_list(self):
+    def test_list_returns_list(self):
+        dataset_store.add_sample(self.root, "q", "a")
         result = dataset_store.list_samples(self.root)
         self.assertIsInstance(result, list)
+        self.assertEqual(len(result), 1)
+
+    def test_delete_decrements_count(self):
+        s = dataset_store.add_sample(self.root, "q", "a")
+        dataset_store.delete_sample(self.root, s["id"])
+        self.assertEqual(dataset_store.count(self.root), 0)
 
     def test_delete_unknown_id_returns_false(self):
-        self.assertFalse(dataset_store.delete_sample(self.root, "no-such-id"))
+        self.assertFalse(dataset_store.delete_sample(self.root, 999999))
 
-    def test_add_multiple_increases_count(self):
-        dataset_store.add_sample(self.root, "q1", "a1")
-        dataset_store.add_sample(self.root, "q2", "a2")
-        self.assertEqual(dataset_store.count(self.root), 2)
-
-    def test_added_sample_appears_in_list(self):
-        s = dataset_store.add_sample(self.root, "unique-prompt-xyz", "ans")
-        rows = dataset_store.list_samples(self.root)
-        ids = [r["id"] for r in rows]
-        self.assertIn(s["id"], ids)
+    def test_export_jsonl_has_lines(self):
+        dataset_store.add_sample(self.root, "p", "r")
+        out = dataset_store.export_jsonl(self.root, fmt="messages")
+        self.assertGreater(len(out.splitlines()), 0)
