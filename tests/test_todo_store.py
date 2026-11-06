@@ -70,5 +70,45 @@ class TodoStoreTest(unittest.TestCase):
         self.assertEqual(todos, [])
 
 
+class TodoStoreExtraTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+
+    def test_add_returns_dict(self):
+        result = todo_store.add_todo(self.tmp, "task")
+        self.assertIsInstance(result, dict)
+
+    def test_add_has_id(self):
+        result = todo_store.add_todo(self.tmp, "task")
+        self.assertIn("id", result)
+
+    def test_add_done_defaults_false(self):
+        result = todo_store.add_todo(self.tmp, "task")
+        self.assertFalse(result["done"])
+
+    def test_load_after_delete_all_empty(self):
+        t1 = todo_store.add_todo(self.tmp, "a")
+        t2 = todo_store.add_todo(self.tmp, "b")
+        todo_store.delete_todo(self.tmp, t1["id"])
+        todo_store.delete_todo(self.tmp, t2["id"])
+        self.assertEqual(todo_store.load_todos(self.tmp), [])
+
+    def test_toggle_twice_restores_original_state(self):
+        t = todo_store.add_todo(self.tmp, "toggle")
+        original = t["done"]
+        todo_store.toggle_todo(self.tmp, t["id"])
+        todo_store.toggle_todo(self.tmp, t["id"])
+        todos = todo_store.load_todos(self.tmp)
+        self.assertEqual(todos[0]["done"], original)
+
+    def test_text_preserved_after_toggle(self):
+        todo_store.add_todo(self.tmp, "my-unique-text-xyz")
+        todos = todo_store.load_todos(self.tmp)
+        tid = todos[0]["id"]
+        todo_store.toggle_todo(self.tmp, tid)
+        todos = todo_store.load_todos(self.tmp)
+        self.assertEqual(todos[0]["text"], "my-unique-text-xyz")
+
+
 if __name__ == "__main__":
     unittest.main()

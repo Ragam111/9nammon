@@ -64,5 +64,32 @@ class ResolveServerConfigTest(unittest.TestCase):
         self.assertIsNone(cfg["token"])
 
 
+class ResolveServerConfigExtraTest(unittest.TestCase):
+    def test_returns_dict(self):
+        cfg = server.resolve_server_config(_args(), env={})
+        self.assertIsInstance(cfg, dict)
+
+    def test_has_host_key(self):
+        cfg = server.resolve_server_config(_args(), env={})
+        self.assertIn("host", cfg)
+
+    def test_has_port_key(self):
+        cfg = server.resolve_server_config(_args(), env={})
+        self.assertIn("port", cfg)
+
+    def test_port_is_int(self):
+        cfg = server.resolve_server_config(_args(), env={})
+        self.assertIsInstance(cfg["port"], int)
+
+    def test_localhost_with_token_allowed(self):
+        cfg = server.resolve_server_config(_args(token="tok"), env={})
+        self.assertEqual(cfg["token"], "tok")
+
+    def test_env_port_overrides_default_when_cli_is_default(self):
+        cfg = server.resolve_server_config(
+            _args(host="0.0.0.0", token="x"), env={"PORT": "9876"})
+        self.assertEqual(cfg["port"], 9876)
+
+
 if __name__ == "__main__":
     unittest.main()
