@@ -179,5 +179,38 @@ class EcosystemSettingsTest(unittest.TestCase):
         self.assertIn("403", r["error"])
 
 
+class ClusterStoreExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_add_node_then_list_has_one(self):
+        cs.add_node(self.root, "mynode", "http://192.168.1.100:8420")
+        nodes = cs.list_nodes(self.root)
+        self.assertEqual(len(nodes), 1)
+
+    def test_node_has_name_field(self):
+        cs.add_node(self.root, "mynode", "http://192.168.1.100:8420")
+        self.assertEqual(cs.list_nodes(self.root)[0]["name"], "mynode")
+
+    def test_node_has_url_field(self):
+        cs.add_node(self.root, "mynode", "http://192.168.1.100:8420")
+        self.assertEqual(cs.list_nodes(self.root)[0]["url"], "http://192.168.1.100:8420")
+
+    def test_remove_node_returns_true(self):
+        cs.add_node(self.root, "mynode", "http://192.168.1.100:8420")
+        self.assertTrue(cs.remove_node(self.root, "mynode"))
+
+    def test_remove_missing_returns_false(self):
+        self.assertFalse(cs.remove_node(self.root, "nope"))
+
+    def test_get_settings_returns_dict(self):
+        s = cs.get_settings(self.root)
+        self.assertIsInstance(s, dict)
+
+
 if __name__ == "__main__":
     unittest.main()

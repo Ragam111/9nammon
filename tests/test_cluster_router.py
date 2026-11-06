@@ -72,5 +72,32 @@ class RoutePreviewTest(unittest.TestCase):
         self.assertEqual(p["candidates"], 0)
 
 
+class ClusterRouterExtraTest(unittest.TestCase):
+    def test_pick_node_empty_returns_dict(self):
+        r = cr.pick_node([])
+        self.assertIsInstance(r, dict)
+
+    def test_pick_node_has_node_key(self):
+        r = cr.pick_node([])
+        self.assertIn("node", r)
+
+    def test_pick_node_no_nodes_node_is_none(self):
+        r = cr.pick_node([])
+        self.assertIsNone(r["node"])
+
+    def test_pick_node_single_reachable(self):
+        node = {"name": "x", "url": "http://x:8420", "reachable": True, "health": {"ollama": "up"}}
+        r = cr.pick_node([node])
+        self.assertEqual(r["node"]["name"], "x")
+
+    def test_route_preview_returns_dict(self):
+        p = cr.route_preview({"nodes": []})
+        self.assertIsInstance(p, dict)
+
+    def test_route_preview_has_candidates_key(self):
+        p = cr.route_preview({"nodes": []})
+        self.assertIn("candidates", p)
+
+
 if __name__ == "__main__":
     unittest.main()
