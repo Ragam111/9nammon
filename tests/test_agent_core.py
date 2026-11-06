@@ -111,7 +111,7 @@ class AgentLoopTest(unittest.TestCase):
 
     def test_max_steps_stop(self):
         # ตอบเรียก tool ไปเรื่อย ไม่ final → ต้องหยุดที่ max_steps ไม่วนไม่จบ
-        loop_reply = '{"tool":"list_dir","args":{"path":"."}}'
+        loop_reply = '{"tool":"list_dir","args":{"path":"."}}'  
         res, _ = self._run([loop_reply] * 20, max_steps=3)
         self.assertEqual(res["stopped_reason"], "max_steps")
         self.assertIsNone(res["final"])
@@ -206,6 +206,39 @@ class AgentBrainOverrideTest(unittest.TestCase):
             raise RuntimeError("สมองล่ม")
         with self.assertRaises(RuntimeError):
             core.run(Path("/tmp"), "ทำงาน", workspace=self.root, generate_fn=boom)
+
+
+class AgentCoreExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.sb = tools.Sandbox(self.root)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_tool_error_is_exception(self):
+        self.assertTrue(issubclass(tools.ToolError, Exception))
+
+    def test_sandbox_list_dir_returns_entries(self):
+        (self.root / "file.txt").write_text("x", encoding="utf-8")
+        result = self.sb.list_dir(".")
+        self.assertIn("file.txt", result)
+
+    def test_build_registry_returns_dict(self):
+        self.assertIsInstance(tools.build_registry(self.sb), dict)
+
+    def test_build_registry_has_read_file(self):
+        self.assertIn("read_file", tools.build_registry(self.sb))
+
+    def test_build_registry_has_list_dir(self):
+        self.assertIn("list_dir", tools.build_registry(self.sb))
+
+    def test_ssrf_allows_public_https(self):
+        try:
+            tools._assert_public_url("https://example.com/api")
+        except tools.ToolError:
+            self.fail("example.com should be allowed by SSRF guard")
 
 
 if __name__ == "__main__":
