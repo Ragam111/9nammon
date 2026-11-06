@@ -64,5 +64,39 @@ class ResolveServerConfigTest(unittest.TestCase):
         self.assertIsNone(cfg["token"])
 
 
+class ResolveServerConfigExtraTest(unittest.TestCase):
+    def test_returns_dict(self):
+        cfg = server.resolve_server_config(_args(), env={})
+        self.assertIsInstance(cfg, dict)
+
+    def test_has_host_port_token_keys(self):
+        cfg = server.resolve_server_config(_args(), env={})
+        for key in ("host", "port", "token"):
+            self.assertIn(key, cfg)
+
+    def test_port_is_int(self):
+        cfg = server.resolve_server_config(_args(), env={})
+        self.assertIsInstance(cfg["port"], int)
+
+    def test_public_host_with_token_accepted(self):
+        cfg = server.resolve_server_config(_args(host="0.0.0.0", token="tok"), env={})
+        self.assertEqual(cfg["host"], "0.0.0.0")
+        self.assertEqual(cfg["token"], "tok")
+
+    def test_lca_token_env_sets_token(self):
+        cfg = server.resolve_server_config(
+            _args(host="0.0.0.0"), env={"LCA_TOKEN": "mytoken"})
+        self.assertEqual(cfg["token"], "mytoken")
+
+    def test_port_env_overrides_default(self):
+        cfg = server.resolve_server_config(
+            _args(host="0.0.0.0", token="x"), env={"PORT": "9876"})
+        self.assertEqual(cfg["port"], 9876)
+
+    def test_default_token_is_none(self):
+        cfg = server.resolve_server_config(_args(), env={})
+        self.assertIsNone(cfg["token"])
+
+
 if __name__ == "__main__":
     unittest.main()
