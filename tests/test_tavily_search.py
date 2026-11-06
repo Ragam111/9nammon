@@ -89,5 +89,46 @@ class FormatResultsTest(unittest.TestCase):
         self.assertIn("Tavily", out)
 
 
+class TavilySearchExtraTest(unittest.TestCase):
+    def test_max_results_constant_is_positive_int(self):
+        self.assertIsInstance(tavily_search.MAX_RESULTS, int)
+        self.assertGreater(tavily_search.MAX_RESULTS, 0)
+
+    def test_format_empty_list_returns_string(self):
+        result = tavily_search.format_results_for_context([])
+        self.assertIsInstance(result, str)
+
+    @patch("urllib.request.urlopen")
+    @patch("app.tavily_search.get_key", return_value="tvly-test-key")
+    def test_search_web_empty_results_returns_list(self, _mock_key, mock_urlopen):
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = json.dumps({"results": []}).encode("utf-8")
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_resp
+        results = tavily_search.search_web("query", Path("/tmp"))
+        self.assertIsInstance(results, list)
+        self.assertEqual(len(results), 0)
+
+    def test_format_one_result_numbered(self):
+        results = [{"title": "T", "url": "u", "snippet": "s"}]
+        out = tavily_search.format_results_for_context(results)
+        self.assertIn("1.", out)
+
+    def test_format_multiple_results_all_titles(self):
+        results = [
+            {"title": "Alpha", "url": "u1", "snippet": "s1"},
+            {"title": "Beta", "url": "u2", "snippet": "s2"},
+        ]
+        out = tavily_search.format_results_for_context(results)
+        self.assertIn("Alpha", out)
+        self.assertIn("Beta", out)
+
+    def test_format_result_includes_snippet(self):
+        results = [{"title": "T", "url": "u", "snippet": "unique-snip-xyz"}]
+        out = tavily_search.format_results_for_context(results)
+        self.assertIn("unique-snip-xyz", out)
+
+
 if __name__ == "__main__":
     unittest.main()
