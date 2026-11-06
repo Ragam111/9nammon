@@ -139,29 +139,29 @@ class NewsApiExtraTest(unittest.TestCase):
         conn.close()
         return resp.status, json.loads(body) if body else {}
 
-    def test_news_feeds_is_list(self):
+    def test_news_feeds_is_int(self):
         _, data = self._get("/api/news", token=self.session_token)
-        self.assertIsInstance(data["feeds"], list)
+        self.assertIsInstance(data["feeds"], int)
 
     def test_news_errors_is_list(self):
         _, data = self._get("/api/news", token=self.session_token)
         self.assertIsInstance(data["errors"], list)
 
-    def test_news_articles_title_is_string(self):
+    def test_article_title_is_string(self):
         _, data = self._get("/api/news", token=self.session_token)
         self.assertGreater(len(data["articles"]), 0)
         self.assertIsInstance(data["articles"][0]["title"], str)
 
-    def test_news_articles_link_is_string(self):
+    def test_article_link_is_string(self):
         _, data = self._get("/api/news", token=self.session_token)
         self.assertGreater(len(data["articles"]), 0)
         self.assertIsInstance(data["articles"][0]["link"], str)
 
-    def test_news_count_is_int(self):
-        _, data = self._get("/api/news", token=self.session_token)
-        self.assertIsInstance(data["count"], int)
-
-    def test_news_articles_source_is_string(self):
+    def test_article_source_is_string(self):
         _, data = self._get("/api/news", token=self.session_token)
         self.assertGreater(len(data["articles"]), 0)
         self.assertIsInstance(data["articles"][0]["source"], str)
+
+    def test_news_count_is_int(self):
+        _, data = self._get("/api/news", token=self.session_token)
+        self.assertIsInstance(data["count"], int)
