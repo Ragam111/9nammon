@@ -61,5 +61,48 @@ class EnsureTrustedTest(unittest.TestCase):
             self.assertTrue(result)
 
 
+class FolderTrustExtraTest(unittest.TestCase):
+    def test_mark_trusted_twice_no_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            folder_trust.mark_trusted(p)
+            folder_trust.mark_trusted(p)
+            self.assertTrue(folder_trust.is_trusted(p))
+
+    def test_marker_file_named_lca_trust(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            folder_trust.mark_trusted(p)
+            self.assertTrue((p / ".lca_trust").is_file())
+
+    def test_multiple_dirs_independent(self):
+        with tempfile.TemporaryDirectory() as tmp1:
+            with tempfile.TemporaryDirectory() as tmp2:
+                p1, p2 = Path(tmp1), Path(tmp2)
+                folder_trust.mark_trusted(p1)
+                self.assertTrue(folder_trust.is_trusted(p1))
+                self.assertFalse(folder_trust.is_trusted(p2))
+
+    def test_is_trusted_returns_bool(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = folder_trust.is_trusted(Path(tmp))
+            self.assertIsInstance(result, bool)
+
+    def test_ensure_trusted_already_trusted_returns_true(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            folder_trust.mark_trusted(p)
+            result = folder_trust.ensure_trusted(p)
+            self.assertTrue(result)
+
+    def test_marker_content_is_valid_text(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            folder_trust.mark_trusted(p)
+            content = (p / ".lca_trust").read_text(encoding="utf-8")
+            self.assertIsInstance(content, str)
+            self.assertGreater(len(content), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
