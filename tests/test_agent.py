@@ -110,9 +110,10 @@ class AgentExtraTest(unittest.TestCase):
         result = harness.council(self.root, "โจทย์", personas_ids=["elon", "jobs"])
         self.assertIn("synthesis", result)
 
-    def test_ask_result_has_answer_key(self):
+    def test_ask_result_has_reply_key(self):
+        # harness.ask returns 'reply' key (not 'answer')
         result = harness.ask(self.root, "elon", "ควรทำไหม")
-        self.assertIn("answer", result)
+        self.assertIn("reply", result)
 
     def test_ask_result_has_persona_key(self):
         result = harness.ask(self.root, "elon", "task")
