@@ -44,5 +44,60 @@ class VerifySha256Test(unittest.TestCase):
             self.assertIn("ลบไฟล์", message)
 
 
+class Sha256VerifyExtraTest(unittest.TestCase):
+    def test_checksummismatch_is_exception_subclass(self):
+        self.assertTrue(issubclass(installer_gui.ChecksumMismatch, Exception))
+
+    def test_empty_file_matches_known_hash(self):
+        empty_hash = "e3b0c44298fc1c149afbf4c8996fb924" \
+                     "27ae41e4649b934ca495991b7852b855"
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "empty.bin"
+            path.write_bytes(b"")
+            got = installer_gui.verify_sha256(path, empty_hash)
+            self.assertEqual(got, empty_hash)
+            self.assertTrue(path.is_file())
+
+    def test_uppercase_expected_still_matches(self):
+        payload = b"hello-lca"
+        expected = hashlib.sha256(payload).hexdigest()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "f.bin"
+            path.write_bytes(payload)
+            got = installer_gui.verify_sha256(path, expected.upper())
+            self.assertEqual(got, expected)
+
+    def test_bad_format_non_hex_raises(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "f.bin"
+            path.write_bytes(b"data")
+            with self.assertRaises(installer_gui.ChecksumMismatch):
+                installer_gui.verify_sha256(path, "z" * 64)
+
+    def test_wrong_length_hash_raises(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "f.bin"
+            path.write_bytes(b"data")
+            with self.assertRaises(installer_gui.ChecksumMismatch):
+                installer_gui.verify_sha256(path, "a" * 63)
+
+    def test_file_not_found_raises(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "missing.bin"
+            with self.assertRaises(installer_gui.ChecksumMismatch):
+                installer_gui.verify_sha256(path, "a" * 64)
+
+    def test_mismatch_message_contains_path(self):
+        payload = b"some-bytes"
+        actual = hashlib.sha256(payload).hexdigest()
+        wrong = hashlib.sha256(b"other").hexdigest()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "checked.bin"
+            path.write_bytes(payload)
+            with self.assertRaises(installer_gui.ChecksumMismatch) as cm:
+                installer_gui.verify_sha256(path, wrong)
+            self.assertIn(str(path), str(cm.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -52,5 +52,72 @@ class SyncProjectTest(unittest.TestCase):
         self.assertIsInstance(data, (dict, list))
 
 
+class DesktopArchiveExtraTest(unittest.TestCase):
+    def test_get_archive_root_returns_path(self):
+        with patch("pathlib.Path.home", return_value=Path("/mock/home")):
+            root = desktop_archive.get_archive_root()
+            self.assertIsInstance(root, Path)
+
+    def test_archive_dir_name_constant_exists(self):
+        self.assertTrue(hasattr(desktop_archive, "ARCHIVE_DIR_NAME"))
+        self.assertIsInstance(desktop_archive.ARCHIVE_DIR_NAME, str)
+        self.assertGreater(len(desktop_archive.ARCHIVE_DIR_NAME), 0)
+
+    def test_get_archive_root_contains_archive_dir_name(self):
+        with patch("pathlib.Path.home", return_value=Path("/mock/home")):
+            root = desktop_archive.get_archive_root()
+            self.assertIn(desktop_archive.ARCHIVE_DIR_NAME, str(root))
+
+    @patch.object(desktop_archive, "get_archive_root")
+    def test_sync_returns_path_on_success(self, mock_root):
+        with tempfile.TemporaryDirectory() as project_tmp, \
+                tempfile.TemporaryDirectory() as archive_tmp:
+            mock_root.return_value = Path(archive_tmp)
+            result = desktop_archive.sync_project(Path(project_tmp))
+            self.assertIsNotNone(result)
+            self.assertIsInstance(result, Path)
+
+    @patch.object(desktop_archive, "get_archive_root")
+    def test_sync_missing_changelog_still_works(self, mock_root):
+        with tempfile.TemporaryDirectory() as project_tmp, \
+                tempfile.TemporaryDirectory() as archive_tmp:
+            mock_root.return_value = Path(archive_tmp)
+            # project ไม่มี CHANGELOG_local.md → sync ต้องไม่ crash
+            result = desktop_archive.sync_project(Path(project_tmp))
+            self.assertIsNotNone(result)
+
+    @patch.object(desktop_archive, "get_archive_root")
+    def test_sync_idempotent(self, mock_root):
+        with tempfile.TemporaryDirectory() as project_tmp, \
+                tempfile.TemporaryDirectory() as archive_tmp:
+            mock_root.return_value = Path(archive_tmp)
+            project = Path(project_tmp)
+            (project / "todos.json").write_text("[]", encoding="utf-8")
+            desktop_archive.sync_project(project)
+            desktop_archive.sync_project(project)  # ครั้งที่สอง ต้องไม่ crash
+            index_path = Path(archive_tmp) / "index.json"
+            self.assertTrue(index_path.exists())
+
+    @patch.object(desktop_archive, "get_archive_root")
+    def test_index_has_project_name_key(self, mock_root):
+        with tempfile.TemporaryDirectory() as project_tmp, \
+                tempfile.TemporaryDirectory() as archive_tmp:
+            mock_root.return_value = Path(archive_tmp)
+            project = Path(project_tmp)
+            desktop_archive.sync_project(project)
+            data = json.loads((Path(archive_tmp) / "index.json").read_text(encoding="utf-8"))
+            self.assertIn(project.name, data)
+
+    @patch.object(desktop_archive, "get_archive_root")
+    def test_index_entry_has_last_sync_field(self, mock_root):
+        with tempfile.TemporaryDirectory() as project_tmp, \
+                tempfile.TemporaryDirectory() as archive_tmp:
+            mock_root.return_value = Path(archive_tmp)
+            project = Path(project_tmp)
+            desktop_archive.sync_project(project)
+            data = json.loads((Path(archive_tmp) / "index.json").read_text(encoding="utf-8"))
+            self.assertIn("last_sync", data[project.name])
+
+
 if __name__ == "__main__":
     unittest.main()

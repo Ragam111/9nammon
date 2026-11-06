@@ -48,5 +48,57 @@ class FeatureFlagsTest(unittest.TestCase):
         self.assertTrue(cluster_forward.is_enabled(self.root))
 
 
+class FeatureFlagsExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_features_is_list(self):
+        self.assertIsInstance(ff.FEATURES, list)
+
+    def test_features_nonempty(self):
+        self.assertGreater(len(ff.FEATURES), 0)
+
+    def test_each_feature_has_key(self):
+        for f in ff.FEATURES:
+            self.assertIn("key", f, f"ขาด key ใน {f}")
+
+    def test_each_feature_has_name(self):
+        for f in ff.FEATURES:
+            self.assertIn("name", f)
+
+    def test_each_feature_has_desc(self):
+        for f in ff.FEATURES:
+            self.assertIn("desc", f)
+
+    def test_is_on_returns_bool(self):
+        for f in ff.FEATURES:
+            result = ff.is_on(self.root, f["key"])
+            self.assertIsInstance(result, bool)
+
+    def test_status_returns_list(self):
+        result = ff.status(self.root)
+        self.assertIsInstance(result, list)
+
+    def test_status_all_have_enabled_field(self):
+        for item in ff.status(self.root):
+            self.assertIn("enabled", item)
+
+    def test_set_flag_returns_dict(self):
+        result = ff.set_flag(self.root, "watchdog", True)
+        self.assertIsInstance(result, dict)
+        self.assertIn("enabled", result)
+        self.assertTrue(result["enabled"])
+
+    def test_flags_are_independent(self):
+        ff.set_flag(self.root, "watchdog", True)
+        ff.set_flag(self.root, "cluster_forward", False)
+        self.assertTrue(ff.is_on(self.root, "watchdog"))
+        self.assertFalse(ff.is_on(self.root, "cluster_forward"))
+
+
 if __name__ == "__main__":
     unittest.main()
