@@ -119,5 +119,50 @@ class RequestBodySizeLimitTest(unittest.TestCase):
                             "payload ภายใน limit ต้องไม่ถูกปฏิเสธด้วย body size")
 
 
+# ---------------------------------------------------------------------------
+# ServerSecurityExtraTest
+# ---------------------------------------------------------------------------
+
+class ServerSecurityExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        handler = server.make_handler(Path(self._tmp.name), MASTER_TOKEN)
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        self.port = self.httpd.server_address[1]
+        self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
+        self.thread.start()
+
+    def tearDown(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        self._tmp.cleanup()
+
+    def _get(self, path, headers=None):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("GET", path, headers=headers or {})
+        resp = conn.getresponse()
+        resp.read()
+        conn.close()
+        return resp.status
+
+    def test_correct_token_ok(self):
+        self.assertEqual(self._get("/api/me", {"X-Auth-Token": MASTER_TOKEN}), 200)
+
+    def test_wrong_token_rejected(self):
+        self.assertEqual(self._get("/api/me", {"X-Auth-Token": "bad-token"}), 401)
+
+    def test_no_token_rejected(self):
+        self.assertEqual(self._get("/api/me", {}), 401)
+
+    def test_max_body_bytes_attribute_exists(self):
+        self.assertTrue(hasattr(server, "MAX_BODY_BYTES"))
+
+    def test_max_body_bytes_positive(self):
+        self.assertGreater(server.MAX_BODY_BYTES, 0)
+
+    def test_max_body_bytes_at_least_one_mb(self):
+        self.assertGreaterEqual(server.MAX_BODY_BYTES, 1024 * 1024)
+
+
 if __name__ == "__main__":
     unittest.main()
