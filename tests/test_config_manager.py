@@ -100,5 +100,42 @@ class ListKeysTest(unittest.TestCase):
                 self.assertNotEqual(k, "should-not-appear")
 
 
+class ConfigManagerExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_set_multiple_keys_all_listed(self):
+        config_manager.set_key(self.root, "X", "1")
+        config_manager.set_key(self.root, "Y", "2")
+        keys = config_manager.list_configured_keys(self.root)
+        self.assertIn("X", keys)
+        self.assertIn("Y", keys)
+
+    def test_different_roots_isolated(self):
+        with tempfile.TemporaryDirectory() as other_tmp:
+            other = Path(other_tmp)
+            config_manager.set_key(self.root, "ONLY_HERE", "v")
+            self.assertIsNone(config_manager.get_key(other, "ONLY_HERE"))
+
+    def test_set_key_does_not_error(self):
+        # basic smoke: set_key returns without raising
+        config_manager.set_key(self.root, "SMOKE", "ok")
+
+    def test_list_returns_list_type(self):
+        self.assertIsInstance(config_manager.list_configured_keys(self.root), list)
+
+    def test_set_integer_stored_as_string(self):
+        config_manager.set_key(self.root, "PORT", "8080")
+        self.assertEqual(config_manager.get_key(self.root, "PORT"), "8080")
+
+    def test_get_missing_key_no_config_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertIsNone(config_manager.get_key(Path(tmp), "ABSENT"))
+
+
 if __name__ == "__main__":
     unittest.main()

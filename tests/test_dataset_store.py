@@ -72,5 +72,38 @@ class DatasetStoreTest(unittest.TestCase):
             dataset_store.export_jsonl(self.root, fmt="bogus")
 
 
+class DatasetStoreExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_count_zero_initially(self):
+        self.assertEqual(dataset_store.count(self.root), 0)
+
+    def test_add_returns_id_field(self):
+        s = dataset_store.add_sample(self.root, "hello", "world")
+        self.assertIn("id", s)
+
+    def test_list_samples_returns_list(self):
+        self.assertIsInstance(dataset_store.list_samples(self.root), list)
+
+    def test_delete_nonexistent_returns_false(self):
+        self.assertFalse(dataset_store.delete_sample(self.root, 99999))
+
+    def test_add_stores_response(self):
+        s = dataset_store.add_sample(self.root, "q", "answer_text")
+        rows = dataset_store.list_samples(self.root)
+        self.assertEqual(rows[0]["response"], "answer_text")
+
+    def test_export_messages_has_two_entries_per_sample(self):
+        dataset_store.add_sample(self.root, "prompt", "reply")
+        out = dataset_store.export_jsonl(self.root, fmt="messages")
+        obj = json.loads(out.splitlines()[0])
+        self.assertEqual(len(obj["messages"]), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

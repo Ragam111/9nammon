@@ -179,5 +179,41 @@ class EcosystemSettingsTest(unittest.TestCase):
         self.assertIn("403", r["error"])
 
 
+class ClusterStoreExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_list_nodes_empty_initially(self):
+        self.assertEqual(cs.list_nodes(self.root), [])
+
+    def test_add_node_increases_count(self):
+        cs.add_node(self.root, "n1", "http://10.0.0.1:8420")
+        self.assertEqual(len(cs.list_nodes(self.root)), 1)
+
+    def test_add_node_has_name_field(self):
+        cs.add_node(self.root, "mynode", "http://10.0.0.2:8420")
+        node = cs.list_nodes(self.root)[0]
+        self.assertIn("name", node)
+        self.assertEqual(node["name"], "mynode")
+
+    def test_cluster_health_summary_has_expected_keys(self):
+        out = cs.cluster_health(self.root)
+        self.assertIn("summary", out)
+        for key in ("total", "up", "down"):
+            self.assertIn(key, out["summary"])
+
+    def test_get_settings_returns_dict(self):
+        s = cs.get_settings(self.root)
+        self.assertIsInstance(s, dict)
+
+    def test_get_settings_node_name_default_empty(self):
+        s = cs.get_settings(self.root)
+        self.assertEqual(s["NODE_NAME"], "")
+
+
 if __name__ == "__main__":
     unittest.main()

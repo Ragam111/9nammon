@@ -137,5 +137,34 @@ class CachedContentTest(unittest.TestCase):
             self.assertIsNone(content)
 
 
+class ContextManagerExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_context_budget_ratio_between_0_and_1(self):
+        self.assertGreater(context_manager.CONTEXT_BUDGET_RATIO, 0)
+        self.assertLessEqual(context_manager.CONTEXT_BUDGET_RATIO, 1)
+
+    def test_max_file_size_bytes_is_positive(self):
+        self.assertGreater(context_manager.MAX_FILE_SIZE_BYTES, 0)
+
+    def test_chars_per_token_estimate_is_positive(self):
+        self.assertGreater(context_manager.CHARS_PER_TOKEN_ESTIMATE, 0)
+
+    def test_load_ignore_patterns_returns_list_type(self):
+        self.assertIsInstance(context_manager.load_ignore_patterns(self.root), list)
+
+    def test_is_ignored_glob_star_matches_py_extension(self):
+        self.assertTrue(context_manager._is_ignored("app.py", ["*.py"]))
+
+    def test_build_auto_context_empty_dir_returns_dict(self):
+        ctx = context_manager.build_auto_context(self.root, num_ctx=4096, already_manual=set())
+        self.assertIsInstance(ctx, dict)
+
+
 if __name__ == "__main__":
     unittest.main()
