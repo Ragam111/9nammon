@@ -86,5 +86,35 @@ class SystemPromptTest(unittest.TestCase):
             self.assertGreater(len(prompt), 50)
 
 
+class AgentPersonasExtraTest(unittest.TestCase):
+    def test_personas_dict_nonempty(self):
+        self.assertGreater(len(personas.PERSONAS), 0)
+
+    def test_get_returns_id_field(self):
+        pid = next(iter(personas.PERSONAS))
+        p = personas.get(pid)
+        self.assertEqual(p["id"], pid)
+
+    def test_list_personas_all_have_skills_list(self):
+        for p in personas.list_personas():
+            self.assertIn("skills", p)
+            self.assertIsInstance(p["skills"], list)
+
+    def test_system_prompt_nonempty_string(self):
+        pid = next(iter(personas.PERSONAS))
+        prompt = personas.system_prompt(pid)
+        self.assertIsInstance(prompt, str)
+        self.assertGreater(len(prompt), 0)
+
+    def test_list_personas_no_duplicate_ids(self):
+        result = personas.list_personas()
+        ids = [p["id"] for p in result]
+        self.assertEqual(len(ids), len(set(ids)))
+
+    def test_get_unknown_raises_value_error(self):
+        with self.assertRaises(ValueError):
+            personas.get("zzz-unknown-persona")
+
+
 if __name__ == "__main__":
     unittest.main()
