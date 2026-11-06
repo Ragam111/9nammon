@@ -42,17 +42,14 @@ class ConfigVersionsTest(unittest.TestCase):
         self._write_config({"OPENAI_API_KEY": "sk-super-secret"})
         cv.snapshot(self.root)
         versions = cv.list_versions(self.root)
-        # metadata ต้องไม่มีค่า secret โผล่
         self.assertNotIn("sk-super-secret", json.dumps(versions))
         self.assertEqual(versions[0]["keys"], 1)
 
     def test_rollback_restores_config(self):
         self._write_config({"MODEL_BACKEND": "ollama"})
         v1 = cv.snapshot(self.root, label="good")
-        # จำลองของพัง: เปลี่ยน config เป็นค่าผิด
         config_manager.set_key(self.root, "MODEL_BACKEND", "broken-backend")
         self.assertEqual(config_manager.get_key(self.root, "MODEL_BACKEND"), "broken-backend")
-        # rollback กลับ v1
         res = cv.rollback(self.root, v1["id"])
         self.assertEqual(res["restored"], v1["id"])
         self.assertEqual(config_manager.get_key(self.root, "MODEL_BACKEND"), "ollama")
@@ -64,7 +61,6 @@ class ConfigVersionsTest(unittest.TestCase):
         before = len(cv.list_versions(self.root))
         cv.rollback(self.root, v1["id"])
         after = cv.list_versions(self.root)
-        # มีเวอร์ชันเพิ่ม (backup ของ v2 ก่อน rollback) → ย้อนของ rollback ได้อีก
         self.assertEqual(len(after), before + 1)
 
     def test_rollback_unknown_id_raises(self):
@@ -85,3 +81,45 @@ class ConfigVersionsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ConfigVersionsExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _write_config(self, d):
+        config_manager._config_path(self.root).write_text(
+            json.dumps(d, ensure_ascii=False), encoding="utf-8")
+
+    def test_snapshot_returns_dict_with_id(self):
+        self._write_config({"KEY": "value"})
+        meta = cv.snapshot(self.root)
+        self.assertIsInstance(meta, dict)
+        self.assertIn("id", meta)
+
+    def test_max_versions_is_positive_int(self):
+        self.assertIsInstance(cv.MAX_VERSIONS, int)
+        self.assertGreater(cv.MAX_VERSIONS, 0)
+
+    def test_list_versions_returns_list(self):
+        result = cv.list_versions(self.root)
+        self.assertIsInstance(result, list)
+
+    def test_snapshot_no_label_does_not_raise(self):
+        self._write_config({"X": "y"})
+        meta = cv.snapshot(self.root)
+        self.assertIn("id", meta)
+
+    def test_rollback_empty_id_raises(self):
+        self._write_config({"K": "v"})
+        with self.assertRaises((ValueError, KeyError)):
+            cv.rollback(self.root, "")
+
+    def test_snapshot_keys_count_matches_config(self):
+        self._write_config({"A": "1", "B": "2", "C": "3"})
+        meta = cv.snapshot(self.root)
+        self.assertEqual(meta["keys"], 3)

@@ -74,3 +74,38 @@ class DatasetStoreTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DatasetStoreExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_add_sample_returns_dict_with_id(self):
+        s = dataset_store.add_sample(self.root, "hello", "world")
+        self.assertIsInstance(s, dict)
+        self.assertIn("id", s)
+
+    def test_count_zero_initially(self):
+        self.assertEqual(dataset_store.count(self.root), 0)
+
+    def test_list_samples_returns_list(self):
+        result = dataset_store.list_samples(self.root)
+        self.assertIsInstance(result, list)
+
+    def test_delete_unknown_id_returns_false(self):
+        self.assertFalse(dataset_store.delete_sample(self.root, "no-such-id"))
+
+    def test_add_multiple_increases_count(self):
+        dataset_store.add_sample(self.root, "q1", "a1")
+        dataset_store.add_sample(self.root, "q2", "a2")
+        self.assertEqual(dataset_store.count(self.root), 2)
+
+    def test_added_sample_appears_in_list(self):
+        s = dataset_store.add_sample(self.root, "unique-prompt-xyz", "ans")
+        rows = dataset_store.list_samples(self.root)
+        ids = [r["id"] for r in rows]
+        self.assertIn(s["id"], ids)
