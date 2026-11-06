@@ -210,5 +210,32 @@ class MigrationTest(unittest.TestCase):
         self.assertFalse(result[0]["tools_net"])
 
 
+class SkillsStoreExtraTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+
+    def test_skill_error_is_exception_subclass(self):
+        self.assertTrue(issubclass(SkillError, Exception))
+
+    def test_add_returns_id_field(self):
+        rec = skills_store.add(self.tmp, "TestSkill", "do something")
+        self.assertIn("id", rec)
+
+    def test_list_skills_returns_list_type(self):
+        self.assertIsInstance(skills_store.list_skills(self.tmp), list)
+
+    def test_add_id_starts_with_skl(self):
+        rec = skills_store.add(self.tmp, "AnotherSkill", "prompt text")
+        self.assertTrue(rec["id"].startswith("skl-"))
+
+    def test_default_max_steps_is_positive(self):
+        self.assertGreater(skills_store.DEFAULT_MAX_STEPS, 0)
+
+    def test_remove_decreases_list_length(self):
+        rec = skills_store.add(self.tmp, "ToRemove", "p")
+        skills_store.remove(self.tmp, rec["id"])
+        self.assertEqual(len(skills_store.list_skills(self.tmp)), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
