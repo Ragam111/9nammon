@@ -80,5 +80,43 @@ class SpaceStoreTest(unittest.TestCase):
             ss.add_item(self.root, "sp-nope", "a", "hi")
 
 
+class SpaceStoreExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_create_shared_space_succeeds(self):
+        s = ss.create_space(self.root, "ห้องรวม", owner="alice", visibility="shared")
+        self.assertEqual(s["visibility"], "shared")
+        self.assertEqual(s["owner"], "alice")
+
+    def test_space_dict_has_members_key(self):
+        s = ss.create_space(self.root, "สเปซใหม่", owner="bob", visibility="private")
+        self.assertIn("members", s)
+        self.assertIsInstance(s["members"], list)
+
+    def test_list_spaces_returns_list(self):
+        result = ss.list_spaces(self.root, "user1", "USER")
+        self.assertIsInstance(result, list)
+
+    def test_private_space_not_visible_in_list_to_other_user(self):
+        ss.create_space(self.root, "ลับมาก", owner="owner1", visibility="private")
+        visible = {s["name"] for s in ss.list_spaces(self.root, "other_user", "USER")}
+        self.assertNotIn("ลับมาก", visible)
+
+    def test_list_items_returns_list(self):
+        s = ss.create_space(self.root, "ห้องเทสต์", owner="u", visibility="shared")
+        result = ss.list_items(self.root, s["id"])
+        self.assertIsInstance(result, list)
+
+    def test_get_space_id_matches_created(self):
+        s = ss.create_space(self.root, "ยืนยันไอดี", owner="carol", visibility="shared")
+        fetched = ss.get_space(self.root, s["id"])
+        self.assertEqual(fetched["id"], s["id"])
+
+
 if __name__ == "__main__":
     unittest.main()
