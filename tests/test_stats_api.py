@@ -102,5 +102,65 @@ class StatsApiTest(unittest.TestCase):
         self.assertGreater(len(data["by_endpoint"]), 0)
 
 
+class StatsApiExtraTest(unittest.TestCase):
+    """ทดสอบ response shape ละเอียดขึ้น และ type checking"""
+
+    @classmethod
+    def setUpClass(cls):
+        model_backend.generate = (
+            lambda project_root, model, messages, num_ctx=8192, options=None: f"MODEL={model}"
+        )
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.httpd, self.port, self.session_token = _make_server(self.root)
+
+    def tearDown(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        self._tmp.cleanup()
+
+    def _get(self, path, token=None):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        hdrs = {}
+        if token:
+            hdrs["X-Auth-Token"] = token
+        conn.request("GET", path, headers=hdrs)
+        resp = conn.getresponse()
+        body = resp.read().decode("utf-8")
+        conn.close()
+        return resp.status, json.loads(body) if body else {}
+
+    def test_stats_total_requests_is_int(self):
+        _, data = self._get("/api/admin/stats", token=self.session_token)
+        self.assertIsInstance(data["total_requests"], int)
+
+    def test_stats_total_errors_is_int(self):
+        _, data = self._get("/api/admin/stats", token=self.session_token)
+        self.assertIsInstance(data["total_errors"], int)
+
+    def test_stats_last_24h_is_int(self):
+        _, data = self._get("/api/admin/stats", token=self.session_token)
+        self.assertIsInstance(data["last_24h"], int)
+        self.assertGreaterEqual(data["last_24h"], 0)
+
+    def test_stats_by_endpoint_is_list(self):
+        _, data = self._get("/api/admin/stats", token=self.session_token)
+        self.assertIsInstance(data["by_endpoint"], list)
+
+    def test_stats_error_rate_non_negative(self):
+        _, data = self._get("/api/admin/stats", token=self.session_token)
+        self.assertGreaterEqual(data["error_rate"], 0.0)
+
+    def test_stats_total_errors_non_negative(self):
+        _, data = self._get("/api/admin/stats", token=self.session_token)
+        self.assertGreaterEqual(data["total_errors"], 0)
+
+    def test_stats_total_requests_non_negative(self):
+        _, data = self._get("/api/admin/stats", token=self.session_token)
+        self.assertGreaterEqual(data["total_requests"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -72,5 +72,48 @@ class SupportStoreTest(unittest.TestCase):
         self.assertEqual(c["closed"], 0)  # สถานะที่ไม่มีก็ต้องเป็น 0 ไม่ใช่หาย
 
 
+class SupportStoreExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_get_nonexistent_returns_none(self):
+        result = support_store.get_ticket(self.root, 99999)
+        self.assertIsNone(result)
+
+    def test_ticket_has_id_field(self):
+        t = support_store.create_ticket(self.root, "u", "subj", "body")
+        self.assertIn("id", t)
+        self.assertIsNotNone(t["id"])
+
+    def test_ticket_has_created_at(self):
+        t = support_store.create_ticket(self.root, "u", "subj", "body")
+        self.assertIn("created_at", t)
+        self.assertIsNotNone(t["created_at"])
+
+    def test_counts_all_zero_initially(self):
+        c = support_store.counts_by_status(self.root)
+        self.assertEqual(c["total"], 0)
+        self.assertEqual(c["open"], 0)
+
+    def test_list_returns_list(self):
+        result = support_store.list_tickets(self.root)
+        self.assertIsInstance(result, list)
+
+    def test_multiple_tickets_in_list(self):
+        support_store.create_ticket(self.root, "u", "s1", "b1")
+        support_store.create_ticket(self.root, "u", "s2", "b2")
+        support_store.create_ticket(self.root, "u", "s3", "b3")
+        result = support_store.list_tickets(self.root)
+        self.assertEqual(len(result), 3)
+
+    def test_feature_kind_accepted(self):
+        t = support_store.create_ticket(self.root, "u", "subj", "body", kind="feature")
+        self.assertEqual(t["kind"], "feature")
+
+
 if __name__ == "__main__":
     unittest.main()
