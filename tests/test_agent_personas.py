@@ -86,5 +86,25 @@ class SystemPromptTest(unittest.TestCase):
             self.assertGreater(len(prompt), 50)
 
 
+class AgentPersonasExtraTest(unittest.TestCase):
+    def test_personas_constant_exists(self):
+        self.assertTrue(hasattr(personas, "PERSONAS"))
+
+    def test_ceo_in_personas(self):
+        self.assertIn("ceo", personas.PERSONAS)
+
+    def test_persona_title_is_string(self):
+        self.assertIsInstance(personas.get("elon")["title"], str)
+
+    def test_persona_skills_non_empty(self):
+        self.assertGreater(len(personas.get("jobs")["skills"]), 0)
+
+    def test_list_personas_at_least_six(self):
+        self.assertGreaterEqual(len(personas.list_personas()), 6)
+
+    def test_system_prompt_non_empty(self):
+        self.assertGreater(len(personas.system_prompt("carmack")), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

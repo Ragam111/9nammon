@@ -122,5 +122,36 @@ class BuildAutoContextTest(unittest.TestCase):
         self.assertNotIn("old.txt", ctx)
 
 
+class AgentEvalExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        cm._content_cache.clear()
+
+    def tearDown(self):
+        cm._content_cache.clear()
+        self._tmp.cleanup()
+
+    def test_scorecard_returns_dict(self):
+        self.assertIsInstance(agent_eval.scorecard(), dict)
+
+    def test_scorecard_has_overall_key(self):
+        self.assertIn("overall", agent_eval.scorecard())
+
+    def test_scorecard_has_dimensions_key(self):
+        self.assertIn("dimensions", agent_eval.scorecard())
+
+    def test_overall_total_positive(self):
+        self.assertGreater(agent_eval.scorecard()["overall"]["total"], 0)
+
+    def test_build_auto_context_returns_dict(self):
+        ctx = cm.build_auto_context(self.root, num_ctx=8192, already_manual=set())
+        self.assertIsInstance(ctx, dict)
+
+    def test_build_auto_context_empty_dir_is_empty(self):
+        ctx = cm.build_auto_context(self.root, num_ctx=8192, already_manual=set())
+        self.assertEqual(ctx, {})
+
+
 if __name__ == "__main__":
     unittest.main()
