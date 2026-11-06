@@ -119,5 +119,62 @@ class RequestBodySizeLimitTest(unittest.TestCase):
                             "payload ภายใน limit ต้องไม่ถูกปฏิเสธด้วย body size")
 
 
+class ServerSecurityExtraTest(unittest.TestCase):
+    """เพิ่มเติม: MAX_BODY_BYTES constant, session token shape, auth on various endpoints"""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.handler_cls = server.make_handler(self.root, MASTER_TOKEN)
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), self.handler_cls)
+        self.port = self.httpd.server_address[1]
+        self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
+        self.thread.start()
+
+    def tearDown(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        self._tmp.cleanup()
+
+    def _get(self, path, headers=None):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("GET", path, headers=headers or {})
+        resp = conn.getresponse()
+        resp.read()
+        conn.close()
+        return resp.status
+
+    def test_max_body_bytes_is_two_mb(self):
+        self.assertEqual(self.handler_cls.MAX_BODY_BYTES, 2 * 1024 * 1024)
+
+    def test_max_body_bytes_is_positive(self):
+        self.assertGreater(self.handler_cls.MAX_BODY_BYTES, 0)
+
+    def test_session_token_on_no_master(self):
+        cls = server.make_handler(self.root, None)
+        self.assertTrue(hasattr(cls, "session_token"))
+        self.assertIsInstance(cls.session_token, str)
+        self.assertGreater(len(cls.session_token), 10)
+
+    def test_multiple_endpoints_require_auth(self):
+        for path in ("/api/me", "/api/chat/conversations"):
+            st = self._get(path)
+            self.assertEqual(st, 401, f"{path} must require auth")
+
+    def test_prefix_of_master_token_rejected(self):
+        prefix = MASTER_TOKEN[:10]
+        st = self._get("/api/me", {"X-Auth-Token": prefix})
+        self.assertEqual(st, 401)
+
+    def test_master_token_plus_extra_rejected(self):
+        longer = MASTER_TOKEN + "extra"
+        st = self._get("/api/me", {"X-Auth-Token": longer})
+        self.assertEqual(st, 401)
+
+    def test_correct_token_grants_access(self):
+        st = self._get("/api/me", {"X-Auth-Token": MASTER_TOKEN})
+        self.assertEqual(st, 200)
+
+
 if __name__ == "__main__":
     unittest.main()
