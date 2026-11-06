@@ -103,3 +103,27 @@ class AvailabilityTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EvalLiveExtraTest(unittest.TestCase):
+    def test_golden_cases_is_list(self):
+        self.assertIsInstance(live.GOLDEN_CASES, list)
+
+    def test_golden_cases_nonempty(self):
+        self.assertGreater(len(live.GOLDEN_CASES), 0)
+
+    def test_each_case_has_id(self):
+        for case in live.GOLDEN_CASES:
+            self.assertIn("id", case, f"case missing 'id': {case}")
+
+    def test_each_case_has_user(self):
+        for case in live.GOLDEN_CASES:
+            self.assertIn("user", case, f"case missing 'user': {case}")
+
+    def test_run_live_eval_returns_dict(self):
+        result = live.run_live_eval(responder=good_responder)
+        self.assertIsInstance(result, dict)
+
+    def test_result_has_overall_key(self):
+        result = live.run_live_eval(responder=good_responder)
+        self.assertIn("overall", result)
