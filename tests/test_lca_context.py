@@ -54,11 +54,10 @@ class LcaContextTest(unittest.TestCase):
     def test_dedupe_across_lists(self):
         p = ProcessInfo(pid=10, name="ollama_llama_server", memory_percent=40.0, memory_rss=3 * GB)
         snap = _snapshot(30, procs=[p])
-        snap.top_by_cpu = [p]  # โผล่ทั้งสองลิสต์ ต้องนับครั้งเดียว
+        snap.top_by_cpu = [p]
         self.assertEqual(len(lca_context.detect_ollama(snap)), 1)
 
     def test_pressure_with_ollama(self):
-        # RAM 95% (CRITICAL) + พบ ollama → ชี้ว่าน่าจะมาจากโหลดโมเดล
         snap = _snapshot(95, procs=[
             ProcessInfo(pid=10, name="ollama", memory_percent=80.0, memory_rss=6 * GB),
         ])
@@ -90,6 +89,44 @@ class LcaContextTest(unittest.TestCase):
         self.assertFalse(out["ollama_running"])
         self.assertFalse(out["memory_pressure"])
         self.assertEqual(out["ollama_rss"], 0)
+
+
+class LcaContextExtraTest(unittest.TestCase):
+    def _report(self, snap):
+        return Analyzer().analyze(snap)
+
+    def test_correlate_returns_dict(self):
+        snap = _snapshot(20)
+        out = lca_context.correlate(self._report(snap))
+        self.assertIsInstance(out, dict)
+
+    def test_correlate_has_ollama_running_key(self):
+        snap = _snapshot(20)
+        out = lca_context.correlate(self._report(snap))
+        self.assertIn("ollama_running", out)
+
+    def test_correlate_has_memory_pressure_key(self):
+        snap = _snapshot(20)
+        out = lca_context.correlate(self._report(snap))
+        self.assertIn("memory_pressure", out)
+
+    def test_correlate_has_ollama_rss_key(self):
+        snap = _snapshot(20)
+        out = lca_context.correlate(self._report(snap))
+        self.assertIn("ollama_rss", out)
+
+    def test_detect_ollama_returns_list(self):
+        snap = _snapshot(20)
+        result = lca_context.detect_ollama(snap)
+        self.assertIsInstance(result, list)
+
+    def test_correlate_ollama_rss_nonzero_when_running(self):
+        snap = _snapshot(30, procs=[
+            ProcessInfo(pid=10, name="ollama", memory_percent=20.0, memory_rss=2 * GB),
+        ])
+        out = lca_context.correlate(self._report(snap))
+        self.assertTrue(out["ollama_running"])
+        self.assertGreater(out["ollama_rss"], 0)
 
 
 if __name__ == "__main__":
