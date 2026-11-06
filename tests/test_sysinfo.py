@@ -66,5 +66,29 @@ class SystemInfoTest(unittest.TestCase):
             self.assertIn("best-effort", info.gpu_note)
 
 
+# ---------------------------------------------------------------------------
+# SysinfoExtraTest
+# ---------------------------------------------------------------------------
+
+class SysinfoExtraTest(unittest.TestCase):
+    def test_human_bytes_zero(self):
+        self.assertEqual(sysinfo._human_bytes(0), "0.0 B")
+
+    def test_human_bytes_one_kib(self):
+        self.assertEqual(sysinfo._human_bytes(1024), "1.0 KiB")
+
+    def test_guess_compute_nvidia_rtx_true(self):
+        self.assertTrue(sysinfo._guess_compute_capable("NVIDIA GeForce RTX 4090"))
+
+    def test_guess_compute_intel_hd_false(self):
+        self.assertFalse(sysinfo._guess_compute_capable("Intel HD Graphics 520"))
+
+    def test_detect_gpus_returns_list(self):
+        self.assertIsInstance(sysinfo.detect_gpus(), list)
+
+    def test_run_missing_command_returns_empty_string(self):
+        self.assertEqual(sysinfo._run(["definitely-not-a-real-command-xyz"]), "")
+
+
 if __name__ == "__main__":
     unittest.main()

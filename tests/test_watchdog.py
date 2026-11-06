@@ -85,5 +85,46 @@ class WatchdogTickTest(unittest.TestCase):
         self.assertEqual(w.last_findings[0]["key"], "ram")
 
 
+# ---------------------------------------------------------------------------
+# WatchdogExtraTest
+# ---------------------------------------------------------------------------
+
+class WatchdogExtraTest(unittest.TestCase):
+    def test_evaluate_all_healthy_returns_empty(self):
+        self.assertEqual(wd.evaluate(ollama_up=True, ram_pressure=False, cluster_down=0), [])
+
+    def test_evaluate_ollama_down_is_critical(self):
+        findings = wd.evaluate(ollama_up=False, ram_pressure=False)
+        self.assertTrue(any(f["level"] == wd.CRITICAL for f in findings))
+
+    def test_critical_constant_is_string(self):
+        self.assertIsInstance(wd.CRITICAL, str)
+
+    def test_warning_constant_is_string(self):
+        self.assertIsInstance(wd.WARNING, str)
+
+    def test_watchdog_tick_returns_findings_list(self):
+        sent = []
+        w = wd.Watchdog(
+            check_fn=lambda: [{"key": "ram", "level": wd.WARNING, "msg": "hi"}],
+            notify_fn=lambda lvl, msg: sent.append((lvl, msg)),
+            min_notify_gap=300.0,
+            clock=lambda: 0.0,
+        )
+        result = w.tick()
+        self.assertIsInstance(result, list)
+
+    def test_no_findings_sends_no_notifications(self):
+        sent = []
+        w = wd.Watchdog(
+            check_fn=lambda: [],
+            notify_fn=lambda lvl, msg: sent.append((lvl, msg)),
+            min_notify_gap=300.0,
+            clock=lambda: 0.0,
+        )
+        w.tick()
+        self.assertEqual(sent, [])
+
+
 if __name__ == "__main__":
     unittest.main()
