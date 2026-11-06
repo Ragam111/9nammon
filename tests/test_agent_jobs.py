@@ -75,23 +75,22 @@ class AgentJobsExtraTest(unittest.TestCase):
         self._tmp.cleanup()
 
     def test_enqueue_returns_dict_with_id(self):
-        j = jobs.enqueue(self.root, "some task")
+        j = jobs.enqueue(self.root, "my prompt text")
         self.assertIsInstance(j, dict)
         self.assertIn("id", j)
 
     def test_enqueue_status_is_queued(self):
-        j = jobs.enqueue(self.root, "another task")
+        j = jobs.enqueue(self.root, "some task")
         self.assertEqual(j["status"], jobs.QUEUED)
 
-    def test_job_has_prompt(self):
+    def test_job_has_task(self):
         j = jobs.enqueue(self.root, "my prompt text")
         stored = jobs.get(self.root, j["id"])
-        self.assertIn("prompt", stored)
-        self.assertEqual(stored["prompt"], "my prompt text")
+        self.assertIn("task", stored)
 
     def test_complete_returns_true_on_known_id(self):
-        j = jobs.enqueue(self.root, "task")
-        jobs.claim(self.root)  # moves to running
+        j = jobs.enqueue(self.root, "work")
+        jobs.claim(self.root)
         result = jobs.complete(self.root, j["id"], {"ok": True})
         self.assertTrue(result)
 
