@@ -72,3 +72,42 @@ class TodoStoreTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TodoStoreExtraTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+
+    def test_add_returns_dict_with_id(self):
+        result = todo_store.add_todo(self.tmp, "New task")
+        self.assertIsInstance(result, dict)
+        self.assertIn("id", result)
+
+    def test_new_todo_has_id_text_done_fields(self):
+        todo_store.add_todo(self.tmp, "field check")
+        todos = todo_store.load_todos(self.tmp)
+        self.assertIn("id", todos[0])
+        self.assertIn("text", todos[0])
+        self.assertIn("done", todos[0])
+
+    def test_toggle_unknown_id_does_not_crash(self):
+        # toggling a nonexistent id should not raise
+        try:
+            todo_store.toggle_todo(self.tmp, 99999)
+        except Exception as e:
+            self.fail(f"toggle_todo raised unexpectedly: {e}")
+
+    def test_load_todos_returns_list(self):
+        result = todo_store.load_todos(self.tmp)
+        self.assertIsInstance(result, list)
+
+    def test_text_stored_exactly(self):
+        text = "ข้อความภาษาไทย special: !@#$%"
+        todo_store.add_todo(self.tmp, text)
+        todos = todo_store.load_todos(self.tmp)
+        self.assertEqual(todos[0]["text"], text)
+
+    def test_done_starts_false(self):
+        todo_store.add_todo(self.tmp, "brand new")
+        todos = todo_store.load_todos(self.tmp)
+        self.assertFalse(todos[0]["done"])
