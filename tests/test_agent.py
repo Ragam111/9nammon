@@ -84,5 +84,31 @@ class HarnessTest(unittest.TestCase):
         self.assertIn("Carmack-lens", self.calls[-1]["system"])
 
 
+class PersonaExtraTest(unittest.TestCase):
+    def test_list_personas_returns_list(self):
+        result = personas.list_personas()
+        self.assertIsInstance(result, list)
+
+    def test_list_personas_nonempty(self):
+        result = personas.list_personas()
+        self.assertGreater(len(result), 0)
+
+    def test_get_known_persona_returns_dict(self):
+        p = personas.get("ceo")
+        self.assertIsInstance(p, dict)
+
+    def test_persona_has_id_key(self):
+        p = personas.get("ceo")
+        self.assertIn("id", p)
+
+    def test_system_prompt_returns_string(self):
+        sp = personas.system_prompt("ceo")
+        self.assertIsInstance(sp, str)
+
+    def test_chair_id_is_in_personas(self):
+        ids = {p["id"] for p in personas.list_personas()}
+        self.assertIn(personas.CHAIR_ID, ids)
+
+
 if __name__ == "__main__":
     unittest.main()
