@@ -83,5 +83,46 @@ class ConfigVersionsTest(unittest.TestCase):
         self.assertEqual(cv.list_versions(self.root), [])
 
 
+class ConfigVersionsExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _write_config(self, d):
+        config_manager._config_path(self.root).write_text(
+            json.dumps(d, ensure_ascii=False), encoding="utf-8")
+
+    def test_snapshot_returns_dict(self):
+        self._write_config({"K": "v"})
+        meta = cv.snapshot(self.root)
+        self.assertIsInstance(meta, dict)
+
+    def test_snapshot_has_id_key(self):
+        self._write_config({"K": "v"})
+        meta = cv.snapshot(self.root)
+        self.assertIn("id", meta)
+
+    def test_list_returns_list(self):
+        result = cv.list_versions(self.root)
+        self.assertIsInstance(result, list)
+
+    def test_max_versions_is_positive_int(self):
+        self.assertIsInstance(cv.MAX_VERSIONS, int)
+        self.assertGreater(cv.MAX_VERSIONS, 0)
+
+    def test_snapshot_label_stored(self):
+        self._write_config({"K": "v"})
+        meta = cv.snapshot(self.root, label="my-label")
+        self.assertEqual(meta["label"], "my-label")
+
+    def test_snapshot_keys_count_correct(self):
+        self._write_config({"A": "1", "B": "2"})
+        meta = cv.snapshot(self.root)
+        self.assertEqual(meta["keys"], 2)
+
+
 if __name__ == "__main__":
     unittest.main()
