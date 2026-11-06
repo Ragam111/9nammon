@@ -160,5 +160,53 @@ class ClusterSyncUnitTest(unittest.TestCase):
         self.assertEqual(result["added"], [])
 
 
+class ClusterSyncExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self._orig_discover = lan_discovery.discover
+
+    def tearDown(self):
+        lan_discovery.discover = self._orig_discover
+        self._tmp.cleanup()
+
+    def _empty_discover(self):
+        lan_discovery.discover = lambda **kw: {
+            "nodes": [], "scanned": 0, "base_ip": "192.168.1.1", "elapsed_s": 0.1
+        }
+
+    def test_sync_returns_dict(self):
+        self._empty_discover()
+        result = cluster_sync.sync_discovered(self.root)
+        self.assertIsInstance(result, dict)
+
+    def test_sync_has_added_key(self):
+        self._empty_discover()
+        result = cluster_sync.sync_discovered(self.root)
+        self.assertIn("added", result)
+
+    def test_sync_has_existing_key(self):
+        self._empty_discover()
+        result = cluster_sync.sync_discovered(self.root)
+        self.assertIn("existing", result)
+
+    def test_sync_added_is_list(self):
+        self._empty_discover()
+        result = cluster_sync.sync_discovered(self.root)
+        self.assertIsInstance(result["added"], list)
+
+    def test_sync_scanned_is_int(self):
+        lan_discovery.discover = lambda **kw: {
+            "nodes": [], "scanned": 128, "base_ip": "192.168.1.1", "elapsed_s": 0.1
+        }
+        result = cluster_sync.sync_discovered(self.root)
+        self.assertIsInstance(result["scanned"], int)
+
+    def test_sync_no_nodes_added_empty(self):
+        self._empty_discover()
+        result = cluster_sync.sync_discovered(self.root)
+        self.assertEqual(result["added"], [])
+
+
 if __name__ == "__main__":
     unittest.main()
