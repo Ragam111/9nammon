@@ -187,5 +187,33 @@ class RunStreamValidationTest(unittest.TestCase):
             bots.run_stream(self.tmp, self.bot["id"], "hello")
 
 
+class BotsExtraTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.skill = _add_skill(self.tmp)
+
+    def test_bot_error_is_exception(self):
+        self.assertTrue(issubclass(BotError, Exception))
+
+    def test_add_returns_dict(self):
+        rec = bots.add(self.tmp, "ExtraBot1", self.skill["id"])
+        self.assertIsInstance(rec, dict)
+
+    def test_add_bot_has_name_key(self):
+        rec = bots.add(self.tmp, "ExtraBot2", self.skill["id"])
+        self.assertIn("name", rec)
+
+    def test_add_bot_has_skill_id_key(self):
+        rec = bots.add(self.tmp, "ExtraBot3", self.skill["id"])
+        self.assertIn("skill_id", rec)
+
+    def test_list_bots_returns_list(self):
+        self.assertIsInstance(bots.list_bots(self.tmp), list)
+
+    def test_add_then_list_has_one(self):
+        bots.add(self.tmp, "ExtraBot4", self.skill["id"])
+        self.assertEqual(len(bots.list_bots(self.tmp)), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

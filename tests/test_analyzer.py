@@ -147,5 +147,25 @@ class ThresholdValidationTest(unittest.TestCase):
             Analyzer(Thresholds(cpu_warn=96.0, cpu_crit=95.0))
 
 
+class AnalyzerExtraTest(unittest.TestCase):
+    def test_severity_ok_exists(self):
+        self.assertTrue(hasattr(Severity, "OK"))
+
+    def test_severity_critical_exists(self):
+        self.assertTrue(hasattr(Severity, "CRITICAL"))
+
+    def test_analyzer_instance_created(self):
+        self.assertIsInstance(Analyzer(), Analyzer)
+
+    def test_snapshot_has_cpu_attribute(self):
+        self.assertTrue(hasattr(make_snapshot(), "cpu"))
+
+    def test_snapshot_has_memory_attribute(self):
+        self.assertTrue(hasattr(make_snapshot(), "memory"))
+
+    def test_report_findings_is_list(self):
+        self.assertIsInstance(Analyzer().analyze(make_snapshot()).findings, list)
+
+
 if __name__ == "__main__":
     unittest.main()
