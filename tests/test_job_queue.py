@@ -76,5 +76,38 @@ class JobQueueTest(unittest.TestCase):
         self.assertFalse(job_queue.delete_job(self.root, job["id"]))
 
 
+class JobQueueExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_enqueue_returns_dict(self):
+        job = job_queue.enqueue(self.root, "task")
+        self.assertIsInstance(job, dict)
+
+    def test_enqueue_has_id(self):
+        job = job_queue.enqueue(self.root, "task")
+        self.assertIn("id", job)
+
+    def test_initial_status_pending(self):
+        job = job_queue.enqueue(self.root, "task")
+        self.assertEqual(job["status"], "pending")
+
+    def test_get_nonexistent_returns_none(self):
+        result = job_queue.get_job(self.root, 99999)
+        self.assertIsNone(result)
+
+    def test_list_returns_list(self):
+        rows = job_queue.list_jobs(self.root)
+        self.assertIsInstance(rows, list)
+
+    def test_delete_nonexistent_returns_false(self):
+        result = job_queue.delete_job(self.root, 99999)
+        self.assertFalse(result)
+
+
 if __name__ == "__main__":
     unittest.main()
