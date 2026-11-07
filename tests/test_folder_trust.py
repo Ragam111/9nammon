@@ -61,5 +61,47 @@ class EnsureTrustedTest(unittest.TestCase):
             self.assertTrue(result)
 
 
+class FolderTrustExtraTest(unittest.TestCase):
+    def test_is_trusted_returns_bool(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = folder_trust.is_trusted(Path(tmp))
+            self.assertIsInstance(result, bool)
+
+    def test_mark_trusted_idempotent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            folder_trust.mark_trusted(p)
+            folder_trust.mark_trusted(p)  # should not raise
+            self.assertTrue(folder_trust.is_trusted(p))
+
+    def test_trust_marker_contains_trusted_at(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            folder_trust.mark_trusted(p)
+            content = (p / ".lca_trust").read_text(encoding="utf-8")
+            self.assertIn("trusted_at", content)
+
+    def test_independent_dirs_separate_trust(self):
+        with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:
+            folder_trust.mark_trusted(Path(a))
+            self.assertTrue(folder_trust.is_trusted(Path(a)))
+            self.assertFalse(folder_trust.is_trusted(Path(b)))
+
+    def test_mark_trusted_creates_lca_trust_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            self.assertFalse((p / ".lca_trust").exists())
+            folder_trust.mark_trusted(p)
+            self.assertTrue((p / ".lca_trust").exists())
+
+    @patch("builtins.input", side_effect=Exception("input should not be called"))
+    def test_ensure_trusted_skips_prompt_if_already_trusted(self, _mock):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            folder_trust.mark_trusted(p)
+            result = folder_trust.ensure_trusted(p)  # must not call input()
+            self.assertTrue(result)
+
+
 if __name__ == "__main__":
     unittest.main()
