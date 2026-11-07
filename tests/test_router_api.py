@@ -151,5 +151,45 @@ class RouterUnitTest(unittest.TestCase):
             self.assertIn("installed", m)
 
 
+# ---------------------------------------------------------------------------
+# RouterApiExtraTest — additional coverage
+# ---------------------------------------------------------------------------
+
+class RouterApiExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._orig = router._ollama_installed_models
+        router._ollama_installed_models = lambda base_url=None, timeout=3: (False, [])
+        with router._cache_lock:
+            router._cache.clear()
+        self._tmp = tempfile.TemporaryDirectory()
+
+    def tearDown(self):
+        router._ollama_installed_models = self._orig
+        with router._cache_lock:
+            router._cache.clear()
+        self._tmp.cleanup()
+
+    def _recommend(self):
+        return router.recommend(self._tmp.name)
+
+    def test_recommend_returns_dict(self):
+        self.assertIsInstance(self._recommend(), dict)
+
+    def test_recommend_ollama_running_false_when_mocked(self):
+        self.assertFalse(self._recommend()["ollama_running"])
+
+    def test_recommend_tier_is_string(self):
+        self.assertIsInstance(self._recommend()["tier"], str)
+
+    def test_recommend_top_pick_is_string(self):
+        self.assertIsInstance(self._recommend()["top_pick"], str)
+
+    def test_recommend_installed_empty_when_offline(self):
+        self.assertEqual(self._recommend()["installed"], [])
+
+    def test_recommend_models_non_empty(self):
+        self.assertGreater(len(self._recommend()["models"]), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
