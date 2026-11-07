@@ -111,5 +111,41 @@ class DbManagerUnitTest(unittest.TestCase):
         self.assertIn("server_events", data["tables"])
 
 
+class DbManagerExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_get_db_status_has_tables_key(self):
+        data = db_manager.get_db_status(self.root)
+        self.assertIn("tables", data)
+
+    def test_get_db_status_db_size_bytes_non_negative(self):
+        data = db_manager.get_db_status(self.root)
+        self.assertGreaterEqual(data["db_size_bytes"], 0)
+
+    def test_get_db_status_migrations_applied_is_list(self):
+        data = db_manager.get_db_status(self.root)
+        self.assertIsInstance(data["migrations_applied"], list)
+
+    def test_log_event_multiple_types(self):
+        db_manager.get_db_status(self.root)  # migrate
+        db_manager.log_event(self.root, "startup", "started")
+        db_manager.log_event(self.root, "shutdown", "stopped")
+        db_manager.log_event(self.root, "error", "oops", level="error")
+
+    def test_get_db_status_code_version_is_int(self):
+        data = db_manager.get_db_status(self.root)
+        self.assertIsInstance(data["code_version"], int)
+
+    def test_get_db_status_called_twice_consistent(self):
+        d1 = db_manager.get_db_status(self.root)
+        d2 = db_manager.get_db_status(self.root)
+        self.assertEqual(d1["code_version"], d2["code_version"])
+
+
 if __name__ == "__main__":
     unittest.main()
