@@ -117,5 +117,33 @@ class ProviderLocalityTest(unittest.TestCase):
         self.assertFalse(flags["anthropic"])
 
 
+class ProviderLocalityExtraTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_is_loopback_url_returns_bool(self):
+        self.assertIsInstance(locality.is_loopback_url("http://localhost"), bool)
+
+    def test_bare_localhost_is_local(self):
+        self.assertTrue(locality.is_loopback_url("localhost"))
+
+    def test_none_url_is_not_loopback(self):
+        self.assertFalse(locality.is_loopback_url(None))
+
+    def test_is_local_provider_returns_bool(self):
+        result = locality.is_local_provider("ollama", self.root)
+        self.assertIsInstance(result, bool)
+
+    def test_ollama_default_config_is_local(self):
+        self.assertTrue(locality.is_local_provider("ollama", self.root))
+
+    def test_anthropic_is_always_cloud(self):
+        self.assertFalse(locality.is_local_provider("anthropic", self.root))
+
+
 if __name__ == "__main__":
     unittest.main()
