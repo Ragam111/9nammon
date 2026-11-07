@@ -47,10 +47,10 @@ class OllamaBackendTest(unittest.TestCase):
         lines = [
             '{"message":{"content":"def "}}\n',
             '{"message":{"content":"foo"}}\n',
-            '\n',                                  # บรรทัดว่าง — ต้องข้าม ไม่ล้ม
-            'not-json\n',                          # บรรทัดพัง — ต้องข้าม ไม่ล้ม
+            '\n',
+            'not-json\n',
             '{"message":{"content":"():"}}\n',
-            '{"done":true}\n',                     # chunk จบ ไม่มี content
+            '{"done":true}\n',
         ]
         with mock.patch("app.model_backend.urllib.request.urlopen",
                         return_value=_fake_stream(lines)):
@@ -66,7 +66,6 @@ class OllamaBackendTest(unittest.TestCase):
 
 
 def _fake_resp(body: str):
-    """สร้าง object ที่ทำตัวเหมือน response ของ urlopen (มี read + context manager)"""
     m = mock.MagicMock()
     m.read.return_value = body.encode("utf-8")
     m.__enter__.return_value = m
@@ -75,7 +74,6 @@ def _fake_resp(body: str):
 
 
 def _fake_stream(lines):
-    """response แบบ stream: iterate ได้ทีละบรรทัด (bytes) + เป็น context manager"""
     m = mock.MagicMock()
     m.__enter__.return_value = m
     m.__exit__.return_value = False
@@ -113,10 +111,10 @@ class OpenAICompatBackendTest(unittest.TestCase):
         lines = [
             'data: {"choices":[{"delta":{"content":"Hel"}}]}\n',
             'data: {"choices":[{"delta":{"content":"lo"}}]}\n',
-            '\n',                                              # keep-alive ว่าง — ข้าม
-            'data: {"choices":[{"delta":{}}]}\n',              # delta ไม่มี content — ข้าม
-            'data: [DONE]\n',                                  # จบ — หยุด
-            'data: {"choices":[{"delta":{"content":"X"}}]}\n', # หลัง DONE — ไม่ควรถึง
+            '\n',
+            'data: {"choices":[{"delta":{}}]}\n',
+            'data: [DONE]\n',
+            'data: {"choices":[{"delta":{"content":"X"}}]}\n',
         ]
         with mock.patch("app.model_backend.urllib.request.urlopen",
                         return_value=_fake_stream(lines)):
@@ -143,13 +141,11 @@ class GetBackendTest(unittest.TestCase):
         self.assertEqual(b.base_url, "http://127.0.0.1:9000/v1")
 
     def test_module_generate_uses_selected_backend(self):
-        # default ollama -> generate() ไปเรียก call_ollama (mock ไว้)
         with mock.patch.object(mb, "call_ollama",
                                lambda model, messages, num_ctx=8192, options=None: "OK"):
             self.assertEqual(mb.generate(self.root, "m", [{"role": "user", "content": "x"}]), "OK")
 
     def test_module_generate_stream_yields_from_backend(self):
-        # default ollama -> generate_stream() ไป stream จาก Ollama (mock NDJSON)
         lines = ['{"message":{"content":"a"}}\n', '{"message":{"content":"b"}}\n']
         with mock.patch("app.model_backend.urllib.request.urlopen",
                         return_value=_fake_stream(lines)):
@@ -157,7 +153,6 @@ class GetBackendTest(unittest.TestCase):
         self.assertEqual(out, ["a", "b"])
 
     def test_base_generate_stream_falls_back_to_generate(self):
-        # backend ที่ไม่ override generate_stream ต้อง yield ก้อนเดียวจาก generate()
         class OneShot(mb.Backend):
             def generate(self, model, messages, num_ctx=8192, options=None):
                 return "whole-answer"
@@ -177,7 +172,7 @@ class BackendSettingsTest(unittest.TestCase):
         s = mb.get_backend_settings(self.root)
         self.assertEqual(s["MODEL_BACKEND"], "ollama")
         self.assertFalse(s["openai_api_key_set"])
-        self.assertNotIn("OPENAI_API_KEY", s)        # ไม่เผย key เต็ม
+        self.assertNotIn("OPENAI_API_KEY", s)
 
     def test_set_openai_and_readback(self):
         mb.set_backend_settings(self.root, {
@@ -187,9 +182,8 @@ class BackendSettingsTest(unittest.TestCase):
         })
         s = mb.get_backend_settings(self.root)
         self.assertEqual(s["MODEL_BACKEND"], "openai")
-        self.assertEqual(s["OPENAI_BASE_URL"], "http://gpu-cloud:8000/v1")   # trailing slash ตัด
-        self.assertTrue(s["openai_api_key_set"])                             # ตั้งแล้ว ไม่คืนค่า
-        # เสียบจริง: get_backend ต้องได้ OpenAICompat ชี้ cloud
+        self.assertEqual(s["OPENAI_BASE_URL"], "http://gpu-cloud:8000/v1")
+        self.assertTrue(s["openai_api_key_set"])
         b = mb.get_backend(self.root)
         self.assertIsInstance(b, mb.OpenAICompatBackend)
         self.assertEqual(b.base_url, "http://gpu-cloud:8000/v1")
@@ -204,7 +198,7 @@ class BackendSettingsTest(unittest.TestCase):
 
     def test_empty_key_does_not_overwrite(self):
         mb.set_backend_settings(self.root, {"OPENAI_API_KEY": "sk-keep"})
-        mb.set_backend_settings(self.root, {"MODEL_BACKEND": "openai"})   # ไม่ส่ง key
+        mb.set_backend_settings(self.root, {"MODEL_BACKEND": "openai"})
         self.assertTrue(mb.get_backend_settings(self.root)["openai_api_key_set"])
 
     def test_probe_reports_availability(self):
@@ -212,6 +206,28 @@ class BackendSettingsTest(unittest.TestCase):
             r = mb.probe_backend(self.root)
         self.assertEqual(r["backend"], "ollama")
         self.assertTrue(r["available"])
+
+
+class ModelBackendExtraTest(unittest.TestCase):
+    def test_ollama_backend_is_instance_of_backend(self):
+        self.assertIsInstance(mb.OllamaBackend(), mb.Backend)
+
+    def test_openai_compat_backend_is_instance_of_backend(self):
+        self.assertIsInstance(mb.OpenAICompatBackend(), mb.Backend)
+
+    def test_backend_error_is_exception(self):
+        self.assertTrue(issubclass(mb.BackendError, Exception))
+
+    def test_ollama_default_name(self):
+        self.assertEqual(mb.OllamaBackend().name, "ollama")
+
+    def test_openai_compat_default_base_url_is_string(self):
+        self.assertIsInstance(mb.OpenAICompatBackend().base_url, str)
+
+    def test_get_backend_returns_backend_instance(self):
+        with tempfile.TemporaryDirectory() as d:
+            b = mb.get_backend(Path(d))
+        self.assertIsInstance(b, mb.Backend)
 
 
 if __name__ == "__main__":
