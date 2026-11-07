@@ -55,7 +55,6 @@ _RSS_MANY_ITEMS = (
 # ---------------------------------------------------------------------------
 
 def _mock_urlopen(data: bytes):
-    """Return a context-manager mock whose .read() yields data."""
     cm = MagicMock()
     cm.__enter__ = MagicMock(return_value=cm)
     cm.__exit__ = MagicMock(return_value=False)
@@ -184,6 +183,39 @@ class TestGetNews(unittest.TestCase):
         with patch("app.news_store._fetch_feed", return_value=[]):
             result = get_news(None)
         self.assertEqual(result["feeds"], len(news_store.DEFAULT_FEEDS))
+
+
+class NewsStoreExtraTest(unittest.TestCase):
+    def setUp(self):
+        news_store._cache.clear()
+
+    def tearDown(self):
+        news_store._cache.clear()
+
+    def test_default_feeds_is_list(self):
+        self.assertIsInstance(news_store.DEFAULT_FEEDS, list)
+
+    def test_default_feeds_non_empty(self):
+        self.assertGreater(len(news_store.DEFAULT_FEEDS), 0)
+
+    def test_cache_is_dict(self):
+        self.assertIsInstance(news_store._cache, dict)
+
+    def test_fetch_feed_network_error_returns_list(self):
+        with patch("app.news_store.urlopen", side_effect=OSError("timeout")):
+            result = _fetch_feed("https://example.com/feed")
+        self.assertIsNotNone(result)
+        self.assertIsInstance(result, list)
+
+    def test_get_news_articles_is_list(self):
+        with patch("app.news_store._fetch_feed", return_value=[]):
+            result = get_news(["https://example.com/feed"])
+        self.assertIsInstance(result["articles"], list)
+
+    def test_get_news_two_feeds_feeds_count(self):
+        with patch("app.news_store._fetch_feed", return_value=[]):
+            result = get_news(["https://a.com/f", "https://b.com/f"])
+        self.assertEqual(result["feeds"], 2)
 
 
 if __name__ == "__main__":
