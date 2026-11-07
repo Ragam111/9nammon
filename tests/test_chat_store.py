@@ -288,5 +288,46 @@ class QueryTest(unittest.TestCase):
             self.assertEqual(conn.execute("SELECT count(*) FROM conversations").fetchone()[0], 2)
 
 
+class ChatStoreExtraTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp, self.root = _root()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_create_conversation_returns_dict(self):
+        with chat_store.write_txn(self.root) as conn:
+            conv = chat_store.create_conversation(conn, title="ExtraConv")
+        self.assertIsInstance(conv, dict)
+
+    def test_conversation_has_id_field(self):
+        with chat_store.write_txn(self.root) as conn:
+            conv = chat_store.create_conversation(conn, title="ExtraConv2")
+        self.assertIn("id", conv)
+
+    def test_conversation_has_title_field(self):
+        with chat_store.write_txn(self.root) as conn:
+            conv = chat_store.create_conversation(conn, title="MyExtraTitle")
+        self.assertIn("title", conv)
+
+    def test_insert_message_returns_dict(self):
+        with chat_store.write_txn(self.root) as conn:
+            conv = chat_store.create_conversation(conn, title="MsgConv")
+            msg = chat_store.insert_message(conn, conv["id"], role="user", content="hello extra")
+        self.assertIsInstance(msg, dict)
+
+    def test_message_has_role_field(self):
+        with chat_store.write_txn(self.root) as conn:
+            conv = chat_store.create_conversation(conn, title="RoleConv")
+            msg = chat_store.insert_message(conn, conv["id"], role="user", content="role test")
+        self.assertIn("role", msg)
+
+    def test_message_has_content_field(self):
+        with chat_store.write_txn(self.root) as conn:
+            conv = chat_store.create_conversation(conn, title="ContentConv")
+            msg = chat_store.insert_message(conn, conv["id"], role="user", content="world extra")
+        self.assertIn("content", msg)
+
+
 if __name__ == "__main__":
     unittest.main()
