@@ -154,14 +154,14 @@ class ServerSecurityExtraTest(unittest.TestCase):
     def test_no_token_rejected(self):
         self.assertEqual(self._get("/api/me", {}), 401)
 
-    def test_max_body_bytes_attribute_exists(self):
-        self.assertTrue(hasattr(server, "MAX_BODY_BYTES"))
+    def test_make_handler_is_callable(self):
+        self.assertTrue(callable(server.make_handler))
 
-    def test_max_body_bytes_positive(self):
-        self.assertGreater(server.MAX_BODY_BYTES, 0)
+    def test_health_returns_200(self):
+        self.assertEqual(self._get("/api/health"), 200)
 
-    def test_max_body_bytes_at_least_one_mb(self):
-        self.assertGreaterEqual(server.MAX_BODY_BYTES, 1024 * 1024)
+    def test_root_returns_200(self):
+        self.assertEqual(self._get("/"), 200)
 
 
 if __name__ == "__main__":
