@@ -94,5 +94,45 @@ class UpdateIssueStatusTest(unittest.TestCase):
             linear_connector.update_issue_status("ENG-1", "state-id", confirm=True)
 
 
+class LinearConnectorExtraTest(unittest.TestCase):
+    def test_get_api_key_valid_returns_string(self):
+        with patch.dict(os.environ, {"LINEAR_API_KEY": "my-key-123"}):
+            key = linear_connector._get_api_key()
+            self.assertIsInstance(key, str)
+
+    def test_get_api_key_strips_not_whitespace(self):
+        with patch.dict(os.environ, {"LINEAR_API_KEY": "abc-key"}):
+            key = linear_connector._get_api_key()
+            self.assertEqual(key, "abc-key")
+
+    def test_update_issue_status_no_confirm_is_runtime_error(self):
+        with self.assertRaises(RuntimeError):
+            linear_connector.update_issue_status("T-1", "s-id")
+
+    def test_update_issue_status_confirm_true_is_not_implemented(self):
+        with self.assertRaises(NotImplementedError):
+            linear_connector.update_issue_status("T-1", "s-id", confirm=True)
+
+    @patch("urllib.request.urlopen")
+    def test_fetch_my_issues_returns_list(self, mock_urlopen):
+        nodes = [{"identifier": "A-1", "title": "Test", "url": "https://x",
+                  "state": {"name": "Todo"}}]
+        resp_data = {"data": {"viewer": {"assignedIssues": {"nodes": nodes}}}}
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = json.dumps(resp_data).encode("utf-8")
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_resp
+        with patch.dict(os.environ, {"LINEAR_API_KEY": "k"}):
+            result = linear_connector.fetch_my_issues()
+        self.assertIsInstance(result, list)
+
+    def test_fetch_my_issues_no_key_raises_runtime_error(self):
+        with patch.dict(os.environ, {}, clear=True):
+            os.environ.pop("LINEAR_API_KEY", None)
+            with self.assertRaises(RuntimeError):
+                linear_connector.fetch_my_issues()
+
+
 if __name__ == "__main__":
     unittest.main()
