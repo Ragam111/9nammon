@@ -127,9 +127,9 @@ class DbManagerExtraTest(unittest.TestCase):
         data = db_manager.get_db_status(self.root)
         self.assertGreaterEqual(data["db_size_bytes"], 0)
 
-    def test_get_db_status_migrations_applied_is_list(self):
+    def test_get_db_status_migrations_applied_is_int(self):
         data = db_manager.get_db_status(self.root)
-        self.assertIsInstance(data["migrations_applied"], list)
+        self.assertIsInstance(data["migrations_applied"], int)
 
     def test_log_event_multiple_types(self):
         db_manager.get_db_status(self.root)  # migrate
