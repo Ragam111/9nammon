@@ -305,13 +305,13 @@ class ChatApiExtraTest(unittest.TestCase):
         r = _response("hello", "openai", "gpt-4o")
         self.assertIsInstance(r, ChatResponse)
 
-    def test_usage_tokens_in(self):
+    def test_usage_input_tokens(self):
         u = Usage(3, 4, 7, False, "openai")
-        self.assertEqual(u.tokens_in, 3)
+        self.assertEqual(u.input_tokens, 3)
 
-    def test_usage_tokens_out(self):
+    def test_usage_output_tokens(self):
         u = Usage(3, 4, 7, False, "openai")
-        self.assertEqual(u.tokens_out, 4)
+        self.assertEqual(u.output_tokens, 4)
 
     def test_as_dicts_returns_list(self):
         result = _as_dicts([{"role": "user", "content": "hi"}])
