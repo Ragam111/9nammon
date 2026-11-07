@@ -1017,5 +1017,25 @@ class RegistryAndTransportTest(unittest.TestCase):
             provider.chat([{"role": "tool", "content": "x"}], "qwen")
 
 
+class ProvidersExtraTest(unittest.TestCase):
+    def test_provider_error_is_exception(self):
+        self.assertTrue(issubclass(ProviderError, Exception))
+
+    def test_provider_auth_error_is_provider_error(self):
+        self.assertTrue(issubclass(ProviderAuthError, ProviderError))
+
+    def test_provider_rate_limit_error_is_provider_error(self):
+        self.assertTrue(issubclass(ProviderRateLimitError, ProviderError))
+
+    def test_provider_network_error_is_provider_error(self):
+        self.assertTrue(issubclass(ProviderNetworkError, ProviderError))
+
+    def test_provider_timeout_error_is_provider_error(self):
+        self.assertTrue(issubclass(ProviderTimeoutError, ProviderError))
+
+    def test_estimate_tokens_empty_string_is_zero(self):
+        self.assertEqual(estimate_tokens(""), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

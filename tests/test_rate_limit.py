@@ -46,5 +46,39 @@ class RateLimiterTest(unittest.TestCase):
         self.assertTrue(rl.allow("ip1", now=0))
 
 
+class RateLimitExtraTest(unittest.TestCase):
+    def test_allow_returns_bool(self):
+        rl = RateLimiter(max_requests=3, window_seconds=60)
+        result = rl.allow("ip1", now=0)
+        self.assertIsInstance(result, bool)
+
+    def test_initial_allow_is_true(self):
+        rl = RateLimiter(max_requests=1, window_seconds=60)
+        self.assertTrue(rl.allow("x", now=0))
+
+    def test_exceeding_limit_returns_false(self):
+        rl = RateLimiter(max_requests=2, window_seconds=60)
+        rl.allow("x", now=0)
+        rl.allow("x", now=1)
+        self.assertFalse(rl.allow("x", now=2))
+
+    def test_reset_re_enables_client(self):
+        rl = RateLimiter(max_requests=1, window_seconds=60)
+        rl.allow("x", now=0)
+        rl.reset("x")
+        self.assertTrue(rl.allow("x", now=0))
+
+    def test_unlimited_max_always_allows(self):
+        rl = RateLimiter(max_requests=0)
+        for i in range(100):
+            self.assertTrue(rl.allow("x", now=i))
+
+    def test_different_keys_are_independent(self):
+        rl = RateLimiter(max_requests=1, window_seconds=60)
+        self.assertTrue(rl.allow("a", now=0))
+        self.assertFalse(rl.allow("a", now=0))
+        self.assertTrue(rl.allow("b", now=0))
+
+
 if __name__ == "__main__":
     unittest.main()
