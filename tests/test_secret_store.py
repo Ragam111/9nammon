@@ -428,5 +428,36 @@ class StdlibSecretsNotShadowedTest(unittest.TestCase):
         self.assertEqual(out.stdout.strip(), "secret_store")
 
 
+# ---------------------------------------------------------------------------
+# SecretStoreExtraTest — additional coverage
+# ---------------------------------------------------------------------------
+
+class SecretStoreExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_is_secret_name_returns_bool(self):
+        self.assertIsInstance(secrets.is_secret_name("OPENAI_API_KEY"), bool)
+
+    def test_known_api_key_is_secret(self):
+        self.assertTrue(secrets.is_secret_name("OPENAI_API_KEY"))
+
+    def test_model_backend_not_secret(self):
+        self.assertFalse(secrets.is_secret_name("MODEL_BACKEND"))
+
+    def test_keyring_is_dependency_returns_bool(self):
+        self.assertIsInstance(secrets.keyring_is_dependency(), bool)
+
+    def test_reveal_nonexistent_returns_none(self):
+        self.assertIsNone(secrets.reveal(self.root, "config:NO_SUCH_KEY"))
+
+    def test_entry_names_empty_on_fresh_root(self):
+        self.assertEqual(secrets.entry_names(self.root), [])
+
+
 if __name__ == "__main__":
     unittest.main()
