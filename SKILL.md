@@ -11,6 +11,7 @@ description: >
 skill_memory_updated: "2026-11-08"
 version: "0.2.9"
 tests_pass: 1124
+customer_readiness_doc: "CUSTOMER_READINESS.md"
 ---
 
 # Local Code Assistant (Aider-style, powered by Ollama)
@@ -200,6 +201,11 @@ Branch ทำงาน: `claude/windows-package-architecture-j4znro`
 | AI Cluster Setup (Ollama+LiteLLM+WebUI+Cloudflare) | ✅ เสร็จ | `scripts/ai_cluster_setup.sh`, `.claude/skills/ai-cluster-setup/SKILL.md` | single-file bash, 5 phases, `/ai-cluster-setup` skill |
 | Cloud Tunnel (cloudflared, free Quick Tunnel) | ✅ เสร็จ | `app/cloud_tunnel.py` | stdlib only, no account needed, 13 tests |
 | Cloud Tunnel HTTP routes (GET/POST /api/admin/tunnel/*) | ✅ เสร็จ | `server.py` + `tests/test_tunnel_api.py` | ADMIN-only, 10 tests, Rule 24 |
+| Customer Readiness doc + Gap Analysis vs Claude/OpenAI | ✅ เสร็จ | `CUSTOMER_READINESS.md` | ภาษาไทย+อังกฤษ, roadmap P1-P4 |
+| Streaming SSE chat (real-time ทีละตัวอักษร) | ❌ ยังไม่มี | `server.py` | P1 roadmap — ต้องทำก่อนจะเป็น chat UI จริง |
+| Chat UI (chat.html, bubble layout, markdown) | ❌ ยังไม่มี | `app/chat.html` | P1 roadmap — console.html ไม่ใช่ chat |
+| Conversation history / threads | ❌ ยังไม่มี | `app/threads.py` | P2 roadmap |
+| Multi-user auth (login, JWT) | ❌ ยังไม่มี | user table + login.html | P2 roadmap |
 | `/linear` เขียนสถานะกลับ | ⏸️ พักไว้ก่อน | `app/linear_connector.py` | ห้ามแตะจนกว่าผู้ใช้จะขอกลับมาทำต่อ — ดู Rule ข้อ 16 |
 
 **สิ่งที่ยังไม่ครบแม้ฟีเจอร์หลักจะเสร็จแล้ว**:
