@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+[Resource from github at repo://Ragam111/9nammon/sha/734b778340dfeff19befa42ecf5a4fdcb7a39f75/contents/server.py] #!/usr/bin/env python3
 """
 server.py — Backend server สำหรับ index.html (MVC-style, stdlib เท่านั้น)
 
@@ -69,6 +69,7 @@ from app import connections  # noqa: E402  (ทะเบียนต่อสม
 from app import conn_usage  # noqa: E402  (นับ token/ค่าใช้จ่ายต่อ connection — Observability)
 from app import skills_store  # noqa: E402  (Skills: prompt+สมองสำเร็จรูป ใช้ซ้ำได้)
 from app import bots  # noqa: E402  (Bot: skill + run endpoint ให้ automation เรียก)
+from app import cloud_tunnel  # noqa: E402  (Cloudflare Quick Tunnel — เปิด tunnel ชั่วคราวออก internet)
 from sysmanager.monitor import collect as _collect, Analyzer as _Analyzer  # noqa: E402
 from sysmanager.monitor import lca_context as _lca_context  # noqa: E402  (Phase 2: บริบท Ollama)
 
@@ -586,6 +587,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._handle_news(parsed)
             elif chat_hub.wants_get(parsed.path):
                 chat_hub.handle_get(self, parsed, project_root)
+            elif parsed.path == "/api/admin/tunnel/status":
+                self._handle_tunnel_status()
             else:
                 self._send_json(404, {"error": "not found"})
 
@@ -907,6 +910,39 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             gen = bots.run_stream(project_root, data.get("id", ""), data.get("input", ""),
                                   model=data.get("model", ""))
             self._sse_stream(gen)
+
+        # ---------- Cloud Tunnel: Cloudflare Quick Tunnel (ADMIN) ----------
+        def _handle_tunnel_status(self):
+            if self._require("ADMIN") is None:
+                return
+            self._send_json(200, cloud_tunnel.status())
+
+        def _handle_tunnel_start(self):
+            if self._require("ADMIN") is None:
+                return
+            data = self._read_json_body()
+            port = data.get("port")
+            if port is None:
+                self._send_json(400, {"error": "ต้องระบุ port"})
+                return
+            try:
+                port = int(port)
+                if not (1 <= port <= 65535):
+                    raise ValueError
+            except (TypeError, ValueError):
+                self._send_json(400, {"error": "port ต้องเป็นตัวเลข 1–65535"})
+                return
+            try:
+                url = cloud_tunnel.start(port)
+                self._send_json(200, {"url": url, "port": port})
+            except RuntimeError as e:
+                self._send_json(503, {"error": str(e)})
+
+        def _handle_tunnel_stop(self):
+            if self._require("ADMIN") is None:
+                return
+            cloud_tunnel.stop()
+            self._send_json(200, {"stopped": True})
 
         # ---------- Console: Skills ----------
         def _handle_skills_list(self):
@@ -1447,6 +1483,10 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                     self._handle_bots_run()
                 elif parsed.path == "/api/bots/run/stream":
                     self._handle_bots_run_stream()
+                elif parsed.path == "/api/admin/tunnel/start":
+                    self._handle_tunnel_start()
+                elif parsed.path == "/api/admin/tunnel/stop":
+                    self._handle_tunnel_stop()
                 else:
                     self._send_json(404, {"error": "not found"})
             except (connections.ConnectionError, skills_store.SkillError, bots.BotError) as e:

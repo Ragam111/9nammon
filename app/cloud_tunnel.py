@@ -1,157 +1,104 @@
-"""cloud_tunnel.py — Free self-hosted tunnel exposing LCA server to the internet.
+"""Cloudflare Quick Tunnel manager — stdlib only, no account needed.
 
-Cloudflare Quick Tunnel: free, no account, no port forwarding.
-Requires cloudflared binary on PATH.
-  Install: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/
+Public API:
+  start(port, timeout=30.0) -> str   returns https://xxxx.trycloudflare.com
+  stop()
+  status() -> dict
 
-Usage:
-    from app import cloud_tunnel
-    result = cloud_tunnel.start(8420)   # {"url": "https://xxxx.trycloudflare.com", ...}
-    cloud_tunnel.stop()
-
-Architecture:
-  [ Browser / Mobile ]
-       |
-  [ Cloudflare Edge ]
-       |
-  [ cloudflared (subprocess on this laptop) ]
-       |
-  [ LCA Server 127.0.0.1:{port} ]
+Security (Rule 24): only tunnels to 127.0.0.1:{port} — never exposes token in URL.
 """
-
 import re
-import shutil
 import subprocess
 import threading
 import time
 from typing import Optional
 
 _lock = threading.Lock()
-_state: dict = {
-    "proc": None,
-    "url": None,
-    "provider": None,
-    "started_at": None,
-    "error": None,
-}
+_proc: Optional[subprocess.Popen] = None
+_url: Optional[str] = None
+_port: Optional[int] = None
 
-# matches https://xxxx-xxxx.trycloudflare.com in cloudflared stderr
-_CF_URL_RE = re.compile(r"https://[a-z0-9\-]+\.trycloudflare\.com")
+_URL_RE = re.compile(r"https://[a-z0-9-]+\.trycloudflare\.com")
 
 
-def _find(name: str) -> Optional[str]:
-    """Return full path of binary (checks name and name.exe)."""
-    return shutil.which(name) or shutil.which(name + ".exe")
+def start(port: int, timeout: float = 30.0) -> str:
+    """Start cloudflared quick tunnel to 127.0.0.1:{port}.
 
-
-def start(port: int, timeout: float = 30.0) -> dict:
-    """Start a Cloudflare Quick Tunnel exposing http://127.0.0.1:{port}.
-
-    Returns:
-        {"url": str, "provider": "cloudflare", "error": None}  on success
-        {"url": None, "provider": None, "error": str}           on failure
-
-    Security: only tunnels to 127.0.0.1 — never exposes the token or
-    any other local service.
+    Returns the public https URL.
+    Raises RuntimeError if cloudflared is missing or times out.
     """
+    global _proc, _url, _port
+
     with _lock:
-        proc = _state.get("proc")
-        if proc and proc.poll() is None:
-            return {"url": _state["url"], "provider": _state["provider"], "error": None}
+        if _proc is not None and _proc.poll() is None and _url:
+            return _url
 
-        binary = _find("cloudflared")
-        if not binary:
-            return {
-                "url": None,
-                "provider": None,
-                "error": (
-                    "cloudflared not found — download free binary from "
-                    "https://developers.cloudflare.com/cloudflare-one/"
-                    "connections/connect-networks/downloads/"
-                ),
-            }
-        return _start_cloudflared(binary, port, timeout)
+        _stop_locked()
 
-
-def _start_cloudflared(binary: str, port: int, timeout: float) -> dict:
-    try:
-        proc = subprocess.Popen(
-            [binary, "tunnel", "--url", f"http://127.0.0.1:{port}"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-        )
-        url = _read_cloudflared_url(proc, timeout)
-        if url:
-            _state.update(
-                proc=proc, url=url, provider="cloudflare",
-                started_at=time.time(), error=None,
-            )
-            return {"url": url, "provider": "cloudflare", "error": None}
-        proc.terminate()
-        return {
-            "url": None, "provider": None,
-            "error": "cloudflared launched but public URL not found within timeout",
-        }
-    except Exception as exc:
-        return {"url": None, "provider": None, "error": str(exc)}
-
-
-def _read_cloudflared_url(proc: subprocess.Popen, timeout: float) -> Optional[str]:
-    """Stream cloudflared stderr until the trycloudflare.com URL appears."""
-    deadline = time.monotonic() + timeout
-    buf = ""
-    while time.monotonic() < deadline:
-        if proc.poll() is not None:
-            break
         try:
-            line = proc.stderr.readline()
-            if isinstance(line, bytes):
-                line = line.decode("utf-8", errors="replace")
-            buf += line
-            m = _CF_URL_RE.search(buf)
-            if m:
-                return m.group(0)
-        except Exception:
-            break
-        time.sleep(0.05)
-    return None
-
-
-def stop() -> bool:
-    """Terminate the running tunnel process.
-
-    Returns:
-        True  — a tunnel was running and has been terminated.
-        False — no tunnel was running.
-    """
-    with _lock:
-        proc = _state.get("proc")
-        if proc and proc.poll() is None:
-            proc.terminate()
-            try:
-                proc.wait(timeout=5)
-            except Exception:
-                proc.kill()
-            _state.update(
-                proc=None, url=None, provider=None,
-                started_at=None, error=None,
+            proc = subprocess.Popen(
+                ["cloudflared", "tunnel", "--url", f"http://127.0.0.1:{port}"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
             )
-            return True
-        return False
+        except FileNotFoundError:
+            raise RuntimeError(
+                "cloudflared not found — download from "
+                "https://developers.cloudflare.com/cloudflare-one/connections/"
+                "connect-apps/install-and-setup/"
+            )
+
+        _proc = proc
+        _port = port
+
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if proc.stdout is None:
+                break
+            line = proc.stdout.readline()
+            if not line:
+                proc.wait()
+                raise RuntimeError("cloudflared exited before providing tunnel URL")
+            m = _URL_RE.search(line)
+            if m:
+                _url = m.group(0)
+                return _url
+
+        proc.terminate()
+        raise RuntimeError(f"cloudflared did not provide URL within {timeout}s")
+
+
+def stop() -> None:
+    """Stop the running tunnel (idempotent)."""
+    with _lock:
+        _stop_locked()
+
+
+def _stop_locked() -> None:
+    """Terminate process; must be called with _lock held."""
+    global _proc, _url, _port
+    if _proc is not None:
+        try:
+            _proc.terminate()
+            _proc.wait(timeout=5)
+        except Exception:
+            try:
+                _proc.kill()
+            except Exception:
+                pass
+        _proc = None
+    _url = None
+    _port = None
 
 
 def status() -> dict:
-    """Return the current tunnel state.
-
-    Keys: running (bool), url, provider, started_at (float|None), error.
-    """
+    """Return current tunnel status."""
     with _lock:
-        proc = _state.get("proc")
-        running = bool(proc and proc.poll() is None)
+        running = _proc is not None and _proc.poll() is None
         return {
             "running": running,
-            "url": _state["url"] if running else None,
-            "provider": _state["provider"] if running else None,
-            "started_at": _state["started_at"] if running else None,
-            "error": _state.get("error"),
+            "url": _url if running else None,
+            "port": _port if running else None,
         }
