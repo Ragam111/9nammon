@@ -4,6 +4,39 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [0.3.4] — 2026-11-05 (Test Coverage — router unit tests)
+
+### Added
+- `tests/test_router.py` — 27 unit tests covering `_TIER_MODELS` structure,
+  `_ollama_installed_models()` (success/URLError/bad-JSON), and `recommend()`
+  (shape, tier mapping, unknown-tier fallback, profile-exception, installed flags,
+  top_pick logic, cache hit, cached_until)
+- Test suite: 1246 → 1273 tests total
+
+## [0.3.3] — 2026-11-05 (Test Coverage — cli_session unit tests)
+
+### Added
+- `tests/test_cli_session.py` — 32 unit tests covering `data_dir`, `sessions_dir`,
+  `SessionLog.append` (create/write/OSError fallback), `load_messages` (parse/filter),
+  and `latest_session` (match by project field) in `app/cli_session.py`
+- Test suite: 1282 → 1246 (after squash: 1214 baseline + 32 new = 1246)
+
+## [0.3.2] — 2026-11-05 (Test Coverage — hw_meter unit tests)
+
+### Added
+- `tests/test_hw_meter.py` — 23 unit tests covering `snapshot()` in `app/hw_meter.py`:
+  CPU/RAM rounding, freq/load None-when-falsy, tier+model from hw_profile,
+  profile-exception fallback. Uses setUp/tearDown sys.modules injection for
+  isolation without polluting the full suite.
+- Test suite: 1259 → 1282 tests total
+
+## [0.3.1] — 2026-11-05 (Test Coverage — news_store unit tests)
+
+### Added
+- `tests/test_news_store.py` — 19 unit tests covering `_fetch_feed` and `get_news`
+  in `app/news_store.py`: RSS/Atom parse, 20-item cap, cache hit/TTL, error tracking
+- Test suite: 1240 → 1259 tests total
+
 ## [0.3.0] — 2026-11-05 (Test Coverage — stats_store unit tests)
 
 ### Added
