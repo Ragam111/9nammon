@@ -17,12 +17,12 @@ jobs:
           python-version: "3.13"
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements.txt
+          pip install pyflakes pytest
 
       - name: Lint (pyflakes)
-        run: |
-          pip install pyflakes
-          python -m pyflakes app/ server.py local_coder.py 2>&1 || true
+        run: python -m pyflakes app/ server.py local_coder.py 2>&1 || true
 
       - name: Unit tests
         run: python -m unittest discover -s tests -v
