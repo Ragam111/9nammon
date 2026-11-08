@@ -1,4 +1,4 @@
-[Resource from github at repo://Ragam111/9nammon/sha/734b778340dfeff19befa42ecf5a4fdcb7a39f75/contents/server.py] #!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 server.py — Backend server สำหรับ index.html (MVC-style, stdlib เท่านั้น)
 
