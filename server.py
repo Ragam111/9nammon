@@ -932,11 +932,11 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             except (TypeError, ValueError):
                 self._send_json(400, {"error": "port ต้องเป็นตัวเลข 1–65535"})
                 return
-            try:
-                url = cloud_tunnel.start(port)
-                self._send_json(200, {"url": url, "port": port})
-            except RuntimeError as e:
-                self._send_json(503, {"error": str(e)})
+            result = cloud_tunnel.start(port)
+            if result.get("url"):
+                self._send_json(200, {"url": result["url"], "port": port})
+            else:
+                self._send_json(503, {"error": result.get("error", "tunnel failed")})
 
         def _handle_tunnel_stop(self):
             if self._require("ADMIN") is None:
