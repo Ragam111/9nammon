@@ -3,8 +3,10 @@
 import sqlite3
 import tempfile
 import threading
+
 import unittest
 from pathlib import Path
+
 
 from app.db import (
     MigrationError,
@@ -19,6 +21,7 @@ from app.db import (
 # ---------------------------------------------------------------------------
 # split_sql
 # ---------------------------------------------------------------------------
+
 
 class TestSplitSql(unittest.TestCase):
     def test_single_statement_no_semicolon(self):
@@ -43,48 +46,65 @@ class TestSplitSql(unittest.TestCase):
     def test_whitespace_only(self):
         self.assertEqual(split_sql("   \n  "), [])
 
+
     def test_semicolon_inside_string_not_split(self):
         sql = "INSERT INTO t VALUES ('a;b')"
         result = split_sql(sql)
+
         self.assertEqual(result, ["INSERT INTO t VALUES ('a;b')"])
+
 
     def test_single_quoted_string_preserved(self):
         sql = "SELECT 'hello world' AS x; SELECT 2"
         result = split_sql(sql)
+
         self.assertEqual(len(result), 2)
         self.assertIn("'hello world'", result[0])
+
 
     def test_escaped_single_quote_in_string(self):
         sql = "SELECT 'it''s fine'; SELECT 2"
         result = split_sql(sql)
+
         self.assertEqual(len(result), 2)
         self.assertIn("it''s fine", result[0])
+
 
     def test_line_comment_stripped(self):
         sql = "SELECT 1 -- this is a comment\n; SELECT 2"
         result = split_sql(sql)
+
         self.assertEqual(len(result), 2)
         self.assertNotIn("--", result[0])
+
 
     def test_line_comment_only(self):
         sql = "-- entire line is a comment\nSELECT 1"
         result = split_sql(sql)
+
         self.assertEqual(result, ["SELECT 1"])
+
 
     def test_semicolon_after_comment(self):
         sql = "SELECT 1 -- comment\n; SELECT 2"
         result = split_sql(sql)
+
         self.assertEqual(len(result), 2)
+
 
     def test_multiple_whitespace_between_statements(self):
         sql = "SELECT 1;   \n\n   SELECT 2;"
         result = split_sql(sql)
+
         self.assertEqual(result, ["SELECT 1", "SELECT 2"])
+
 
     def test_empty_statements_skipped(self):
         sql = ";;; SELECT 1 ;;;"
         result = split_sql(sql)
+
         self.assertEqual(result, ["SELECT 1"])
+
 
     def test_create_table_statement(self):
         sql = """
@@ -95,20 +115,25 @@ class TestSplitSql(unittest.TestCase):
         INSERT INTO foo VALUES (1, 'bar');
         """
         result = split_sql(sql)
+
         self.assertEqual(len(result), 2)
         self.assertIn("CREATE TABLE", result[0])
         self.assertIn("INSERT INTO", result[1])
 
+
     def test_string_with_newline_inside(self):
         sql = "INSERT INTO t VALUES ('line1\nline2'); SELECT 1"
         result = split_sql(sql)
+
         self.assertEqual(len(result), 2)
         self.assertIn("line1\nline2", result[0])
+
 
 
 # ---------------------------------------------------------------------------
 # db_path
 # ---------------------------------------------------------------------------
+
 
 class TestDbPath(unittest.TestCase):
     def test_returns_path_object(self):
@@ -132,36 +157,46 @@ class TestDbPath(unittest.TestCase):
         self.assertEqual(result.name, "lca.db")
 
 
+
 # ---------------------------------------------------------------------------
 # write_lock
 # ---------------------------------------------------------------------------
+
 
 class TestWriteLock(unittest.TestCase):
     def test_returns_lock(self):
         lock = write_lock("/tmp/testroot_a")
         self.assertIsInstance(lock, threading.Lock)
 
+
     def test_same_root_same_lock(self):
         lock1 = write_lock("/tmp/testroot_b")
         lock2 = write_lock("/tmp/testroot_b")
+
         self.assertIs(lock1, lock2)
+
 
     def test_different_root_different_lock(self):
         lock1 = write_lock("/tmp/testroot_c1")
         lock2 = write_lock("/tmp/testroot_c2")
+
         self.assertIsNot(lock1, lock2)
+
 
     def test_lock_is_acquirable(self):
         lock = write_lock("/tmp/testroot_d")
         acquired = lock.acquire(blocking=False)
         if acquired:
             lock.release()
+
         self.assertTrue(acquired)
+
 
 
 # ---------------------------------------------------------------------------
 # connect_raw
 # ---------------------------------------------------------------------------
+
 
 class TestConnectRaw(unittest.TestCase):
     def setUp(self):
@@ -213,53 +248,70 @@ class TestConnectRaw(unittest.TestCase):
 
     def test_in_memory_path_works(self):
         p = self.tmp_path / "mem.db"
+
         conn = connect_raw(p)
         conn.execute("CREATE TABLE t (x INTEGER)")
         conn.execute("INSERT INTO t VALUES (42)")
         val = conn.execute("SELECT x FROM t").fetchone()[0]
         conn.close()
+
         self.assertEqual(val, 42)
+
 
 
 # ---------------------------------------------------------------------------
 # list_migrations
 # ---------------------------------------------------------------------------
 
+
 class TestListMigrations(unittest.TestCase):
     def test_returns_list(self):
         result = list_migrations()
         self.assertIsInstance(result, list)
 
+
     def test_each_entry_is_four_tuple(self):
         result = list_migrations()
         for entry in result:
+
             self.assertEqual(len(entry), 4)
+
 
     def test_sorted_by_number(self):
         result = list_migrations()
         numbers = [entry[0] for entry in result]
+
         self.assertEqual(numbers, sorted(numbers))
+
 
     def test_number_is_int(self):
         result = list_migrations()
         for number, *_ in result:
+
             self.assertIsInstance(number, int)
+
 
     def test_sql_path_is_path(self):
         result = list_migrations()
         for _, _, sql_path, _ in result:
+
             self.assertIsInstance(sql_path, Path)
+
 
     def test_sql_path_exists(self):
         result = list_migrations()
         for _, _, sql_path, _ in result:
+
             self.assertTrue(sql_path.exists(), f"{sql_path} should exist")
+
 
     def test_py_path_none_or_path(self):
         result = list_migrations()
         for _, _, _, py_path in result:
+
             self.assertTrue(py_path is None or isinstance(py_path, Path))
 
 
 if __name__ == "__main__":
     unittest.main()
+

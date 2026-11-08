@@ -1,16 +1,21 @@
 ---
 name: local-code-assistant
 description: >
-  LCA (Local Code Assistant) v0.2.7 — AI Coding Assistant + Desktop App แบบก้อนเดียว
-  รันบน Ollama (local/cloud hybrid), bind 127.0.0.1, 1101 tests pass.
+
+  LCA (Local Code Assistant) v0.2.9 — AI Coding Assistant + Desktop App แบบก้อนเดียว
+  รันบน Ollama (local/cloud hybrid), bind 127.0.0.1, 1124 tests pass, Cloud Tunnel routes wired.
+
   ใช้ skill นี้เมื่อผู้ใช้ต้องการ: ผู้ช่วยเขียนโค้ดที่รันใน terminal, แก้ไฟล์โค้ด
   อัตโนมัติแบบ diff, ใช้โมเดล local (Ollama) แทน Claude/OpenAI, desktop app (.exe
   ไฟล์เดียว), AI Cluster LAN setup (Ollama+LiteLLM+WebUI+Cloudflare), 3-agent pattern,
   หรือพูดถึง "Aider", "coding agent ฟรี", "local LLM coding", "LCA Desktop"
 
-skill_memory_updated: "2026-11-04"
-version: "0.2.7"
-tests_pass: 1101
+
+skill_memory_updated: "2026-11-08"
+version: "0.2.9"
+tests_pass: 1124
+customer_readiness_doc: "CUSTOMER_READINESS.md"
+
 ---
 
 # Local Code Assistant (Aider-style, powered by Ollama)
@@ -181,6 +186,10 @@ PowerShell/CMD ต้องติดตั้งสำเร็จได้เ�
 | #117 | v0.1.8–v0.2.6 | 2026-11-04 | rate-limit tests → stats → news → DB → hw-meter → Ollama selector → LAN discovery → cluster sync → AI cluster setup (1101 tests) | ✅ merged |
 | #118 | v0.2.7 | 2026-11-04 | Storage Slim: docs/ 32→22 files, CHANGELOG compact, SKILL.md compact | 🔄 open |
 
+| #195 | v0.2.8 | 2026-11-07 | Cloud Tunnel (cloudflared, free) + consolidated CI workflow + +13 tests | 🔄 open |
+| #196 | v0.2.9 | 2026-11-08 | Wire cloud_tunnel routes into server: GET/POST /api/admin/tunnel/* + 10 tests | 🔄 open |
+
+
 **หลักการ autopilot loop**: open atomic PR → CI → merge → sync branch → next PR
 Branch ทำงาน: `claude/windows-package-architecture-j4znro`
 
@@ -194,8 +203,17 @@ Branch ทำงาน: `claude/windows-package-architecture-j4znro`
 
 | ฟีเจอร์ | สถานะ | ไฟล์ | หมายเหตุ |
 |---|---|---|---|
-| Core features (chat loop, diff, todo, web, CLI, server) v0.0.1–v0.2.6 | ✅ เสร็จครบ | `local_coder.py`, `server.py`, `app/*` | 1101 tests ผ่าน — ดูรายละเอียดใน CHANGELOG.md |
+
+| Core features (chat loop, diff, todo, web, CLI, server) v0.0.1–v0.2.6 | ✅ เสร็จครบ | `local_coder.py`, `server.py`, `app/*` | 1124 tests ผ่าน — ดูรายละเอียดใน CHANGELOG.md |
 | AI Cluster Setup (Ollama+LiteLLM+WebUI+Cloudflare) | ✅ เสร็จ | `scripts/ai_cluster_setup.sh`, `.claude/skills/ai-cluster-setup/SKILL.md` | single-file bash, 5 phases, `/ai-cluster-setup` skill |
+| Cloud Tunnel (cloudflared, free Quick Tunnel) | ✅ เสร็จ | `app/cloud_tunnel.py` | stdlib only, no account needed, 13 tests |
+| Cloud Tunnel HTTP routes (GET/POST /api/admin/tunnel/*) | ✅ เสร็จ | `server.py` + `tests/test_tunnel_api.py` | ADMIN-only, 10 tests, Rule 24 |
+| Customer Readiness doc + Gap Analysis vs Claude/OpenAI | ✅ เสร็จ | `CUSTOMER_READINESS.md` | ภาษาไทย+อังกฤษ, roadmap P1-P4 |
+| Streaming SSE chat (real-time ทีละตัวอักษร) | ❌ ยังไม่มี | `server.py` | P1 roadmap — ต้องทำก่อนจะเป็น chat UI จริง |
+| Chat UI (chat.html, bubble layout, markdown) | ❌ ยังไม่มี | `app/chat.html` | P1 roadmap — console.html ไม่ใช่ chat |
+| Conversation history / threads | ❌ ยังไม่มี | `app/threads.py` | P2 roadmap |
+| Multi-user auth (login, JWT) | ❌ ยังไม่มี | user table + login.html | P2 roadmap |
+
 | `/linear` เขียนสถานะกลับ | ⏸️ พักไว้ก่อน | `app/linear_connector.py` | ห้ามแตะจนกว่าผู้ใช้จะขอกลับมาทำต่อ — ดู Rule ข้อ 16 |
 
 **สิ่งที่ยังไม่ครบแม้ฟีเจอร์หลักจะเสร็จแล้ว**:
@@ -225,6 +243,7 @@ Branch ทำงาน: `claude/windows-package-architecture-j4znro`
   `app/todo_store.py` (todo เก็บ JSON), `app/linear_connector.py` (เชื่อม Linear API),
   `app/desktop_archive.py` (sync ข้อมูลไป `~/Desktop/LocalCodeAssistant-Data/`),
   `app/web_search.py` (switch `/websearch on|off` ค้นเว็บจริงผ่าน Brave API),
+  `app/cloud_tunnel.py` (Cloudflare Quick Tunnel — เปิด server ให้เข้าได้จากอินเทอร์เน็ต ฟรี ไม่ต้องมี account),
   `CHANGELOG_local.md` (log ที่ระบบสร้างอัตโนมัติในทุกโปรเจกต์ที่ใช้งาน)
 
 ## Troubleshooting — ปัญหาที่เจอจริงตอนช่วยผู้ใช้ติดตั้ง (บันทึกไว้กันถามซ้ำ)
@@ -330,7 +349,10 @@ uninstaller (copy ไปรันที่ `%TEMP%` ก่อนลบตัว�
 22. **ทุกไฟล์ `.ps1`/`.iss` ที่มีข้อความไทยต้องมี UTF-8 BOM นำหน้าเสมอ** — ห้ามเติม BOM ให้ `.bat`
 23. **`config.json` ต้องไม่ถูก commit เข้า git เด็ดขาด** — ต้องอยู่ใน `.gitignore` และห้าม print ค่า key เต็มๆ ออกจอ
 
-## Observability Chain (v0.1.4–v0.1.7)
+24. **`cloud_tunnel.py` tunnel เฉพาะ `127.0.0.1:{port}` เท่านั้น** — ห้ามแก้ให้ชี้ไป host อื่น หรือ expose LCA token ใน URL
+
+## Observability Chain (v0.1.4–v0.2.9)
+
 
 | endpoint / คำสั่ง | auth | คืนอะไร | ใช้ตอนไหน |
 |---|---|---|---|
@@ -340,9 +362,30 @@ uninstaller (copy ไปรันที่ `%TEMP%` ก่อนลบตัว�
 | `server.py --version` | CLI | LCA X.Y.Z (python X.Y.Z) | dev เช็กก่อนรัน |
 | `lca_app.py --version` | CLI | LCA Desktop X.Y.Z (python X.Y.Z) | dev/sysadmin เช็ก bundle |
 | `GET /api/admin/hw-profile` | ADMIN+ | tier, cpu_model, ram_gb, recommended_config, next_upgrade | support ถามสเปกเครื่อง |
+| `GET /api/admin/tunnel/status` | ADMIN+ | running, url, port | ตรวจสถานะ tunnel ปัจจุบัน |
+| `POST /api/admin/tunnel/start` | ADMIN+ | url, port | เปิด Cloudflare Quick Tunnel |
+| `POST /api/admin/tunnel/stop` | ADMIN+ | stopped | ปิด tunnel |
 
 ทุก endpoint ใช้ `VERSION` file ผ่าน `read_version()` helper เดียวกัน — ไม่มี drift
 กฎ: อย่าเพิ่ม observability endpoint ใหม่โดยไม่เพิ่มเข้าตารางนี้
+
+---
+
+## Data Stores — Quick Reference
+
+| โมดูล | ไฟล์ | เก็บที่ | ข้อมูลที่เก็บ |
+|---|---|---|---|
+| config_manager | `app/config_manager.py` | `config.json` (gitignored) | API keys, model, port — ห้าม commit (Rule 23) |
+| secret_store | `app/secret_store.py` | `%LOCALAPPDATA%\LocalCodeAssistant\secrets.json` | encrypted credentials |
+| todo_store | `app/todo_store.py` | `{project_root}/todos.json` | todo items ต่อโปรเจกต์ |
+| chat_store | `app/chat_store.py` | `{project_root}/chat_history.json` | conversation history |
+| desktop_archive | `app/desktop_archive.py` | `~/Desktop/LocalCodeAssistant-Data/` | sync/archive ทุกโปรเจกต์ |
+| cluster_store | `app/cluster_store.py` | `%LOCALAPPDATA%\LocalCodeAssistant\cluster.json` | LAN cluster nodes |
+| skills_store | `app/skills_store.py` | `%LOCALAPPDATA%\LocalCodeAssistant\skills.json` | installed skills |
+| org_store | `app/org_store.py` | `%LOCALAPPDATA%\LocalCodeAssistant\org.json` | org/team config |
+
+**Cloud Tunnel state** — in-memory only (module-level in `app/cloud_tunnel.py`):
+`_proc`, `_url`, `_port` — ไม่มี persistence ข้ามรีสตาร์ต, thread-safe with `_lock`
 
 ---
 

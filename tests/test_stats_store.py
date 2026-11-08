@@ -1,9 +1,11 @@
 """Unit tests for app/stats_store.py — request stats recorder."""
 
+
 import tempfile
 import time
 import unittest
 from pathlib import Path
+
 
 from app.stats_store import get_stats, record
 
@@ -11,6 +13,7 @@ from app.stats_store import get_stats, record
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
+
 
 class _TmpPathMixin(unittest.TestCase):
     def setUp(self):
@@ -21,9 +24,11 @@ class _TmpPathMixin(unittest.TestCase):
         self._tmpdir.cleanup()
 
 
+
 # ---------------------------------------------------------------------------
 # record
 # ---------------------------------------------------------------------------
+
 
 class TestRecord(_TmpPathMixin):
     def test_record_does_not_raise(self):
@@ -48,9 +53,11 @@ class TestRecord(_TmpPathMixin):
         self.assertEqual(stats["total_requests"], 5)
 
 
+
 # ---------------------------------------------------------------------------
 # get_stats — empty database
 # ---------------------------------------------------------------------------
+
 
 class TestGetStatsEmpty(_TmpPathMixin):
     def test_total_requests_zero(self):
@@ -78,9 +85,11 @@ class TestGetStatsEmpty(_TmpPathMixin):
         self.assertNotIn("error", stats)
 
 
+
 # ---------------------------------------------------------------------------
 # get_stats — counts
 # ---------------------------------------------------------------------------
+
 
 class TestGetStatsCounts(_TmpPathMixin):
     def test_counts_success_requests(self):
@@ -125,9 +134,11 @@ class TestGetStatsCounts(_TmpPathMixin):
         self.assertEqual(stats["total_errors"], 1)
 
 
+
 # ---------------------------------------------------------------------------
 # get_stats — by_endpoint
 # ---------------------------------------------------------------------------
+
 
 class TestGetStatsByEndpoint(_TmpPathMixin):
     def test_single_endpoint_in_list(self):
@@ -183,9 +194,11 @@ class TestGetStatsByEndpoint(_TmpPathMixin):
         self.assertEqual(by_ep["/api/b"]["errors"], 1)
 
 
+
 # ---------------------------------------------------------------------------
 # get_stats — last_24h
 # ---------------------------------------------------------------------------
+
 
 class TestGetStatsLast24h(_TmpPathMixin):
     def test_recent_records_counted_in_24h(self):
@@ -200,9 +213,11 @@ class TestGetStatsLast24h(_TmpPathMixin):
         self.assertEqual(stats["last_24h"], stats["total_requests"])
 
 
+
 # ---------------------------------------------------------------------------
 # get_stats — return type
 # ---------------------------------------------------------------------------
+
 
 class TestGetStatsReturnType(_TmpPathMixin):
     def test_returns_dict(self):
@@ -222,3 +237,4 @@ class TestGetStatsReturnType(_TmpPathMixin):
 
 if __name__ == "__main__":
     unittest.main()
+
