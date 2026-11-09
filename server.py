@@ -101,7 +101,8 @@ def read_version(root: Path | None = None) -> str:
 # เพิ่มหน้าใหม่ = เพิ่ม 1 บรรทัดที่นี่ + วางไฟล์ใน app/ (ไม่ต้องเขียน method serve ใหม่ทุกหน้า)
 # ทุกหน้าเสิร์ฟ shell ได้โดยไม่ต้อง auth — ข้อมูลจริงถูก gate ที่ /api/* อีกชั้น
 STATIC_ROUTES = {
-    "/":        ("index.html",   "text/html; charset=utf-8",              False),
+    "/":        ("home.html",    "text/html; charset=utf-8",              False),
+    "/classic": ("index.html",   "text/html; charset=utf-8",              False),
     "/dev":     ("dev.html",     "text/html; charset=utf-8",              False),
     "/login":   ("login.html",   "text/html; charset=utf-8",              False),
     "/support": ("support.html", "text/html; charset=utf-8",              False),
@@ -431,7 +432,7 @@ def make_handler(project_root: Path, auth_token: Optional[str],
         # เส้นทาง "เปิดเสมอ" ที่ schedule gate ไม่ปิด — ให้ลูกค้าเช็คสถานะ/health ได้ตลอด
         _SCHEDULE_ALLOWLIST = (
             "/api/health", "/api/status", "/api/version",
-            "/", "/console", "/web", "/install", "/chat",
+            "/", "/classic", "/console", "/web", "/install", "/chat",
             "/app.css", "/chat.css", "/chat.js", "/favicon.ico",
             "/fonts/IBMPlexSansThai-Regular.sub.woff2",
             "/fonts/IBMPlexSansThai-SemiBold.sub.woff2",

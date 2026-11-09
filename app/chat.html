@@ -12,44 +12,54 @@
 <div class="hub">
   <aside class="sidebar">
     <div class="row">
-      <button id="new-chat" type="button" class="grow">+ แชทใหม่</button>
+      <button id="new-chat" type="button" class="grow" data-i18n="newChat">+ แชทใหม่</button>
     </div>
-    <input id="search" type="search" placeholder="ค้นหา… (Ctrl+K)" autocomplete="off">
+    <input id="search" type="search" placeholder="ค้นหา… (Ctrl+K)" data-i18n-placeholder="searchPh" autocomplete="off">
     <div id="search-hits" class="list" hidden></div>
     <div class="row">
-      <select id="folder" class="grow" aria-label="โปรเจกต์"></select>
-      <button id="add-folder" type="button" title="สร้างโปรเจกต์">+</button>
+      <select id="folder" class="grow" aria-label="โปรเจกต์" data-i18n-aria-label="project"></select>
+      <button id="add-folder" type="button" title="สร้างโปรเจกต์" data-i18n-title="addProject">+</button>
     </div>
     <div id="conv-list" class="list" aria-label="ล่าสุด"></div>
-    <label class="meta"><input id="ephemeral" type="checkbox"> ชั่วคราว (ไม่บันทึก)</label>
+    <label class="meta"><input id="ephemeral" type="checkbox"> <span data-i18n="ephemeral">ชั่วคราว (ไม่บันทึก)</span></label>
     <div class="side-foot">
-      <a href="/">หน้าเดิม</a> · <a href="/console">คีย์</a><br>
+      <a href="/" data-i18n="home">หน้าแรก</a> ·
+      <a href="/classic" data-i18n="classic">เครื่องมือเดิม</a> ·
+      <a href="/console" data-i18n="keys">คีย์</a><br>
       <span id="net-dot">local</span>
     </div>
   </aside>
   <section class="main">
     <header class="head">
       <span id="title" class="title">แชทใหม่</span>
-      <select id="model" aria-label="โมเดล"></select>
-      <input id="custom-model" placeholder="ชื่อโมเดล" hidden>
-      <button id="compare-btn" type="button">เทียบ</button>
-      <select id="persona" aria-label="persona"><option value="">persona</option></select>
-      <button id="export-btn" type="button">ส่งออก</button>
-      <button id="import-btn" type="button">นำเข้า</button>
+      <select id="model" aria-label="โมเดล" data-i18n-aria-label="model"></select>
+      <input id="custom-model" placeholder="ชื่อโมเดล" data-i18n-placeholder="customModel" hidden>
+      <button id="compare-btn" type="button" data-i18n="compare">เทียบ</button>
+      <select id="persona" aria-label="บุคลิก" data-i18n-aria-label="persona"><option value="">บุคลิก</option></select>
+      <button id="export-btn" type="button" data-i18n="exportBtn">ส่งออก</button>
+      <button id="import-btn" type="button" data-i18n="importBtn">นำเข้า</button>
       <input id="import-file" type="file" accept="application/json" hidden>
+      <span id="lca-status" class="chip" role="status" aria-live="polite">
+        <span class="dot" aria-hidden="true"></span>
+        <span id="lca-status-text">…</span>
+      </span>
+      <select id="ui-lang" aria-label="ภาษา" data-i18n-aria-label="uiLang">
+        <option value="th">ไทย</option>
+        <option value="en">English</option>
+      </select>
     </header>
-    <div id="offline" class="banner" hidden>ไม่มีอินเทอร์เน็ต — ใช้ได้เฉพาะโมเดล local</div>
+    <div id="offline" class="banner" data-i18n="offlineBanner" hidden>ไม่มีอินเทอร์เน็ต — ใช้ได้เฉพาะโมเดล local</div>
     <div id="notice" class="banner warn" hidden></div>
     <div id="thread" class="thread"></div>
     <form id="composer" class="composer">
-      <textarea id="input" rows="2" placeholder="พิมพ์ข้อความ… (Enter ส่ง, Shift+Enter ขึ้นบรรทัด)"></textarea>
+      <textarea id="input" rows="2" placeholder="พิมพ์ข้อความ… (Enter ส่ง, Shift+Enter ขึ้นบรรทัด)" data-i18n-placeholder="composerPh"></textarea>
       <button id="send" type="submit">ส่ง</button>
     </form>
     <div id="compare-box" class="banner" hidden>
-      <p class="meta">เลือกอย่างน้อย 2 โมเดล แล้วกดเทียบกับข้อความในช่องพิมพ์</p>
+      <p class="meta" data-i18n="compareHelp">เลือกอย่างน้อย 2 โมเดล แล้วกดเทียบกับข้อความในช่องพิมพ์</p>
       <div id="compare-picks"></div>
-      <p id="queue-note" class="meta" hidden>รอคิว — เครื่องรันได้ทีละโมเดล local</p>
-      <button id="compare-go" type="button">เทียบตอนนี้</button>
+      <p id="queue-note" class="meta" data-i18n="queueNote" hidden>รอคิว — เครื่องรันได้ทีละโมเดล local</p>
+      <button id="compare-go" type="button" data-i18n="compareGo">เทียบตอนนี้</button>
     </div>
   </section>
 </div>
