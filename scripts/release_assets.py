@@ -2,7 +2,7 @@
 TokenLCAlimit.exe download from the latest GitHub Release.
 
     python scripts/release_assets.py                 # dist/lca-source.zip + .sha256 from HEAD
-    python scripts/release_assets.py --upload v0.2.0 # also attach both to that Release (gh CLI)
+    python scripts/release_assets.py --upload v0.3.4 # also attach both to that Release (gh CLI)
 
 - ``git archive`` of the ref (default HEAD; ``.gitattributes`` export-ignore drops
   tests/, .github/, .vscode/), top folder ``LocalCodeAssistant-<VERSION>/``.

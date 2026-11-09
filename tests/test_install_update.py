@@ -21,7 +21,8 @@ sys.path.insert(0, str(ROOT))
 
 import installer_gui  # noqa: E402
 
-PS_FILES = ["install.ps1", "update.ps1", "uninstall.ps1", "lca-tray.ps1", "scripts/setup-ollama.ps1"]
+# uninstall.ps1 was removed on main; installers skip a listed file that is absent.
+PS_FILES = ["install.ps1", "update.ps1", "lca-tray.ps1", "scripts/setup-ollama.ps1"]
 BEGIN = "# >>> lca-release-download"
 END = "# <<< lca-release-download"
 
@@ -54,7 +55,7 @@ class ScriptLayoutTest(unittest.TestCase):
 
     def test_powershell_scripts_have_utf8_bom(self):
         # Windows PowerShell 5.1 reads a .ps1 without BOM as ANSI, which breaks Thai text
-        for name in ["install.ps1", "update.ps1", "uninstall.ps1", "scripts/setup-ollama.ps1"]:
+        for name in ["install.ps1", "update.ps1", "scripts/setup-ollama.ps1"]:
             with self.subTest(name=name):
                 self.assertTrue((ROOT / name).read_bytes().startswith(b"\xef\xbb\xbf"))
 
@@ -72,6 +73,8 @@ class ScriptLayoutTest(unittest.TestCase):
             self.assertIn(name, installer_gui.COPY_FILES)
         self.assertIn("scripts", installer_gui.COPY_DIRS)
         for name in installer_gui.COPY_FILES:
+            if name == "uninstall.ps1":
+                continue
             with self.subTest(name=name):
                 self.assertTrue((ROOT / name).exists(), name)
 

@@ -1,6 +1,6 @@
 # Local Code Assistant (LCA) — Windows Package
 
-**Version:** 0.2.0 (2026-11-03) · [CHANGELOG](CHANGELOG.md)
+**Version:** 0.3.4 · [CHANGELOG](CHANGELOG.md)
 
 ตัวติดตั้ง AI Coding Assistant แบบฟรี รันด้วย Ollama บนเครื่อง (Windows 10/11, AMD64)
 
@@ -59,14 +59,14 @@ Both download the latest GitHub Release and check its SHA-256 before installing.
 - **เฝ้าระบบ 24/7 + rollback config** — เตือนเมื่อผิดปกติ, ย้อนเวอร์ชันได้เมื่อ incident
 - **เสียบ cloud GPU ได้** — สลับ backend เป็น OpenAI-compatible endpoint จากหน้า `/dev`
 - **Console ต่อสมอง AI ภายนอก (`/console`)** — ต่อ OpenAI-compatible (TokenMe/vLLM/cloud) หรือ Ollama หลายตัว → ทำ **Skills** (prompt สำเร็จรูป) → เปิดเป็น **Bots** ให้ n8n ยิง `POST /api/bots/run` (ดู `docs/CONSOLE_PLATFORM.md`)
-- **System tray installer** — ติดตั้งปุ๊บแล้วอยู่ใน tray เหมือน Discord/Steam (ดู `docs/TRAY_INSTALLER.md`)
+- **System tray installer** — ติดตั้งปุ๊บแล้วอยู่ใน tray เหมือน Discord/Steam
 - **เวลาเปิด-ปิดเซิร์ฟเวอร์** (schedule gate) — ปิด server นอกเวลาทำการเพื่อประหยัดค่า cloud/ไฟ, แจ้งลูกค้าผ่าน `GET /api/status`
 
 > **เวอร์ชันล่าสุด:** ดู `CHANGELOG.md` (อัพเดตทุก PR cycle)
 
-> เอกสารเพิ่มเติม: `docs/CLUSTER_FORWARD.md`, `docs/AGENT_TECH_PLAN.md`, `docs/learn/` (ความรู้พื้นฐาน)
+> เอกสารเพิ่มเติม: `docs/CLUSTER.md`, `docs/AGENTS.md`, `docs/learn/` (ความรู้พื้นฐาน)
 >
-> **อยากเปิดให้คนอื่นเข้าผ่านเน็ต (โดเมน + server ฟรี)?** ทำตามทีละขั้นที่ `docs/GO_ONLINE_FREE.md`
+> **อยากเปิดให้คนอื่นเข้าผ่านเน็ต (โดเมน + server ฟรี)?** ทำตามทีละขั้นที่ `docs/SETUP.md`
 >
 > **อยากเข้าใจทั้งระบบแบบคอร์ส (ไฟล์ไหนทำอะไร, frontend↔backend, สร้างใหม่ทีละขั้น)?** อ่าน `docs/APP_WALKTHROUGH.md`
 
@@ -76,7 +76,7 @@ Both download the latest GitHub Release and check its SHA-256 before installing.
 - **โหมด cloud**: ตั้ง connection + API key ที่ `/console` → แชตได้เหมือน ChatGPT (ไม่ต้องลง Ollama)
 - **โหมด local/ส่วนตัว**: ลง Ollama → ข้อมูลไม่ออกเครื่อง (bind 127.0.0.1)
 
-โหลดจาก **Actions → build-exe → Artifacts → `LCA-Desktop-exe`** (หรือหน้า Releases เมื่อ push tag) — ดู `docs/INSTALLER_EXE.md`
+โหลดจาก **Actions → build-exe → Artifacts → `LCA-Desktop-exe`** (หรือหน้า Releases เมื่อ push tag) — ดู `docs/SETUP.md`
 
 ## ติดตั้งด้วยตัวติดตั้ง .exe (ถ้ามีการปล่อย Release แล้ว)
 
@@ -84,7 +84,7 @@ Both download the latest GitHub Release and check its SHA-256 before installing.
 โหลด **`TokenLCAlimit.exe`** → ดับเบิลคลิก → เลือกโฟลเดอร์ → แถบวิ่งจนเขียวเต็ม → Close พร้อมใช้งาน
 (ยังต้องมี **Python + Ollama** บนเครื่องปลายทาง — ตัว .exe เป็นตัวติดตั้ง ไม่ได้ฝัง runtime)
 
-> ไฟล์ .exe ถูก build อัตโนมัติด้วย GitHub Actions ตอน push tag `v*` (ดู `docs/INSTALLER_EXE.md`)
+> ไฟล์ .exe ถูก build อัตโนมัติด้วย GitHub Actions ตอน push tag `v*` (ดู `docs/SETUP.md`)
 
 ## ติดตั้ง (แบบดาวน์โหลดแพ็กเกจเอง) — ดับเบิลคลิกล้วน ไม่ต้องใช้เทอร์มินัล
 
