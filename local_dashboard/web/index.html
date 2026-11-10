@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>LCA · แดชบอร์ดเครื่องนี้</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./css/dashboard.css">
+</head>
+<body>
+  <header>
+    <h1>LCA · แดชบอร์ดเครื่องนี้</h1>
+    <p id="origin-banner" role="status" hidden></p>
+    <div id="auth-bar"></div>
+    <nav aria-label="ส่วนของแดชบอร์ด">
+      <a id="nav-home" href="#/" data-route="/">ภาพรวม</a>
+      <a id="nav-logs" href="#/logs" data-route="/logs">ล็อกเทอร์มินัล</a>
+      <a id="nav-nodes" href="#/nodes" data-route="/nodes">สถานะโหนด</a>
+      <a id="nav-account" href="#/account" data-route="/account">บัญชี</a>
+    </nav>
+  </header>
+  <main id="view"></main>
+  <script type="module" src="./js/main.js"></script>
+</body>
+</html>
