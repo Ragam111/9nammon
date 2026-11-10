@@ -362,11 +362,166 @@ result = run_loop(
 - ไม่มีฐานเวกเตอร์และไม่มีเซิร์ฟเวอร์ MCP — เรียก `RagIndex` หรือ `McpEndpoint` แล้วจะได้ `NotImplementedError`
 - ไม่ติดต่อบอท โบรกเกอร์ หรือเครื่องนอก loopback
 
+## Integration in app_server.py
+
+คัดลอกบล็อกนี้ไปไว้ใน `app_server.py` บนเครื่อง Nammon เท่านั้น อย่า commit ไฟล์นั้น
+FastAPI ไม่ได้อยู่ใน `requirements.txt` และเทสของรีโปไม่ได้ import มัน
+อย่าเรียก `uvicorn.run` และอย่าให้ `start-dashboard.cmd` เปิด uvicorn
+สามเส้นด้านล่างใช้ชื่อ เมธอด และรูปร่าง JSON เดียวกับ `docs/FRONTEND_BACKEND_CONTRACT.md` และ `local_dashboard/web/js/config.js`
+
+- `GET /auth/google?mode=status` → 200 `{"authenticated": false}` หรือ `{"authenticated": true, "name", "email"}` และไม่ 302
+- `GET /auth/google?mode=start` → 400 ถ้ายูอาร์ไอไม่ใช่สองค่าที่อนุญาต หรือ 200 `{"url": "https://accounts.google.com/o/oauth2/v2/auth?..."}`
+- `GET /auth/google?code=&state=` → เกตเวย์แลก code เอง แล้ว 302 ไป `/#/account` พร้อมคุกกี้ `SameSite=Lax`
+- `POST /auth/google?mode=logout` → 200 `{"ok": true}` และลบคุกกี้
+- `GET /api/cluster/status` → 200 `{"nodes": [{"port": 8420, "role": "worker", "status", "latency_ms"}, {"port": 8421, "role": "dashboard", ...}]}`
+- `GET /api/logs/stream` → `Content-Type: text/event-stream`, `Cache-Control: no-cache`, ก้อนละไม่เกิน 32768 ไบต์, `event: log` / `data: {"id","ts","level","text"}`
+- สแนปช็อตที่เส้นเดียวกันเมื่อ `Accept` เป็น `application/json` หรือ `format=json` → 200 `{"lines": [...]}`
+- ล็อกใช้ไม่ได้ → 503 `{"error": "offline", "detail": "database locked"}`
+- เส้นที่ไม่มี → 404 `{"error": "not implemented"}`
+- `OPTIONS` ของสามเส้นนี้ตอบ 204. origin นอกรายการไม่ถูกสะท้อน
+
+```python
+import asyncio
+import os
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, RedirectResponse, Response, StreamingResponse
+
+from lca_core.executor import GcHook, get_executor, shutdown_executor
+from lca_core.logs import AuditLog
+from lca_core.router import tcp_probe
+from lca_core.routes import GatewayContext, dispatch
+from lca_core.security import cors_config
+from lca_core.storage import checkpoint_and_close, connect, reclaim_wal
+
+DATA_DIR = Path(os.environ.get("LOCALAPPDATA", ".")) / "LocalCodeAssistant" / "data"
+DB_PATH = DATA_DIR / "lca.db"
+AUDIT_PATH = DATA_DIR / "dashboard-audit.log"
+
+audit = AuditLog(AUDIT_PATH)
+# ThreadPoolExecutor(max_workers=2) — get_executor() สร้างพูลนี้พูลเดียว
+executor = get_executor()
+gc_hook = GcHook(interval_s=60.0, enabled=True)
+ctx = GatewayContext(
+    audit_path=AUDIT_PATH,
+    probe=tcp_probe,
+    executor=executor,
+    probe_timeout=0.4,
+)
+
+
+def init_wal(path: Path) -> None:
+    # connect() runs: PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;
+    path.parent.mkdir(parents=True, exist_ok=True)
+    reclaim_wal(path)
+    conn = connect(path)
+    checkpoint_and_close(conn)
+
+
+async def _gc_loop() -> None:
+    while True:
+        await asyncio.sleep(gc_hook.interval_s)
+        gc_hook.maybe_collect()
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    init_wal(DB_PATH)
+    task = asyncio.create_task(_gc_loop())
+    try:
+        yield
+    finally:
+        task.cancel()
+        audit.close()
+        shutdown_executor(wait=True)
+
+
+app = FastAPI(lifespan=lifespan)
+# allow_origins มีแค่ http://localhost:8421 และ http://127.0.0.1:8421
+app.add_middleware(CORSMiddleware, **cors_config())
+
+
+def _query(request: Request) -> dict:
+    return {key: value for key, value in request.query_params.multi_items()}
+
+
+def _reply(result: dict):
+    headers = dict(result.get("headers") or {})
+    headers.pop("Content-Type", None)
+    if result["status"] == 204:
+        return Response(status_code=204, headers=headers)
+    chunks = result.get("chunks")
+    if chunks is not None and result["status"] == 200:
+        def generate():
+            for chunk in chunks:
+                yield chunk
+        return StreamingResponse(
+            generate(),
+            status_code=200,
+            media_type="text/event-stream",
+            headers=headers,
+        )
+    if result.get("location") and result["status"] in (301, 302, 303, 307, 308):
+        return RedirectResponse(result["location"], status_code=result["status"], headers=headers)
+    return JSONResponse(result.get("body"), status_code=result["status"], headers=headers)
+
+
+@app.api_route("/auth/google", methods=["GET", "POST", "OPTIONS"])
+async def auth_google(request: Request):
+    query = _query(request)
+    accept = request.headers.get("accept", "")
+    origin = request.headers.get("origin")
+    if request.method == "GET" and query.get("mode") == "status":
+        return _reply(dispatch("GET", "/auth/google", query, ctx=ctx, accept=accept, origin=origin))
+    if request.method == "GET" and query.get("mode") == "start":
+        result = dispatch("GET", "/auth/google", query, ctx=ctx, accept=accept, origin=origin)
+        if result["status"] == 200:
+            ctx.expected_state = result.get("state")
+        return _reply(result)
+    if request.method == "GET" and query.get("code"):
+        checked = dispatch("GET", "/auth/google", query, ctx=ctx, accept=accept, origin=origin)
+        if checked["status"] != 200:
+            return _reply(checked)
+        return RedirectResponse("/#/account", status_code=302)
+    if request.method == "POST" and query.get("mode") == "logout":
+        ctx.session = {}
+        ctx.expected_state = None
+        return _reply(dispatch("POST", "/auth/google", query, ctx=ctx, accept=accept, origin=origin))
+    return _reply(dispatch(request.method, "/auth/google", query, ctx=ctx, accept=accept, origin=origin))
+
+
+@app.api_route("/api/cluster/status", methods=["GET", "OPTIONS"])
+async def cluster_status_route(request: Request):
+    return _reply(dispatch(
+        request.method,
+        "/api/cluster/status",
+        {},
+        ctx=ctx,
+        accept=request.headers.get("accept", ""),
+        origin=request.headers.get("origin"),
+    ))
+
+
+@app.api_route("/api/logs/stream", methods=["GET", "OPTIONS"])
+async def logs_stream(request: Request):
+    return _reply(dispatch(
+        request.method,
+        "/api/logs/stream",
+        _query(request),
+        ctx=ctx,
+        accept=request.headers.get("accept", "") or "text/event-stream",
+        origin=request.headers.get("origin"),
+    ))
+```
+
 ## เทส
 
 ```bash
-python3 -m pytest tests/test_lca_core.py -q
-python3 -m unittest tests.test_lca_core
+python3 -m pytest tests/test_lca_core.py tests/test_lca_dashboard_contract.py tests/test_db.py -q
+python3 -m unittest discover -s tests -q
 ```
 
 เทสใช้ probe, transport, และ `socket.create_connection` แบบจำลอง
