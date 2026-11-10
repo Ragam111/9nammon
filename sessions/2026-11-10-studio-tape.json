@@ -1,0 +1,63 @@
+{
+  "title": "แอปแชท ก่อนมันจะเป็นแอป",
+  "source": "studio",
+  "space": "studio",
+  "steps": [
+    {
+      "at": "2026-11-10T03:40:00.000Z",
+      "layer": "core",
+      "file": "ยังไม่มีไฟล์",
+      "action": "รับโจทย์",
+      "detail": "ก่อนมันจะเป็นแอป ไม่มีเซิร์ฟเวอร์ ไม่มีหน้า และยังไม่เรียกสมอง"
+    },
+    {
+      "at": "2026-11-10T03:40:00.000Z",
+      "layer": "core",
+      "file": "sessions/tape.json",
+      "action": "เปิดม้วน",
+      "detail": "อัดมือคนทำงานเป็นไฟล์ รอบหน้าเดินตามรอยได้โดยไม่เรียกสมองใหม่"
+    },
+    {
+      "at": "2026-11-10T03:40:00.000Z",
+      "layer": "frontend",
+      "file": "app/chat.js",
+      "action": "วางหน้าบ้าน",
+      "detail": "app/index.html คือห้อง app/chat.js ส่งข้อความที่คนพิมพ์ ยังไม่มีคำตอบ"
+    },
+    {
+      "at": "2026-11-10T03:40:00.000Z",
+      "layer": "backend",
+      "file": "server.py",
+      "action": "จัดเส้นทาง",
+      "detail": "รับข้อความจาก app/chat.js แล้วสตรีมทีละคำ พอร์ต 8420"
+    },
+    {
+      "at": "2026-11-10T03:40:00.000Z",
+      "layer": "core",
+      "file": "skills/rapid-iteration-ecosystem/SKILL.md",
+      "action": "แช่แข็งรอย",
+      "detail": "Read → Re-check → Fix → Report สกิลไม่แทน server.py และไม่ใช่กุญแจเข้าเครื่อง"
+    },
+    {
+      "at": "2026-11-10T03:40:00.000Z",
+      "layer": "backend",
+      "file": "app/space_store.py",
+      "action": "เลือกถัง",
+      "detail": "แขกใช้ฟรี คำตอบอยู่แค่หน้า ไม่ถูกเขียนเซิร์ฟเวอร์ บัญชีแยก private กับ company"
+    },
+    {
+      "at": "2026-11-10T03:40:00.000Z",
+      "layer": "backend",
+      "file": "app/usage_store.py",
+      "action": "นับมือ",
+      "detail": "T-LCA เริ่ม 8,000 ต่อบัญชี หัก 1 เมื่อเก็บบทแชทหรือมติสภา เทปสตูดิโอไม่หัก ไม่ใช่เหรียญซื้อขาย"
+    },
+    {
+      "at": "2026-11-10T03:40:00.000Z",
+      "layer": "core",
+      "file": "install/pack.json",
+      "action": "แพ็ก",
+      "detail": "ลำดับก่อนห่อ lca_app.py เป็น LCA-Desktop.exe ตัวติดตั้ง Windows ยังอยู่ที่รีโป ไม่ได้ย้ายเข้าสตูดิโอเว็บ"
+    }
+  ]
+}
