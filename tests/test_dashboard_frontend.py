@@ -38,4 +38,8 @@ class DashboardFrontendTest(unittest.TestCase):
         )
 
     def test_version_file_unchanged(self):
-        self.assertEqual((ROOT / "VERSION").read_text(encoding="utf-8").strip(), "0.3.4")
+        # VERSION ต้องยังเป็น SemVer บรรทัดเดียว (dashboard ไม่แก้ไฟล์นี้) — ไม่ pin เลขเวอร์ชัน
+        # เพราะ release PR อื่น bump ได้ตามปกติ
+        import re
+        value = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+        self.assertRegex(value, r"^\d+\.\d+\.\d+$")
