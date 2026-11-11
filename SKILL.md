@@ -14,7 +14,7 @@ description: >
 
 skill_memory_updated: "2026-11-11"
 version: "0.3.5"
-tests_pass: 1333
+tests_pass: 1377
 customer_readiness_doc: "CUSTOMER_READINESS.md"
 
 ---
@@ -189,7 +189,7 @@ PowerShell/CMD ต้องติดตั้งสำเร็จได้เ�
 
 | #195 | v0.2.8 | 2026-11-07 | Cloud Tunnel (cloudflared, free) + consolidated CI workflow + +13 tests | 🔄 open |
 | #196 | v0.2.9 | 2026-11-08 | Wire cloud_tunnel routes into server: GET/POST /api/admin/tunnel/* + 10 tests | ✅ merged (รวมใน #195) |
-| next | v0.3.5 | 2026-11-11 | Production hardening: /api/auth/login session, RBAC page gate (/dev,/console), conversation ownership (personal vs org space), SSE contract + no empty reply, GUEST mode (flag), /api/vscode/chat, export?format=md — +37 tests (1333) | 🔄 open |
+| #199 | v0.3.5 | 2026-11-11 | Production hardening: /api/auth/login session, RBAC page gate (/dev,/console), conversation ownership (personal vs org space), SSE contract + no empty reply, GUEST mode (flag), /api/vscode/chat, export?format=md — +37 tests (1377 with main dashboard tests) | ✅ merged (35f30a6) |
 
 
 **หลักการ autopilot loop**: open atomic PR → CI → merge → sync branch → next PR
