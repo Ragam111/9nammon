@@ -59,8 +59,9 @@ def _synchronized(fn):
     return wrapper
 
 # ลำดับชั้นบทบาท — ตัวเลขมากกว่า = สิทธิ์สูงกว่า
-ROLE_LEVEL = {"USER": 1, "ADMIN": 2, "CEO": 3}
-VALID_ROLES = set(ROLE_LEVEL)
+ROLE_LEVEL = {"GUEST": 0, "USER": 1, "ADMIN": 2, "CEO": 3}
+# GUEST = ไม่ได้ล็อกอิน (คำตอบอยู่แค่ในเบราว์เซอร์) — สร้างเป็นบัญชีไม่ได้
+VALID_ROLES = {"USER", "ADMIN", "CEO"}
 
 # tier ของ API key -> โควตาต่อวัน (จำนวน request). 0 = ไม่จำกัด (paid)
 TIER_DAILY_LIMIT = {

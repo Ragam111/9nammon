@@ -26,6 +26,8 @@ FEATURES = [
      "name": "Connections + Bots", "desc": "เปิดให้ bot รันผ่านสมอง AI ภายนอก (Console /console)", "default": False},
     {"key": "collect_training_data", "config_key": "COLLECT_TRAINING_DATA",
      "name": "เก็บข้อมูลเทรน", "desc": "เก็บคู่สนทนาไว้ทำ dataset (ความเป็นส่วนตัว — ปิดไว้)", "default": False},
+    {"key": "guest_chat", "config_key": "GUEST_CHAT_ENABLED",
+     "name": "Guest chat", "desc": "ให้คนที่ไม่ได้ล็อกอินแชทกับโมเดล local ได้ (ไม่บันทึก, โควตาต่อ IP)", "default": False},
 ]
 
 _TRUE = ("1", "true", "yes", "on")

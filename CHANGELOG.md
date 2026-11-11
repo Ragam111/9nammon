@@ -4,6 +4,24 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [0.3.5] — 2026-11-11 (Production hardening — auth, RBAC pages, ownership, SSE contract)
+
+### Added
+- `app/session_store.py` — session token หลัง login (in-memory, TTL 12h, compare_digest, brute-force guard ต่อ IP)
+- `POST /api/auth/login` (username/password → `lcs_` token ใช้เป็น X-Auth-Token), `POST /api/auth/logout`; `/api/me` คืน `source`/`expires_at`
+- `app/login.html` — ฟอร์ม username/password (+ วาง key ได้เหมือนเดิม); `app.js` มี `lca.login()/logout()` และตั้ง cookie `lca_key` สำหรับ page gate
+- Page gate: `/dev` และ `/console` ต้อง ADMIN+ (ไม่มีตัวตน → `302 /login?next=`, USER → 403; โหมด local บน loopback ผ่านเหมือนเดิม)
+- Conversation ownership: `owner=ชื่อ` = พื้นที่ส่วนตัว, `owner=NULL` = พื้นที่บริษัท; list/search/get/update/delete/export/switch/branch/regen/edit/compare/ส่งข้อความ ตรวจ `_assert_access` (403 `ChatAccessError`); import บังคับ owner = ผู้นำเข้า
+- GUEST mode (feature flag `guest_chat`, ปิด default): แชทโดยไม่ล็อกอินได้เฉพาะโมเดล local, ไม่บันทึกอะไรลงดิสก์, โควตา 20 ข้อความ/วัน/IP (429); role `GUEST` สร้างเป็นบัญชีไม่ได้
+- `POST /api/vscode/chat` — alias ของ `/api/chat/stream` (สัญญา SSE เดียวกัน) สำหรับ extension
+- `GET /api/chat/export?format=md` — Session Tape เป็น Markdown (`chat_hub.export_markdown`)
+- Tests +37 → 1333: `test_session_store`, `test_auth_login_api`, `test_chat_ownership`, `test_sse_contract`, `test_guest_chat`
+
+### Fixed
+- "Empty reply from server" (curl 52): exception ที่ไม่มีใครดักใน handler เคยปิด socket เงียบ ๆ → ตอนนี้ `do_GET/do_POST` มีด่านสุดท้าย `_fail_last_resort` ตอบ `500 JSON` (ถ้ายังไม่ส่ง header) + ลง `history_store` error_log
+- SSE: `_sse_stream` และ `/api/chat/stream` ปิดสตรีมด้วย `{"error":...}` ทุก exception (เดิมดักเฉพาะ BackendError → RuntimeError ทำสตรีมค้าง/ขยะ); `chat_hub.serve_chat` เคย `_send_json` ซ้อนหลังเปิดสตรีม → ส่ง error event แทน
+- `chat_store.list_conversations/search` คืน `owner` เพื่อให้กรองตามสิทธิ์ได้
+
 ## [0.3.4] — 2026-11-05 (Test Coverage — router unit tests)
 
 ### Added

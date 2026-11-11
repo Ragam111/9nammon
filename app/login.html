@@ -15,20 +15,29 @@
 
   <main style="max-width:440px">
     <div class="card">
-      <h2>วาง API key หรือ token</h2>
+      <h2>เข้าสู่ระบบ</h2>
 
       <div id="status" class="note">กำลังตรวจสอบสถานะ…</div>
 
       <div id="form" style="display:none; margin-top:10px">
-        <div style="display:flex; gap:8px; flex-wrap:wrap">
-          <input id="key" type="password" autocomplete="off" style="flex:1"
-                 placeholder="X-API-Key หรือ X-Auth-Token" />
-          <button id="go">เข้าสู่ระบบ</button>
-        </div>
+        <form id="pw-form" autocomplete="on" style="display:flex; flex-direction:column; gap:8px">
+          <input id="username" type="text" autocomplete="username" placeholder="username" />
+          <input id="password" type="password" autocomplete="current-password" placeholder="password" />
+          <button id="go" type="submit">เข้าสู่ระบบ</button>
+        </form>
         <p id="err" class="err" style="display:none; margin-top:8px"></p>
+
+        <details style="margin-top:12px">
+          <summary class="muted">หรือวาง API key / token</summary>
+          <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px">
+            <input id="key" type="password" autocomplete="off" style="flex:1"
+                   placeholder="X-API-Key หรือ X-Auth-Token" />
+            <button id="go-key" type="button">ใช้ key</button>
+          </div>
+        </details>
         <p class="note">
           เปิดบนเครื่องนี้โดยไม่ได้ตั้ง token: หน้าเว็บได้รับ session token ของการเปิดครั้งนี้เอง
-          — <a href="/">ไปหน้าแชต</a> ได้เลย. ถ้าเปิดออกนอกเครื่อง ให้วาง token หรือ API key
+          — <a href="/">ไปหน้าแชต</a> ได้เลย. ถ้าเปิดออกนอกเครื่อง ให้ล็อกอินด้วยบัญชี หรือวาง token / API key
         </p>
       </div>
 
@@ -38,7 +47,7 @@
         <div class="kv"><span>ระดับ</span><span id="who-tier">—</span></div>
         <div style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap">
           <button id="to-chat">ไปหน้าแชต</button>
-          <button id="to-dev" style="background:var(--lca-surface-2); color:var(--lca-fg); border-color:var(--lca-line)">หน้า dev</button>
+          <button id="to-dev" style="display:none; background:var(--lca-surface-2); color:var(--lca-fg); border-color:var(--lca-line)">หน้า dev</button>
           <button id="logout" style="background:var(--lca-surface-2); color:var(--lca-bad); border-color:var(--lca-line)">ออกจากระบบ</button>
         </div>
       </div>
@@ -52,9 +61,10 @@
       // รับเฉพาะ path ภายใน (ขึ้นต้น "/" ตัวเดียว) กัน open-redirect
       return (p && /^\/[^/]/.test(p)) ? p : "/";
     }
+    function showErr(msg) { qs("err").textContent = msg; qs("err").style.display = ""; }
 
     function showForm(msg) {
-      qs("status").textContent = msg || "วาง key แล้วกดเข้าสู่ระบบ";
+      qs("status").textContent = msg || "ล็อกอินด้วยบัญชี หรือวาง key";
       qs("form").style.display = "";
       qs("signed").style.display = "none";
     }
@@ -63,6 +73,8 @@
       qs("who-name").textContent = me.username || "—";
       qs("who-role").textContent = me.role || "—";
       qs("who-tier").textContent = me.tier || "—";
+      // ปุ่ม dev โชว์เฉพาะ ADMIN/CEO — USER ไม่เห็น (server ก็บล็อก /dev อีกชั้น)
+      qs("to-dev").style.display = (me.role === "ADMIN" || me.role === "CEO") ? "" : "none";
       qs("form").style.display = "none";
       qs("signed").style.display = "";
     }
@@ -72,28 +84,37 @@
       if (me) showSigned(me); else showForm();
     }
 
-    async function doLogin() {
-      var v = qs("key").value.trim();
+    async function doPasswordLogin(ev) {
+      if (ev) ev.preventDefault();
       qs("err").style.display = "none";
-      if (!v) { qs("err").textContent = "กรุณาวาง key ก่อน"; qs("err").style.display = ""; return; }
+      var u = qs("username").value.trim(), p = qs("password").value;
+      if (!u || !p) { showErr("กรุณากรอก username และ password"); return; }
       qs("go").disabled = true;
-      window.lca.setKey(v);
-      var me = await window.lca.whoami();
+      var me = await window.lca.login(u, p);
       qs("go").disabled = false;
       if (me) { location.href = nextTarget(); }
-      else {
-        window.lca.clearKey();
-        qs("err").textContent = "key ไม่ถูกต้องหรือหมดอายุ — ลองใหม่";
-        qs("err").style.display = "";
-      }
+      else { qs("password").value = ""; showErr(window.lca.lastError || "เข้าสู่ระบบไม่สำเร็จ"); }
+    }
+
+    async function doKeyLogin() {
+      var v = qs("key").value.trim();
+      qs("err").style.display = "none";
+      if (!v) { showErr("กรุณาวาง key ก่อน"); return; }
+      qs("go-key").disabled = true;
+      window.lca.setKey(v);
+      var me = await window.lca.whoami();
+      qs("go-key").disabled = false;
+      if (me) { location.href = nextTarget(); }
+      else { window.lca.clearKey(); showErr("key ไม่ถูกต้องหรือหมดอายุ — ลองใหม่"); }
     }
 
     window.addEventListener("DOMContentLoaded", function () {
-      qs("go").addEventListener("click", doLogin);
-      qs("key").addEventListener("keydown", function (e) { if (e.key === "Enter") doLogin(); });
+      qs("pw-form").addEventListener("submit", doPasswordLogin);
+      qs("go-key").addEventListener("click", doKeyLogin);
+      qs("key").addEventListener("keydown", function (e) { if (e.key === "Enter") doKeyLogin(); });
       qs("to-chat").addEventListener("click", function () { location.href = "/"; });
       qs("to-dev").addEventListener("click", function () { location.href = "/dev"; });
-      qs("logout").addEventListener("click", function () { window.lca.clearKey(); refresh(); });
+      qs("logout").addEventListener("click", async function () { await window.lca.logout(); refresh(); });
       refresh();
     });
   </script>
