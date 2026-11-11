@@ -70,6 +70,7 @@ from app import conn_usage  # noqa: E402  (นับ token/ค่าใช้จ
 from app import skills_store  # noqa: E402  (Skills: prompt+สมองสำเร็จรูป ใช้ซ้ำได้)
 from app import bots  # noqa: E402  (Bot: skill + run endpoint ให้ automation เรียก)
 from app import cloud_tunnel  # noqa: E402  (Cloudflare Quick Tunnel — เปิด tunnel ชั่วคราวออก internet)
+from app import session_store  # noqa: E402  (session token หลัง login username/password — in-memory)
 from sysmanager.monitor import collect as _collect, Analyzer as _Analyzer  # noqa: E402
 from sysmanager.monitor import lca_context as _lca_context  # noqa: E402  (Phase 2: บริบท Ollama)
 
@@ -124,6 +125,47 @@ _LOOPBACK_NAMES = frozenset({"127.0.0.1", "localhost", "::1"})
 # bind ทุกอินเทอร์เฟซ: ไคลเอนต์ส่ง IP/ชื่อจริง ไม่ได้ส่ง 0.0.0.0
 _WILDCARD_BINDS = frozenset({"0.0.0.0", "::", "::0"})
 _STATE_CHANGING = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+# หน้าที่ต้องมีสิทธิ์ก่อนถึงจะได้ shell — USER/GUEST ไม่เห็นแม้แต่โครงหน้า (กันข้อมูล
+# dev/observability รั่ว). ไม่มีตัวตน → redirect /login, มีแต่สิทธิ์ไม่ถึง → 403
+PROTECTED_PAGES = {"/dev": "ADMIN", "/console": "ADMIN"}
+PAGE_COOKIE = "lca_key"
+
+# GUEST (เปิดด้วย feature flag guest_chat): แชทได้เฉพาะโมเดล local, ไม่บันทึก, โควตาต่อ IP ต่อวัน
+GUEST_DAILY_LIMIT = 20
+_guest_usage: dict = {}          # ip -> [YYYY-MM-DD, count]  (in-memory ต่อ process — guest ไม่มีอะไรลงดิสก์)
+_guest_lock = __import__("threading").Lock()
+
+
+def _guest_today() -> str:
+    from datetime import date
+    return date.today().isoformat()
+
+
+def _guest_quota_ok(client_ip: str) -> bool:
+    today = _guest_today()
+    with _guest_lock:
+        rec = _guest_usage.get(client_ip)
+        if rec is None or rec[0] != today:
+            return True
+        return rec[1] < GUEST_DAILY_LIMIT
+
+
+def _guest_quota_consume(client_ip: str) -> int:
+    """หัก 1 หน่วยหลังตอบสำเร็จ — คืนจำนวนที่ใช้ไปวันนี้"""
+    today = _guest_today()
+    with _guest_lock:
+        rec = _guest_usage.get(client_ip)
+        if rec is None or rec[0] != today:
+            rec = [today, 0]
+            _guest_usage[client_ip] = rec
+        rec[1] += 1
+        return rec[1]
+
+
+def _guest_quota_reset() -> None:
+    with _guest_lock:
+        _guest_usage.clear()
 
 
 def _normalize_bind_host(bind_host: str) -> str:
@@ -344,15 +386,105 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             """
             # เทียบ master token แบบ constant-time กัน timing attack (hmac.compare_digest)
             provided = self.headers.get("X-Auth-Token")
+            return self._identity_from(provided, self.headers.get("X-API-Key"))
+
+        def _identity_from(self, provided, raw_key) -> Optional[dict]:
+            """แปลง (X-Auth-Token, X-API-Key) → identity. ลำดับ: master/session-of-launch,
+            session หลัง login (session_store), API key (org_store)"""
             if auth_token and provided and hmac.compare_digest(provided, auth_token):
                 username = "__local__" if session_token_auto else "__master__"
-                return {"username": username, "role": "CEO", "tier": "paid", "key_id": None}
-            raw_key = self.headers.get("X-API-Key")
+                return {"username": username, "role": "CEO", "tier": "paid", "key_id": None,
+                        "source": "local" if session_token_auto else "master_token"}
+            if provided:
+                sess = session_store.verify(provided)
+                if sess:
+                    return sess
             if raw_key:
                 rec = org_store.verify_api_key(project_root, raw_key)
                 if rec:
+                    rec.setdefault("source", "api_key")
                     return rec
             return None
+
+        def _page_identity(self) -> Optional[dict]:
+            """ตัวตนสำหรับ "เสิร์ฟหน้าเว็บ" (GET shell เท่านั้น): header เหมือน API หรือ
+            cookie lca_key ที่ app.js ตั้งไว้ — browser เปิดหน้าด้วย navigation ส่ง header เองไม่ได้
+            cookie ไม่ถูกใช้กับ /api/* (กัน CSRF — API ยังเป็น header-only)"""
+            ident = self._identity()
+            if ident is not None:
+                return ident
+            cookie = self.headers.get("Cookie") or ""
+            for part in cookie.split(";"):
+                name, _sep, value = part.strip().partition("=")
+                if name == PAGE_COOKIE and value:
+                    return self._identity_from(value, value)
+            return None
+
+        def _page_allowed(self, route: str) -> bool:
+            """gate หน้าใน PROTECTED_PAGES — คืน False ถ้าตอบ redirect/403 ไปแล้ว"""
+            min_role = PROTECTED_PAGES.get(route)
+            if min_role is None:
+                return True
+            # โหมด local (ไม่ได้ตั้ง token) เปิดจาก loopback = เจ้าของเครื่อง (หน้าได้ session ฝังอยู่แล้ว)
+            hname, _hport = _split_host_header(self.headers.get("Host") or "")
+            if session_token_auto and hname in _LOOPBACK_NAMES:
+                return True
+            ident = self._page_identity()
+            if ident is None:
+                self.send_response(302)
+                self.send_header("Location", f"/login?next={route}")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return False
+            if not org_store.role_at_least(ident["role"], min_role):
+                self._send_json(403, {"error": f"forbidden — หน้า {route} สำหรับ {min_role} ขึ้นไป "
+                                               f"(คุณคือ {ident['role']})"})
+                return False
+            return True
+
+        # ---------- ตัวตนสำหรับแชท: USER+ หรือ GUEST (เมื่อเปิด feature guest_chat) ----------
+        def _chat_identity(self) -> Optional[dict]:
+            """คืน identity สำหรับ /api/chat*: USER ขึ้นไปตามปกติ; ถ้าไม่มี token และเปิด
+            guest_chat → GUEST (ไม่บันทึก, local เท่านั้น, โควตาต่อ IP). ตอบ error ให้แล้วถ้าคืน None"""
+            ident = self._identity()
+            if ident is not None:
+                if not org_store.role_at_least(ident["role"], "USER"):
+                    self._send_json(403, {"error": "forbidden — ต้องมีสิทธิ์ USER ขึ้นไป"})
+                    return None
+                return ident
+            if not feature_flags.is_on(project_root, "guest_chat"):
+                self._send_json(401, {"error": "unauthorized — ต้องมี X-Auth-Token หรือ X-API-Key ที่ถูกต้อง"})
+                return None
+            client = self.client_address[0] if self.client_address else "unknown"
+            if not _guest_quota_ok(client):
+                self._send_json(429, {"error": f"guest ใช้ได้ {GUEST_DAILY_LIMIT} ข้อความต่อวันต่อเครื่อง "
+                                               "— ล็อกอินเพื่อใช้ต่อ"})
+                return None
+            return {"username": None, "role": "GUEST", "tier": "guest", "key_id": None,
+                    "source": "guest", "client": client}
+
+        def send_response(self, code, message=None):
+            # จำว่าส่ง header ไปแล้วหรือยัง — handler ชั้นนอกจะได้รู้ว่ายังตอบ 500 JSON ได้ไหม
+            self._headers_sent = True
+            super().send_response(code, message)
+
+        def _fail_last_resort(self, exc: BaseException) -> None:
+            """ข้อผิดพลาดที่ไม่มีใครดัก: เดิม socket ถูกปิดเงียบ ๆ = curl error 52 "Empty reply".
+            ตอนนี้: ยังไม่ส่ง header → 500 JSON อ่านรู้เรื่อง; ส่งไปแล้ว (เช่นกลาง SSE) → เงียบ
+            (เปลี่ยน status ไม่ได้แล้ว) — ทั้งสองกรณีลง error_log ให้ /dev เห็น"""
+            msg = f"{exc.__class__.__name__}: {exc}"
+            print(f"[server][error] {self.command} {self.path} → {msg}")
+            try:
+                history_store.log_error(project_root, "error", f"{self.command} {self.path}", msg)
+            except Exception:
+                pass
+            if not getattr(self, "_headers_sent", False):
+                try:
+                    self._send_json(500, {"error": "internal error — ดู error log ที่ /dev",
+                                          "type": exc.__class__.__name__})
+                except (BrokenPipeError, ConnectionResetError, OSError):
+                    pass
 
         def _listen_port(self) -> int:
             return int(self.server.server_address[1])
@@ -497,7 +629,17 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 return
             if self._schedule_gated(parsed):
                 return
+            try:
+                self._route_get(parsed)
+            except (BrokenPipeError, ConnectionResetError):
+                return
+            except Exception as e:  # noqa: BLE001 — ด่านสุดท้าย กัน empty reply
+                self._fail_last_resort(e)
+
+        def _route_get(self, parsed):
             if parsed.path in STATIC_ROUTES:
+                if not self._page_allowed(parsed.path):
+                    return
                 self._serve_static(parsed.path)
             elif parsed.path == "/api/todos":
                 self._handle_todos_get()
@@ -614,7 +756,44 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 "username": ident.get("username"),
                 "role": ident.get("role"),
                 "tier": ident.get("tier"),
+                "source": ident.get("source"),
+                "expires_at": ident.get("expires_at"),
             })
+
+        # ---------- Auth: login ด้วย username/password → session token ----------
+        def _handle_auth_login(self):
+            """public: {username, password} → {token, role, ...}. token ใช้เป็น X-Auth-Token
+            brute-force guard ต่อ IP (session_store.login_allowed) — ล้มเหลวเกิน → 429"""
+            client = self.client_address[0] if self.client_address else "unknown"
+            if not session_store.login_allowed(client):
+                self._send_json(429, {"error": "ล็อกอินพลาดบ่อยเกินไป — รอ 1 นาทีแล้วลองใหม่"})
+                return
+            data = self._read_json_body()
+            username = str(data.get("username") or "").strip()
+            password = str(data.get("password") or "")
+            if not username or not password:
+                self._send_json(400, {"error": "ต้องระบุ username และ password"})
+                return
+            rec = org_store.verify_password(project_root, username, password)
+            if rec is None:
+                session_store.record_failure(client)
+                # ข้อความเดียวกันไม่ว่า user ไม่มีหรือรหัสผิด (ไม่บอกว่ามี user นี้ไหม)
+                self._send_json(401, {"error": "username หรือ password ไม่ถูกต้อง"})
+                return
+            session_store.reset_failures(client)
+            sess = session_store.create(username, rec["role"])
+            self._send_json(200, {
+                "token": sess["token"],
+                "username": username,
+                "role": rec["role"],
+                "tier": sess["tier"],
+                "expires_at": sess["expires_at"],
+            })
+
+        def _handle_auth_logout(self):
+            provided = self.headers.get("X-Auth-Token")
+            revoked = session_store.revoke(provided)
+            self._send_json(200, {"revoked": revoked})
 
         def _handle_users_list(self):
             if self._require("ADMIN") is None:
@@ -873,11 +1052,14 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             try:
                 for chunk in gen:
                     sse({"delta": chunk})
-            except (connections.ConnectionError, bots.BotError) as e:
-                sse({"error": str(e)})          # สมองพังกลางสตรีม — 200 ออกไปแล้ว ส่ง error event
-                return
             except (BrokenPipeError, ConnectionResetError):
                 return                          # client ปิดแท็บกลางคัน — เงียบไว้
+            except Exception as e:  # noqa: BLE001 — สมองพังกลางสตรีม: 200 ออกไปแล้ว ต้องปิดด้วย error event เสมอ
+                try:
+                    sse({"error": str(e) or e.__class__.__name__})
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+                return
             sse({"done": True})
 
         def _handle_connections_chat_stream(self):
@@ -1381,10 +1563,23 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             if self._schedule_gated(parsed):
                 return
             try:
+                self._route_post(parsed)
+            except (BrokenPipeError, ConnectionResetError):
+                return
+            except Exception as e:  # noqa: BLE001 — ด่านสุดท้าย กัน empty reply (curl 52)
+                self._fail_last_resort(e)
+
+        def _route_post(self, parsed):
+            try:
                 if parsed.path == "/api/chat":
                     self._handle_chat()
-                elif parsed.path == "/api/chat/stream":
+                elif parsed.path in ("/api/chat/stream", "/api/vscode/chat"):
+                    # /api/vscode/chat = สัญญาเดียวกับ /api/chat/stream (SSE delta/done) สำหรับ extension
                     self._handle_chat_stream()
+                elif parsed.path == "/api/auth/login":
+                    self._handle_auth_login()
+                elif parsed.path == "/api/auth/logout":
+                    self._handle_auth_logout()
                 elif chat_hub.wants_post(parsed.path):
                     chat_hub.handle_post(self, parsed, project_root, gen_gate)
                 elif parsed.path == "/api/todos":
@@ -1801,6 +1996,15 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                                                "(อัปเกรดเป็น tier paid เพื่อใช้ได้ไม่จำกัด)"})
                 return None
             data = self._read_json_body()
+            if ident.get("role") == "GUEST":
+                # guest: คำตอบอยู่แค่ในเบราว์เซอร์ — ห้ามแตะ DB และห้ามใช้ provider ที่เสียเงิน
+                if data.get("conversation_id"):
+                    self._send_json(403, {"error": "guest ไม่บันทึกบทสนทนา — ล็อกอินเพื่อใช้ประวัติ"})
+                    return None
+                prov = data.get("provider")
+                if isinstance(prov, str) and prov.strip() and not chat_hub.is_local_provider(prov, project_root):
+                    self._send_json(403, {"error": "guest ใช้ได้เฉพาะโมเดล local"})
+                    return None
             # Auto-scale compute: ถ้า client ไม่ระบุ model (หรือขอ "auto") ให้เลือก
             # โมเดลใหญ่สุดที่ RAM ว่างตอนนี้รับไหว (resource_budget) — เครื่องอ่อนได้ 0.5b,
             # เครื่องแรงได้ตัวใหญ่ขึ้นอัตโนมัติ; ถ้าระบุ model มาเองก็เคารพตามนั้น
@@ -1847,6 +2051,9 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             """หักโควตา + บันทึก usage + เก็บ dataset — หลังได้คำตอบเต็มแล้ว (blocking/stream ใช้ร่วม)"""
             # หักโควตาหลังได้คำตอบจริงเท่านั้น (master/local ไม่มี key_id = ไม่หัก)
             # แล้วบันทึก usage ลง SQLite ด้วย (metering ย้อนหลัง/คิดเงินต่อ tier)
+            if ident.get("role") == "GUEST":
+                _guest_quota_consume(ident.get("client") or "unknown")
+                return  # guest: ไม่ metering/ไม่ dataset — ไม่มีอะไรลงดิสก์
             if ident.get("key_id"):
                 org_store.consume_quota(project_root, ident["key_id"])
                 try:
@@ -1883,7 +2090,7 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             return res["node"]   # None = ไม่มี node พร้อม → local
 
         def _handle_chat(self):
-            ident = self._require("USER")
+            ident = self._chat_identity()
             if ident is None:
                 return
             prepared = self._chat_prepare(ident)
@@ -1930,7 +2137,7 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             ผู้ใช้เห็นคำตอบทยอยขึ้นทันที ไม่ต้องรอทั้งก้อน (สำคัญบนเครื่องช้า ~10 tok/s)
             รูปแบบ: `data: {"delta": "..."}` ต่อ chunk, จบด้วย `data: {"done": true}`,
             ถ้าพังกลางคัน `data: {"error": "..."}` (status เป็น 200 ไปแล้ว เปลี่ยนไม่ได้)"""
-            ident = self._require("USER")
+            ident = self._chat_identity()
             if ident is None:
                 return
             prepared = self._chat_prepare(ident)
@@ -1965,11 +2172,14 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                         for chunk in model_backend.generate_stream(project_root, model, messages, num_ctx):
                             parts.append(chunk)
                             sse({"delta": chunk})
-                    except model_backend.BackendError as e:
-                        sse({"error": str(e)})
-                        return
                     except (BrokenPipeError, ConnectionResetError):
                         # client ปิดแท็บกลางคัน — ไม่ใช่ error ของเรา เงียบไว้ (ไม่หักโควตา)
+                        return
+                    except Exception as e:  # noqa: BLE001 — BackendError หรืออะไรก็ตาม: สตรีมต้องจบด้วย event เสมอ
+                        try:
+                            sse({"error": str(e) or e.__class__.__name__, "status": "error", "partial": True})
+                        except (BrokenPipeError, ConnectionResetError):
+                            pass
                         return
                     # finalize หลังสตรีมจบครบ (หักโควตา/usage/dataset เหมือน blocking)
                     self._chat_finalize(ident, model, messages, "".join(parts))

@@ -162,7 +162,7 @@ def list_conversations(conn, *, folder_id="all", limit: int = 50) -> list:
     limit = max(1, min(int(limit or 50), 50))
     if folder_id == "all" or folder_id is None:
         rows = conn.execute(
-            """SELECT id, uid, title, folder_id, pinned, archived, updated_at, active_leaf_id
+            """SELECT id, uid, title, folder_id, pinned, archived, updated_at, active_leaf_id, owner
                FROM conversations WHERE archived=0
                ORDER BY pinned DESC, updated_at DESC LIMIT ?""",
             (limit,),
@@ -170,7 +170,7 @@ def list_conversations(conn, *, folder_id="all", limit: int = 50) -> list:
     else:
         fid = None if folder_id in ("", "root") else _as_int(folder_id, "folder_id")
         rows = conn.execute(
-            """SELECT id, uid, title, folder_id, pinned, archived, updated_at, active_leaf_id
+            """SELECT id, uid, title, folder_id, pinned, archived, updated_at, active_leaf_id, owner
                FROM conversations
                WHERE folder_id IS ? AND archived=0
                ORDER BY pinned DESC, updated_at DESC LIMIT ?""",
@@ -466,7 +466,7 @@ def search(conn, query: str, limit: int = 50) -> dict:
     pattern = like_pattern(query)
     titles = [
         _row(r) for r in conn.execute(
-            """SELECT id, uid, title, updated_at FROM conversations
+            """SELECT id, uid, title, updated_at, owner FROM conversations
                WHERE archived=0 AND title LIKE ? ESCAPE '\\'
                ORDER BY updated_at DESC LIMIT ?""",
             (pattern, limit),
@@ -476,7 +476,7 @@ def search(conn, query: str, limit: int = 50) -> dict:
     built = fts_query(query)
     if built is None and is_single_thai_char(query):
         rows = conn.execute(
-            """SELECT m.id, m.conversation_id, c.title, m.role, m.model, m.content
+            """SELECT m.id, m.conversation_id, c.title, c.owner, m.role, m.model, m.content
                FROM messages m JOIN conversations c ON c.id = m.conversation_id
                WHERE c.archived=0 AND m.content LIKE ? ESCAPE '\\'
                  AND m.conversation_id IN (
@@ -491,7 +491,7 @@ def search(conn, query: str, limit: int = 50) -> dict:
             messages.append(item)
     elif built:
         rows = conn.execute(
-            """SELECT m.id, m.conversation_id, c.title, m.role, m.model, m.content, f.rank
+            """SELECT m.id, m.conversation_id, c.title, c.owner, m.role, m.model, m.content, f.rank
                FROM (SELECT rowid, rank FROM msg_fts WHERE msg_fts MATCH ? ORDER BY rank LIMIT ?) f
                JOIN messages m ON m.id = f.rowid
                JOIN conversations c ON c.id = m.conversation_id

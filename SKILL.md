@@ -2,8 +2,9 @@
 name: local-code-assistant
 description: >
 
-  LCA (Local Code Assistant) v0.2.9 — AI Coding Assistant + Desktop App แบบก้อนเดียว
-  รันบน Ollama (local/cloud hybrid), bind 127.0.0.1, 1124 tests pass, Cloud Tunnel routes wired.
+  LCA (Local Code Assistant) v0.3.5 — AI Coding Assistant + Desktop App แบบก้อนเดียว
+  รันบน Ollama (local/cloud hybrid), bind 127.0.0.1, 1333 tests pass, login/session + RBAC pages
+  + conversation ownership + SSE contract hardened.
 
   ใช้ skill นี้เมื่อผู้ใช้ต้องการ: ผู้ช่วยเขียนโค้ดที่รันใน terminal, แก้ไฟล์โค้ด
   อัตโนมัติแบบ diff, ใช้โมเดล local (Ollama) แทน Claude/OpenAI, desktop app (.exe
@@ -11,9 +12,9 @@ description: >
   หรือพูดถึง "Aider", "coding agent ฟรี", "local LLM coding", "LCA Desktop"
 
 
-skill_memory_updated: "2026-11-08"
-version: "0.2.9"
-tests_pass: 1124
+skill_memory_updated: "2026-11-11"
+version: "0.3.5"
+tests_pass: 1333
 customer_readiness_doc: "CUSTOMER_READINESS.md"
 
 ---
@@ -187,7 +188,8 @@ PowerShell/CMD ต้องติดตั้งสำเร็จได้เ�
 | #118 | v0.2.7 | 2026-11-04 | Storage Slim: docs/ 32→22 files, CHANGELOG compact, SKILL.md compact | 🔄 open |
 
 | #195 | v0.2.8 | 2026-11-07 | Cloud Tunnel (cloudflared, free) + consolidated CI workflow + +13 tests | 🔄 open |
-| #196 | v0.2.9 | 2026-11-08 | Wire cloud_tunnel routes into server: GET/POST /api/admin/tunnel/* + 10 tests | 🔄 open |
+| #196 | v0.2.9 | 2026-11-08 | Wire cloud_tunnel routes into server: GET/POST /api/admin/tunnel/* + 10 tests | ✅ merged (รวมใน #195) |
+| next | v0.3.5 | 2026-11-11 | Production hardening: /api/auth/login session, RBAC page gate (/dev,/console), conversation ownership (personal vs org space), SSE contract + no empty reply, GUEST mode (flag), /api/vscode/chat, export?format=md — +37 tests (1333) | 🔄 open |
 
 
 **หลักการ autopilot loop**: open atomic PR → CI → merge → sync branch → next PR
@@ -209,10 +211,17 @@ Branch ทำงาน: `claude/windows-package-architecture-j4znro`
 | Cloud Tunnel (cloudflared, free Quick Tunnel) | ✅ เสร็จ | `app/cloud_tunnel.py` | stdlib only, no account needed, 13 tests |
 | Cloud Tunnel HTTP routes (GET/POST /api/admin/tunnel/*) | ✅ เสร็จ | `server.py` + `tests/test_tunnel_api.py` | ADMIN-only, 10 tests, Rule 24 |
 | Customer Readiness doc + Gap Analysis vs Claude/OpenAI | ✅ เสร็จ | `CUSTOMER_READINESS.md` | ภาษาไทย+อังกฤษ, roadmap P1-P4 |
-| Streaming SSE chat (real-time ทีละตัวอักษร) | ❌ ยังไม่มี | `server.py` | P1 roadmap — ต้องทำก่อนจะเป็น chat UI จริง |
-| Chat UI (chat.html, bubble layout, markdown) | ❌ ยังไม่มี | `app/chat.html` | P1 roadmap — console.html ไม่ใช่ chat |
-| Conversation history / threads | ❌ ยังไม่มี | `app/threads.py` | P2 roadmap |
-| Multi-user auth (login, JWT) | ❌ ยังไม่มี | user table + login.html | P2 roadmap |
+| Streaming SSE chat (real-time ทีละตัวอักษร) | ✅ เสร็จ | `server.py` `_handle_chat_stream`, `app/chat_hub.py` | `/api/chat/stream` + alias `/api/vscode/chat`; สัญญา delta/done/error เสมอ (v0.3.5: ปิดสตรีมด้วย error event ทุกกรณี) |
+| Chat UI (chat.html, bubble layout, markdown) | ✅ เสร็จ | `app/chat.html`, `app/chat.js`, `app/chat.css` | `/chat` — sidebar, provider/model, compare, export/import |
+| Conversation history / threads | ✅ เสร็จ | `app/chat_store.py` (SQLite), `app/chat_hub.py` | branch/regen/edit/search/folders/personas; v0.3.5: owner isolation (personal vs org space) |
+| Multi-user auth (login username/password → session) | ✅ เสร็จ | `app/session_store.py`, `server.py` `/api/auth/login|logout`, `app/login.html` | in-memory session 12h, brute-force guard ต่อ IP, cookie เฉพาะ page gate |
+| RBAC page gate: /dev, /console เฉพาะ ADMIN+ | ✅ เสร็จ | `server.py` `PROTECTED_PAGES`, `_page_allowed` | ไม่มีตัวตน → 302 /login?next=, USER → 403; โหมด local loopback ผ่าน |
+| GUEST chat (ไม่ล็อกอิน, ไม่บันทึก, local เท่านั้น) | ✅ เสร็จ (ปิด default) | `server.py` `_chat_identity`, flag `guest_chat` | โควตา 20/วัน/IP in-memory, ห้าม conversation_id/cloud provider |
+| Session Tape export (JSON + Markdown) | ✅ เสร็จ | `app/chat_hub.py` `export_markdown` | `GET /api/chat/export?id=..&format=md` |
+| No "Empty reply" (curl 52) | ✅ เสร็จ | `server.py` `_fail_last_resort` | exception ที่ไม่มีใครดัก → 500 JSON + error_log (ถ้ายังไม่ส่ง header) |
+| Multimodal (image/file upload) | ❌ ยังไม่มี | — | P3 roadmap |
+| RAG / document search | ❌ ยังไม่มี | — | P3 roadmap |
+| Voice I/O, Code execution sandbox | ❌ ยังไม่มี | — | P4 roadmap |
 
 | `/linear` เขียนสถานะกลับ | ⏸️ พักไว้ก่อน | `app/linear_connector.py` | ห้ามแตะจนกว่าผู้ใช้จะขอกลับมาทำต่อ — ดู Rule ข้อ 16 |
 
@@ -350,6 +359,9 @@ uninstaller (copy ไปรันที่ `%TEMP%` ก่อนลบตัว�
 23. **`config.json` ต้องไม่ถูก commit เข้า git เด็ดขาด** — ต้องอยู่ใน `.gitignore` และห้าม print ค่า key เต็มๆ ออกจอ
 
 24. **`cloud_tunnel.py` tunnel เฉพาะ `127.0.0.1:{port}` เท่านั้น** — ห้ามแก้ให้ชี้ไป host อื่น หรือ expose LCA token ใน URL
+25. **SSE ต้องจบด้วย event เสมอ** — หลังส่ง `200 text/event-stream` แล้ว ห้ามเรียก `_send_json` ซ้อน; ทุกทางออก (สำเร็จ/พัง/busy) ต้องเป็น `data: {"done":true}` หรือ `data: {"error":...}` และ handler ชั้นนอกต้องไม่ปล่อย exception หลุดจน socket ปิดเงียบ (curl 52)
+26. **ขอบเขตข้อมูลตามตัวตน** — บทสนทนา `owner=ชื่อ` = ส่วนตัว (เจ้าของ + ADMIN/CEO), `owner=NULL` = พื้นที่บริษัท; ทุก route ที่อ่าน/แก้บทสนทนาต้องผ่าน `_assert_access` ก่อน; GUEST ห้ามแตะ DB และห้ามใช้ provider ที่เสียเงิน
+27. **cookie `lca_key` ใช้ได้เฉพาะ gate หน้าเว็บ (GET shell)** — `/api/*` ต้องเป็น header-only (X-Auth-Token / X-API-Key) เท่านั้น กัน CSRF; session token อยู่ใน RAM ไม่ลงดิสก์
 
 ## Observability Chain (v0.1.4–v0.2.9)
 

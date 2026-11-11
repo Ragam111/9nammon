@@ -1,9 +1,9 @@
 # LCA Customer Readiness Report
 # รายงานความพร้อมสำหรับลูกค้า — Local Code Assistant (LCA)
 
-**Version:** v0.2.9  
-**Date:** 2026-11-08  
-**Status:** Production-ready core · Chat UI gap analysis included
+**Version:** v0.3.5  
+**Date:** 2026-11-11  
+**Status:** Production-ready core + Chat UI + multi-user · Gap analysis แก้ให้ตรงโค้ดจริง
 
 ---
 
@@ -11,10 +11,15 @@
 
 LCA (Local Code Assistant) คือ AI coding assistant ที่รันในเครื่องผู้ใช้เอง 100%
 ผ่าน Ollama ไม่มีค่า token ไม่ส่งข้อมูลออก internet  
-ระบบ backend/server/API พร้อมใช้งานและมี 1,124 unit tests ผ่านทั้งหมด
+ระบบ backend/server/API พร้อมใช้งานและมี **1,333 unit tests ผ่านทั้งหมด**
 
-**สิ่งที่ใช้งานได้ทันที:** REST API, Web Console, Security layer, Cloud Tunnel  
-**สิ่งที่ยังขาด:** Streaming chat UI แบบ Claude/OpenAI/Gemini (รายละเอียดในส่วน 4)
+**สิ่งที่ใช้งานได้ทันที:** Chat UI (`/chat`) แบบ streaming + ประวัติสนทนา (SQLite), หลายค่ายโมเดล
+(Ollama / OpenAI-compatible / Anthropic / OpenAI / Gemini / xAI), login ด้วยบัญชี (USER/ADMIN/CEO),
+REST API, Web Console, Security layer, Cloud Tunnel  
+**สิ่งที่ยังขาด:** Multimodal (รูป/ไฟล์), RAG, Voice, Code sandbox (รายละเอียดในส่วน 4)
+
+> หมายเหตุ: เอกสารฉบับ v0.2.9 ระบุว่า Streaming / Chat UI / Conversation history "ไม่มี" —
+> ตรวจโค้ดจริงแล้ว **มีครบ** (`/api/chat/stream`, `app/chat.html`, `app/chat_store.py`) จึงแก้ให้ตรง
 
 ---
 
@@ -23,7 +28,10 @@ LCA (Local Code Assistant) คือ AI coding assistant ที่รันใ�
 ### 2.1 Core Backend Server
 | Component | File | สถานะ | รายละเอียด |
 |-----------|------|--------|-----------|
-| HTTP Server | `server.py` | ✅ Ready | stdlib only, bind 127.0.0.1, RBAC |
+| HTTP Server | `server.py` | ✅ Ready | stdlib only, bind 127.0.0.1, RBAC, ไม่มี empty reply (500 JSON เสมอ) |
+| Chat Hub + Store | `app/chat_hub.py`, `app/chat_store.py` | ✅ Ready | SSE streaming, history (SQLite), branch/regen/compare, owner isolation |
+| Providers | `app/providers/` | ✅ Ready | ollama, openai_compat, openai, anthropic, gemini, xai |
+| Login / Session | `app/session_store.py`, `app/login.html` | ✅ Ready | username/password → session 12h, brute-force guard |
 | AI Connections | `app/connections.py` | ✅ Ready | CRUD, test-connection, chat endpoint |
 | Skills Store | `app/skills_store.py` | ✅ Ready | prompt templates, bots |
 | Bots | `app/bots.py` | ✅ Ready | automation, run endpoint |
@@ -36,6 +44,10 @@ LCA (Local Code Assistant) คือ AI coding assistant ที่รันใ�
 | รายการ | สถานะ | รายละเอียด |
 |--------|--------|-----------|
 | Token authentication | ✅ | `hmac.compare_digest` (timing-safe, Rule 10) |
+| Login session + lockout | ✅ | `POST /api/auth/login`, 5 ครั้งพลาด/นาที/IP → 429 |
+| RBAC pages | ✅ | `/dev`, `/console` เฉพาะ ADMIN+ (302 → /login หรือ 403) |
+| Data scope per user | ✅ | บทสนทนาส่วนตัว = เจ้าของ+ADMIN เท่านั้น; Guest ไม่บันทึก |
+| Free / Paid quota | ✅ | free 100 req/วัน → 429; paid ไม่จำกัด; หักหลังตอบสำเร็จเท่านั้น |
 | Request body size limit | ✅ | DoS protection (Rule 11) |
 | SSRF guard on http_get | ✅ | ห้ามชี้ไป internal IP (Rule 14) |
 | Cloud Tunnel SSRF guard | ✅ | tunnel เฉพาะ `127.0.0.1:{port}` (Rule 24) |
@@ -50,6 +62,15 @@ GET  /api/connections       — list connections
 POST /api/connections       — create connection
 POST /api/connections/{id}/test  — test AI connection
 POST /api/connections/{id}/chat  — send message to AI
+
+POST /api/auth/login        — {username,password} → session token (X-Auth-Token)
+POST /api/auth/logout       — revoke session
+GET  /api/me                — ตัวตนปัจจุบัน (username/role/tier/source)
+POST /api/chat              — chat (blocking) — USER+ หรือ GUEST (ถ้าเปิด flag)
+POST /api/chat/stream       — SSE: data:{"delta"} ... data:{"done":true} | data:{"error"}
+POST /api/vscode/chat       — alias ของ /api/chat/stream สำหรับ extension
+GET  /api/chat/conversations[?id=] — ประวัติ (เห็นเฉพาะของตัวเอง + พื้นที่บริษัท)
+GET  /api/chat/export?id=&format=json|md — Session Tape
 
 GET  /api/skills            — list skills
 POST /api/skills            — create skill
@@ -72,7 +93,7 @@ GET  /console               — Web Console UI (ADMIN)
 | `LCA-Desktop.exe` | Single-file executable (ไม่ต้องติดตั้ง Python) |
 
 ### 2.5 Quality Gate
-- **1,124 unit tests ผ่าน** (pytest) ทุก push
+- **1,333 unit tests ผ่าน** (`python -m unittest discover -s tests`) ทุก push
 - CI/CD: GitHub Actions workflow `test.yml`
 - Test coverage: connections, skills, bots, console, schedule gate, tunnel, DB, stats store
 
@@ -125,15 +146,14 @@ Claude.ai / OpenAI Chat / Gemini / Grok
 ├── ✅ Code execution (sandbox)
 └── ✅ RAG / Document upload & search
 
-LCA v0.2.9
+LCA v0.3.5
 ├── ✅ REST API + Web Console (admin)
-├── ✅ Single-turn chat (batch, not streaming)
-├── ❌ Streaming (SSE/WebSocket) — ไม่มี
-├── ❌ Chat UI (chat bubble, markdown render) — ไม่มี
-├── ❌ Conversation history — ไม่มี (stateless per request)
+├── ✅ Streaming (SSE) — /api/chat/stream, /api/vscode/chat
+├── ✅ Chat UI — /chat (sidebar, provider/model, compare, export/import)
+├── ✅ Conversation history — SQLite (branch/regen/edit/search), แยกพื้นที่ต่อผู้ใช้
+├── ✅ Multi-user auth — login username/password, USER/ADMIN/CEO, GUEST mode (flag)
+├── ⚠️ Mobile UI — ใช้ได้ (viewport responsive) แต่ยังไม่ได้ออกแบบเฉพาะ
 ├── ❌ Multimodal — ไม่มี
-├── ❌ Multi-user auth — ไม่มี (admin token only)
-├── ❌ Mobile UI — ไม่ได้ออกแบบ
 ├── ❌ Voice — ไม่มี
 ├── ❌ Code execution — ไม่มี
 └── ❌ RAG / Document search — ไม่มี
@@ -141,40 +161,23 @@ LCA v0.2.9
 
 ### รายละเอียด Gap แต่ละอย่าง
 
-#### 4.1 ❌ Streaming Chat (สำคัญมาก)
-**ปัญหา:** `server.py` ตอบกลับแบบ batch (รอ AI ตอบครบแล้วส่งทีเดียว)  
-**ผลกระทบ:** UX แย่มาก — รอนาน ไม่เห็น progress  
-**แก้ด้วย:** Server-Sent Events (SSE) หรือ WebSocket  
-**งานที่ต้องทำ:**  
-- เพิ่ม `Content-Type: text/event-stream` ใน handler  
-- Ollama API รองรับ streaming แล้ว (`stream: true`)  
-- Frontend ต้องใช้ `EventSource` API หรือ `fetch` + `ReadableStream`
+#### 4.1 ✅ Streaming Chat — มีแล้ว
+`POST /api/chat/stream` ส่ง `text/event-stream; charset=utf-8` ทีละ chunk `data: {"delta": "..."}`
+และจบด้วย `data: {"done": true}` เสมอ (พังกลางคัน → `data: {"error": "..."}`) — v0.3.5 ปิดช่องที่
+exception ไม่คาดคิดทำให้สตรีมค้างหรือมี HTTP response ซ้อนในสตรีม
 
-#### 4.2 ❌ Chat UI (Bubble Layout)
-**ปัญหา:** `console.html` เป็น admin panel ไม่ใช่ chat UI  
-**ผลกระทบ:** ผู้ใช้ทั่วไปใช้ไม่ได้ (ต้องเป็น admin)  
-**แก้ด้วย:** สร้าง `chat.html` ใหม่ที่มี:  
-- Message bubble layout (user/assistant)  
-- Markdown rendering (marked.js / highlight.js)  
-- Input box + submit button  
-- ประวัติ scroll  
-- Typing indicator
+#### 4.2 ✅ Chat UI — มีแล้ว
+`app/chat.html` + `chat.js` + `chat.css` ที่ `/chat`: sidebar ประวัติ, เลือก provider/model, persona,
+เทียบหลายโมเดล, export/import, ephemeral session
 
-#### 4.3 ❌ Conversation History
-**ปัญหา:** แต่ละ request ไป `/api/connections/{id}/chat` เป็น stateless  
-**ผลกระทบ:** AI ไม่จำบทสนทนาก่อนหน้า  
-**แก้ด้วย:**  
-- เพิ่ม `app/threads.py` — CRUD สำหรับ thread/session  
-- เก็บ `messages[]` array ใน SQLite  
-- ส่ง history ไปใน `messages` ทุกครั้ง (Ollama รองรับ)
+#### 4.3 ✅ Conversation History — มีแล้ว
+`app/chat_store.py` (SQLite, migration) + `app/chat_hub.py`: branch/regen/edit/search/folders;
+v0.3.5: บทสนทนาของผู้ใช้คนหนึ่ง คนอื่น (ที่ไม่ใช่ ADMIN/CEO) มองไม่เห็น/แก้ไม่ได้ (403)
 
-#### 4.4 ❌ Multi-User Authentication
-**ปัญหา:** ระบบปัจจุบันมีแค่ ADMIN token เดียว  
-**ผลกระทบ:** ผู้ใช้หลายคนแชร์กันไม่ได้  
-**แก้ด้วย:**  
-- เพิ่ม user table ใน SQLite  
-- JWT หรือ session cookie  
-- Login page
+#### 4.4 ✅ Multi-User Authentication — มีแล้ว
+`POST /api/auth/login` (username/password จาก `org_store` PBKDF2) → session token อายุ 12 ชม.
+(in-memory), lockout 5 ครั้งพลาด/นาที/IP, `/dev` และ `/console` เฉพาะ ADMIN+. Guest (ไม่ล็อกอิน)
+แชทได้เฉพาะเมื่อเปิด flag `guest_chat` และคำตอบอยู่แค่ในเบราว์เซอร์
 
 #### 4.5 ❌ Multimodal (Image/File Upload)
 **ปัญหา:** ไม่มี file upload endpoint  
@@ -201,17 +204,17 @@ LCA v0.2.9
 
 | Priority | Feature | งานที่ต้องทำ | ขนาดงาน |
 |----------|---------|--------------|---------|
-| 🔴 P1 | Streaming SSE | server.py + chat.html | ~2 วัน |
-| 🔴 P1 | Chat UI (chat.html) | HTML/CSS/JS + markdown | ~3 วัน |
-| 🟡 P2 | Conversation threads | app/threads.py + DB | ~2 วัน |
-| 🟡 P2 | Multi-user auth | user table + login.html | ~3 วัน |
+| ✅ | Streaming SSE | เสร็จ (v0.2.x) | — |
+| ✅ | Chat UI (chat.html) | เสร็จ (v0.2.x) | — |
+| ✅ | Conversation threads | เสร็จ (v0.2.x) + ownership (v0.3.5) | — |
+| ✅ | Multi-user auth | เสร็จ (v0.3.5) | — |
 | 🟢 P3 | File/Image upload | upload endpoint + UI | ~2 วัน |
 | 🟢 P3 | RAG / Doc search | app/rag.py + embeddings | ~5 วัน |
 | ⚪ P4 | Voice I/O | Whisper (local) + TTS | ~3 วัน |
 | ⚪ P4 | Code execution | sandbox (subprocess) | ~3 วัน |
 
-**รวมถึงจะมี basic Claude-like chat:** ~10 วัน (P1 + P2)  
-**รวมถึงจะ feature-complete กับ Claude.ai:** ~21+ วัน
+**basic Claude-like chat:** ✅ มีแล้ว (P1 + P2 เสร็จ)  
+**feature-complete กับ Claude.ai (multimodal/RAG/voice/sandbox):** ~13+ วัน
 
 ---
 
@@ -234,9 +237,9 @@ LCA v0.2.9
 |--------|------------|
 | นักพัฒนา / DevOps ที่ใช้ REST API | ✅ พร้อม 100% |
 | ทีม IT ที่ต้องการ AI ภายในองค์กร (via API) | ✅ พร้อม |
-| ผู้ใช้ทั่วไปที่ต้องการหน้าแชท | ⚠️ ยังไม่มี chat UI (P1 roadmap) |
-| ผู้ใช้ที่ต้องการ streaming / real-time | ⚠️ ยังไม่มี SSE (P1 roadmap) |
-| องค์กรที่ต้องการ multi-user | ⚠️ ยังไม่มี user auth (P2 roadmap) |
+| ผู้ใช้ทั่วไปที่ต้องการหน้าแชท | ✅ พร้อม (`/chat`, streaming) |
+| องค์กรที่ต้องการ multi-user แยกข้อมูลต่อคน | ✅ พร้อม (login + ownership + RBAC pages) |
+| ผู้ใช้ที่ต้องการถามจากรูป/ไฟล์ (multimodal/RAG) | ⚠️ ยังไม่มี (P3 roadmap) |
 
 ---
 
