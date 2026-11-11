@@ -1,0 +1,6 @@
+{
+  "name": "lca-local-dashboard",
+  "private": true,
+  "type": "module",
+  "description": "Static LCA local dashboard. No runtime dependencies."
+}
