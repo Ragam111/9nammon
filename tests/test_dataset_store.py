@@ -74,3 +74,41 @@ class DatasetStoreTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DatasetStoreExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_add_sample_returns_dict_with_id(self):
+        s = dataset_store.add_sample(self.root, "hello", "world")
+        self.assertIsInstance(s, dict)
+        self.assertIn("id", s)
+
+    def test_count_increases_after_add(self):
+        self.assertEqual(dataset_store.count(self.root), 0)
+        dataset_store.add_sample(self.root, "q", "a")
+        self.assertEqual(dataset_store.count(self.root), 1)
+
+    def test_list_returns_list(self):
+        dataset_store.add_sample(self.root, "q", "a")
+        result = dataset_store.list_samples(self.root)
+        self.assertIsInstance(result, list)
+        self.assertEqual(len(result), 1)
+
+    def test_delete_decrements_count(self):
+        s = dataset_store.add_sample(self.root, "q", "a")
+        dataset_store.delete_sample(self.root, s["id"])
+        self.assertEqual(dataset_store.count(self.root), 0)
+
+    def test_delete_unknown_id_returns_false(self):
+        self.assertFalse(dataset_store.delete_sample(self.root, 999999))
+
+    def test_export_jsonl_has_lines(self):
+        dataset_store.add_sample(self.root, "p", "r")
+        out = dataset_store.export_jsonl(self.root, fmt="messages")
+        self.assertGreater(len(out.splitlines()), 0)
