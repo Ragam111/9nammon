@@ -136,5 +136,38 @@ class ConnectionsTest(unittest.TestCase):
             connections.chat(self.root, rec["id"], [{"role": "user", "content": "hi"}])
 
 
+class ConnectionsExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self._orig_backend_for = connections._backend_for
+
+    def tearDown(self):
+        connections._backend_for = self._orig_backend_for
+        self._tmp.cleanup()
+
+    def test_connection_error_is_exception(self):
+        self.assertTrue(issubclass(connections.ConnectionError, Exception))
+
+    def test_add_returns_dict(self):
+        rec = connections.add(self.root, "ExtraConn", "ollama")
+        self.assertIsInstance(rec, dict)
+
+    def test_add_has_id_field(self):
+        rec = connections.add(self.root, "ExtraConn2", "ollama")
+        self.assertIn("id", rec)
+
+    def test_add_id_starts_with_con(self):
+        rec = connections.add(self.root, "ExtraConn3", "ollama")
+        self.assertTrue(rec["id"].startswith("con-"))
+
+    def test_list_returns_list(self):
+        self.assertIsInstance(connections.list_connections(self.root), list)
+
+    def test_ollama_no_base_url_ok(self):
+        rec = connections.add(self.root, "OllamaDefault", "ollama")
+        self.assertIsNotNone(rec)
+
+
 if __name__ == "__main__":
     unittest.main()
