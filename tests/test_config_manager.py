@@ -100,5 +100,51 @@ class ListKeysTest(unittest.TestCase):
                 self.assertNotEqual(k, "should-not-appear")
 
 
+class ConfigManagerExtraTest(unittest.TestCase):
+    def test_set_key_creates_config_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            config_manager.set_key(p, "X", "val")
+            self.assertTrue((p / "config.json").exists())
+
+    def test_get_key_returns_none_for_empty_config(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            (p / "config.json").write_text("{}", encoding="utf-8")
+            self.assertIsNone(config_manager.get_key(p, "MISSING_KEY"))
+
+    def test_list_keys_returns_list_type(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            cfg = {"A": "1"}
+            (p / "config.json").write_text(json.dumps(cfg), encoding="utf-8")
+            result = config_manager.list_configured_keys(p)
+            self.assertIsInstance(result, list)
+
+    def test_config_file_valid_json_after_set_key(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            config_manager.set_key(p, "K", "v")
+            content = (p / "config.json").read_text(encoding="utf-8")
+            parsed = json.loads(content)
+            self.assertIsInstance(parsed, dict)
+
+    def test_set_key_string_value_stored_correctly(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            config_manager.set_key(p, "MY_KEY", "my-value-123")
+            self.assertEqual(config_manager.get_key(p, "MY_KEY"), "my-value-123")
+
+    def test_multiple_set_keys_all_accessible(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            config_manager.set_key(p, "K1", "v1")
+            config_manager.set_key(p, "K2", "v2")
+            config_manager.set_key(p, "K3", "v3")
+            self.assertEqual(config_manager.get_key(p, "K1"), "v1")
+            self.assertEqual(config_manager.get_key(p, "K2"), "v2")
+            self.assertEqual(config_manager.get_key(p, "K3"), "v3")
+
+
 if __name__ == "__main__":
     unittest.main()

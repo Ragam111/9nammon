@@ -108,5 +108,44 @@ class FilePersistenceTest(unittest.TestCase):
         self.assertIsNone(s.path)
 
 
+class AgentStatsExtraTest(unittest.TestCase):
+    def test_summary_returns_dict(self):
+        s = Stats()
+        sm = s.summary()
+        self.assertIsInstance(sm, dict)
+
+    def test_max_recent_constant_is_positive_int(self):
+        self.assertIsInstance(MAX_RECENT, int)
+        self.assertGreater(MAX_RECENT, 0)
+
+    def test_recent_returns_list(self):
+        s = Stats()
+        result = s.recent()
+        self.assertIsInstance(result, list)
+
+    def test_record_ok_false_counts_in_summary(self):
+        s = Stats()
+        s.record({"ok": True, "duration_s": 1, "steps": 1})
+        s.record({"ok": True, "duration_s": 1, "steps": 1})
+        s.record({"ok": False, "duration_s": 1, "steps": 1})
+        sm = s.summary()
+        self.assertEqual(sm["ok"], 2)
+        self.assertEqual(sm["count"], 3)
+
+    def test_summary_success_rate_zero_when_all_fail(self):
+        s = Stats()
+        s.record({"ok": False, "duration_s": 1, "steps": 1})
+        s.record({"ok": False, "duration_s": 1, "steps": 1})
+        sm = s.summary()
+        self.assertEqual(sm["success_rate"], 0.0)
+
+    def test_file_persistence_creates_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "stats.jsonl"
+            s = Stats(path=p)
+            s.record({"ok": True, "duration_s": 1, "steps": 1})
+            self.assertTrue(p.exists())
+
+
 if __name__ == "__main__":
     unittest.main()
