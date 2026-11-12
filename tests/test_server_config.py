@@ -24,7 +24,6 @@ class ResolveServerConfigTest(unittest.TestCase):
         self.assertEqual(cfg, {"host": "127.0.0.1", "port": 8420, "token": None})
 
     def test_env_port_read_when_not_overridden(self):
-        # cloud ฉีด $PORT — ต้องอ่าน (ค่า --port ยัง default)
         cfg = server.resolve_server_config(
             _args(host="0.0.0.0", token="x"), env={"PORT": "10000"})
         self.assertEqual(cfg["port"], 10000)
@@ -46,7 +45,6 @@ class ResolveServerConfigTest(unittest.TestCase):
         self.assertEqual(cfg["token"], "cli")
 
     def test_bind_public_without_token_rejected(self):
-        # Rule 12: bind ออกนอก 127.0.0.1 โดยไม่มี token = ValueError
         with self.assertRaises(ValueError):
             server.resolve_server_config(_args(host="0.0.0.0"), env={})
 
@@ -66,3 +64,29 @@ class ResolveServerConfigTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ServerConfigExtraTest(unittest.TestCase):
+    def test_returns_dict(self):
+        cfg = server.resolve_server_config(_args(), env={})
+        self.assertIsInstance(cfg, dict)
+
+    def test_host_key_in_result(self):
+        cfg = server.resolve_server_config(_args(), env={})
+        self.assertIn("host", cfg)
+
+    def test_port_key_in_result(self):
+        cfg = server.resolve_server_config(_args(), env={})
+        self.assertIn("port", cfg)
+
+    def test_token_key_in_result(self):
+        cfg = server.resolve_server_config(_args(), env={})
+        self.assertIn("token", cfg)
+
+    def test_port_is_int(self):
+        cfg = server.resolve_server_config(_args(), env={})
+        self.assertIsInstance(cfg["port"], int)
+
+    def test_localhost_token_none_by_default(self):
+        cfg = server.resolve_server_config(_args(host="127.0.0.1", token=None), env={})
+        self.assertIsNone(cfg["token"])
