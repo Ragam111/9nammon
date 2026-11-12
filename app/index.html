@@ -3,13 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Local Code Assistant</title>
+<title>เครื่องมือเดิม — LCA</title>
+<link rel="preload" href="/fonts/IBMPlexSansThai-Regular.sub.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/app.css">
 </head>
 <body class="page-chat">
 
 <div id="sidebar">
-  <h2>โมเดล</h2>
+  <h2 data-i18n="model">โมเดล</h2>
   <select id="model-select">
     <option value="qwen2.5-coder:0.5b">qwen2.5-coder:0.5b</option>
     <option value="qwen2.5-coder:1.5b">qwen2.5-coder:1.5b</option>
@@ -17,29 +18,40 @@
     <option value="qwen2.5-coder:14b">qwen2.5-coder:14b</option>
   </select>
 
-  <h2>ภาษา</h2>
+  <h2 data-i18n="replyLang">ภาษาคำตอบ</h2>
   <select id="lang-select">
     <option value="th">ไทย</option>
     <option value="en">English</option>
   </select>
 
-  <h2>Todo</h2>
-  <input id="todo-input" placeholder="เพิ่ม todo แล้วกด Enter">
+  <h2 data-i18n="todo">Todo</h2>
+  <input id="todo-input" placeholder="เพิ่ม todo แล้วกด Enter" data-i18n-placeholder="todoPh">
   <p id="todo-msg"></p>
   <ul id="todo-list"></ul>
 </div>
 
 <div id="main">
   <div id="main-head">
-    <button id="sidebar-toggle" aria-label="สลับเมนู">☰ เมนู</button>
-    <span class="main-title">Local Code Assistant</span>
-    <a href="/chat" style="margin-left:auto;color:inherit">Chat Hub</a>
+    <button id="sidebar-toggle" aria-label="สลับเมนู" data-i18n="menu" data-i18n-aria-label="menuLabel">☰ เมนู</button>
+    <span class="main-title" data-i18n="title">เครื่องมือเดิม</span>
+    <span class="head-actions">
+      <a href="/chat">Chat Hub</a>
+      <a href="/" data-i18n="home">หน้าแรก</a>
+      <span id="lca-status" class="chip" role="status" aria-live="polite">
+        <span class="dot" aria-hidden="true"></span>
+        <span id="lca-status-text">…</span>
+      </span>
+      <select id="ui-lang" aria-label="ภาษา" data-i18n-aria-label="uiLang">
+        <option value="th">ไทย</option>
+        <option value="en">English</option>
+      </select>
+    </span>
   </div>
   <div id="chat"></div>
-  <div id="status-bar">โมเดลไม่ได้ต่อเน็ตเอง — ระบบรันผ่าน Ollama ในเครื่องเท่านั้น</div>
+  <div id="status-bar" data-i18n="status">โมเดลไม่ได้ต่อเน็ตเอง — ระบบรันผ่าน Ollama ในเครื่องเท่านั้น</div>
   <div id="input-bar">
-    <textarea id="user-input" rows="2" placeholder="พิมพ์ข้อความ... (Shift+Enter ขึ้นบรรทัดใหม่)"></textarea>
-    <button id="send-btn">ส่ง</button>
+    <textarea id="user-input" rows="2" placeholder="พิมพ์ข้อความ... (Shift+Enter ขึ้นบรรทัดใหม่)" data-i18n-placeholder="inputPh"></textarea>
+    <button id="send-btn" data-i18n="send">ส่ง</button>
   </div>
 </div>
 
@@ -54,6 +66,60 @@ const todoInput = document.getElementById('todo-input');
 const todoList = document.getElementById('todo-list');
 const todoMsg = document.getElementById('todo-msg');
 const sidebarToggle = document.getElementById('sidebar-toggle');
+
+const CLASSIC_COPY = {
+  th: {
+    docTitle: "เครื่องมือเดิม — LCA",
+    model: "โมเดล",
+    replyLang: "ภาษาคำตอบ",
+    todo: "Todo",
+    todoPh: "เพิ่ม todo แล้วกด Enter",
+    menu: "☰ เมนู",
+    menuLabel: "สลับเมนู",
+    title: "เครื่องมือเดิม",
+    home: "หน้าแรก",
+    uiLang: "ภาษา",
+    status: "โมเดลไม่ได้ต่อเน็ตเอง — ระบบรันผ่าน Ollama ในเครื่องเท่านั้น",
+    inputPh: "พิมพ์ข้อความ... (Shift+Enter ขึ้นบรรทัดใหม่)",
+    send: "ส่ง",
+    thinking: "(กำลังคิด...)",
+    unreachable: "[error] ต่อ server ไม่ได้: ",
+    needAuth: "ต้องล็อกอิน/ตั้ง token เพื่อดู todo",
+    loadFail: "โหลด todo ไม่ได้ (error ",
+    serverDown: "ต่อ server ไม่ได้",
+    del: "ลบ"
+  },
+  en: {
+    docTitle: "Older tools — LCA",
+    model: "Model",
+    replyLang: "Reply language",
+    todo: "Todo",
+    todoPh: "Add a todo and press Enter",
+    menu: "☰ Menu",
+    menuLabel: "Toggle menu",
+    title: "Older tools",
+    home: "Home",
+    uiLang: "Language",
+    status: "The model stays on this machine — this page talks to local Ollama only",
+    inputPh: "Message... (Shift+Enter for a new line)",
+    send: "Send",
+    thinking: "(thinking...)",
+    unreachable: "[error] server unreachable: ",
+    needAuth: "Sign in or set a token to see todos",
+    loadFail: "Could not load todos (error ",
+    serverDown: "Server unreachable",
+    del: "Delete"
+  }
+};
+function tr(key) {
+  const lang = window.lca && window.lca.uiLang && window.lca.uiLang() === "en" ? "en" : "th";
+  const pack = CLASSIC_COPY[lang] || CLASSIC_COPY.th;
+  return pack[key] != null ? pack[key] : CLASSIC_COPY.th[key];
+}
+function applyClassic() {
+  if (window.lca && window.lca.applyI18n) window.lca.applyI18n(CLASSIC_COPY);
+  document.title = tr("docTitle");
+}
 
 let history = [];
 
@@ -80,7 +146,7 @@ async function sendMessage() {
 
   addMessage('user', text);
   history.push({ role: 'user', content: text });
-  const thinking = addMessage('system-note', '(กำลังคิด...)');
+  const thinking = addMessage('system-note', tr('thinking'));
   thinking.classList.add('thinking');
 
   try {
@@ -135,7 +201,7 @@ async function sendMessage() {
     else addMessage('system-note', '[error] ไม่ได้รับคำตอบจากโมเดล');
   } catch (err) {
     thinking.remove();
-    addMessage('system-note', '[error] ต่อ server ไม่ได้: ' + err.message);
+    addMessage('system-note', tr('unreachable') + err.message);
   } finally {
     sendBtn.disabled = false;
     inputEl.focus();
@@ -161,11 +227,11 @@ async function loadTodos() {
     const res = await fetch('/api/todos', { headers: window.lca.authHeaders() });
     if (res.status === 401) {
       todoList.innerHTML = '';
-      setTodoMsg('ต้องล็อกอิน/ตั้ง token เพื่อดู todo', true);
+      setTodoMsg(tr('needAuth'), true);
       return;
     }
     if (!res.ok) {
-      setTodoMsg('โหลด todo ไม่ได้ (error ' + res.status + ')', true);
+      setTodoMsg(tr('loadFail') + res.status + ')', true);
       return;
     }
     const todos = await res.json();
@@ -180,7 +246,7 @@ async function loadTodos() {
       label.addEventListener('click', () => toggleTodo(t.id));
       const del = document.createElement('button');
       del.textContent = '🗑';
-      del.title = 'ลบ';
+      del.title = tr('del');
       del.className = 'todo-del';
       del.addEventListener('click', (e) => { e.stopPropagation(); deleteTodo(t.id); });
       li.appendChild(label);
@@ -188,7 +254,7 @@ async function loadTodos() {
       todoList.appendChild(li);
     });
   } catch (err) {
-    setTodoMsg('ต่อ server ไม่ได้', true);
+    setTodoMsg(tr('serverDown'), true);
     console.error('โหลด todo ไม่สำเร็จ:', err);
   }
 }
@@ -237,6 +303,11 @@ todoInput.addEventListener('keydown', async (e) => {
   }
 });
 
+applyClassic();
+document.addEventListener('lca-lang', function () {
+  applyClassic();
+  loadTodos();
+});
 loadTodos();
 </script>
 

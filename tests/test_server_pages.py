@@ -62,6 +62,46 @@ class ServerPagesTest(unittest.TestCase):
         conn.close()
         return resp.status, ctype, cache, body
 
+    def test_root_leads_to_chat_hub_and_keeps_classic_tools(self):
+        st, ctype, _, body = self._get("/")
+        self.assertEqual(st, 200)
+        self.assertIn("text/html", ctype)
+        self.assertIn(b'lang="th"', body)
+        self.assertIn(b'href="/chat"', body)
+        self.assertIn(b'class="lca-btn primary"', body)
+        self.assertIn(b'href="/classic"', body)
+        self.assertIn(b'id="lca-status"', body)
+        self.assertIn(b'id="ui-lang"', body)
+        self.assertNotIn(b'id="todo-input"', body)
+        st, _, _, classic = self._get("/classic")
+        self.assertEqual(st, 200)
+        self.assertIn(b'class="page-chat"', classic)
+        self.assertIn(b'id="model-select"', classic)
+        self.assertIn(b'id="lang-select"', classic)
+        self.assertIn(b'id="todo-input"', classic)
+        self.assertIn(b'id="lca-status"', classic)
+        self.assertIn(b'href="/chat"', classic)
+
+    def test_version_badge_reads_api_version(self):
+        # ป้ายรุ่นอยู่ในหน้าแรกและ Chat Hub; ตัวอ่านคือ app.js ที่เรียก /api/version
+        for path in ("/", "/chat", "/classic"):
+            st, _, _, body = self._get(path)
+            self.assertEqual(st, 200, path)
+            self.assertIn(b'id="lca-status"', body, path)
+            self.assertIn(b'src="/app.js"', body, path)
+        st, _, _, js = self._get("/app.js")
+        self.assertEqual(st, 200)
+        self.assertIn(b"/api/version", js)
+        self.assertIn(b"server OK", js)
+        self.assertIn(b"offline", js)
+        st, ctype, _, raw = self._get("/api/version")
+        self.assertEqual(st, 200)
+        self.assertIn("json", ctype)
+        import json as _json
+        data = _json.loads(raw)
+        self.assertIn("version", data)
+        self.assertTrue(data["version"])
+
     def test_all_pages_served(self):
         # route -> (content-type มีคำนี้, ต้องมี Cache-Control ไหม)
         cases = {
