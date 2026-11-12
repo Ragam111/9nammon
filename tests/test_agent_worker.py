@@ -101,5 +101,40 @@ class WorkerTest(unittest.TestCase):
         self.assertTrue(rec["ok"])
 
 
+class AgentWorkerExtraTest(unittest.TestCase):
+    def test_stats_initial_count_is_zero(self):
+        s = stats_mod.Stats()
+        self.assertEqual(s.summary()["count"], 0)
+
+    def test_stats_success_rate_zero_on_empty(self):
+        s = stats_mod.Stats()
+        self.assertEqual(s.summary()["success_rate"], 0.0)
+
+    def test_stats_recent_returns_list(self):
+        s = stats_mod.Stats()
+        self.assertIsInstance(s.recent(10), list)
+
+    def test_max_recent_constant_positive(self):
+        self.assertIsInstance(stats_mod.MAX_RECENT, int)
+        self.assertGreater(stats_mod.MAX_RECENT, 0)
+
+    def test_run_one_returns_dict(self):
+        with mock.patch.object(core, "run",
+                               lambda *a, **k: {"final": "ok", "steps": [], "stopped_reason": "final"}):
+            rec = worker.run_one(".", "task", ".", clock=_Clock())
+        self.assertIsInstance(rec, dict)
+
+    def test_run_one_has_required_keys(self):
+        with mock.patch.object(core, "run",
+                               lambda *a, **k: {"final": "ok", "steps": [], "stopped_reason": "final"}):
+            rec = worker.run_one(".", "task", ".", clock=_Clock())
+        for key in ("ok", "duration_s", "steps"):
+            self.assertIn(key, rec)
+
+    def test_worker_stats_starts_at_zero(self):
+        w = worker.Worker(claim_fn=lambda: None)
+        self.assertEqual(w.stats.summary()["count"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()

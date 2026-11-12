@@ -81,5 +81,68 @@ class FormatResultsTest(unittest.TestCase):
         self.assertIn("2.", out)
 
 
+class WebSearchExtraTest(unittest.TestCase):
+    def test_max_results_constant_is_five(self):
+        self.assertEqual(web_search.MAX_RESULTS, 5)
+
+    def test_max_results_is_positive_int(self):
+        self.assertIsInstance(web_search.MAX_RESULTS, int)
+        self.assertGreater(web_search.MAX_RESULTS, 0)
+
+    @patch("urllib.request.urlopen")
+    @patch("app.web_search.get_key", return_value="key")
+    def test_result_has_snippet_key(self, _mock_key, mock_urlopen):
+        resp_data = {"web": {"results": [{"title": "T", "url": "https://t.com", "description": "d"}]}}
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = json.dumps(resp_data).encode("utf-8")
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_resp
+        results = web_search.search_web("q", Path("/tmp"))
+        self.assertIn("snippet", results[0])
+
+    @patch("urllib.request.urlopen")
+    @patch("app.web_search.get_key", return_value="key")
+    def test_result_has_url_and_title_keys(self, _mock_key, mock_urlopen):
+        resp_data = {"web": {"results": [{"title": "Title", "url": "https://t.com", "description": "d"}]}}
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = json.dumps(resp_data).encode("utf-8")
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_resp
+        results = web_search.search_web("q", Path("/tmp"))
+        self.assertIn("url", results[0])
+        self.assertIn("title", results[0])
+
+    @patch("urllib.request.urlopen")
+    @patch("app.web_search.get_key", return_value="key")
+    def test_malformed_json_raises(self, _mock_key, mock_urlopen):
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = b"NOT JSON"
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_resp
+        with self.assertRaises(RuntimeError):
+            web_search.search_web("q", Path("/tmp"))
+
+    def test_format_returns_string(self):
+        results = [{"title": "T", "url": "u", "snippet": "s"}]
+        self.assertIsInstance(web_search.format_results_for_context(results), str)
+
+    def test_format_empty_returns_nonempty_string(self):
+        out = web_search.format_results_for_context([])
+        self.assertIsInstance(out, str)
+        self.assertGreater(len(out), 0)
+
+    def test_format_multiple_results_numbered(self):
+        results = [
+            {"title": "A", "url": "u1", "snippet": "s1"},
+            {"title": "B", "url": "u2", "snippet": "s2"},
+        ]
+        out = web_search.format_results_for_context(results)
+        self.assertIn("1.", out)
+        self.assertIn("2.", out)
+
+
 if __name__ == "__main__":
     unittest.main()
