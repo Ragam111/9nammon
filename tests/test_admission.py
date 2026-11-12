@@ -122,5 +122,33 @@ class GateFromConfigTest(unittest.TestCase):
         self.assertEqual(g.max_concurrent, 1)
 
 
+class AdmissionExtraTest(unittest.TestCase):
+    def test_gate_stats_returns_dict(self):
+        g = admission.AdmissionGate(max_concurrent=2)
+        result = g.stats()
+        self.assertIsInstance(result, dict)
+
+    def test_gate_stats_initial_waiting_zero(self):
+        g = admission.AdmissionGate(max_concurrent=1)
+        self.assertEqual(g.stats()["waiting"], 0)
+
+    def test_gate_max_concurrent_stored(self):
+        g = admission.AdmissionGate(max_concurrent=5)
+        self.assertEqual(g.max_concurrent, 5)
+
+    def test_gate_from_config_default_is_1(self):
+        g = admission.gate_from_config(None, config_get=lambda root, k: None)
+        self.assertEqual(g.max_concurrent, 1)
+
+    def test_gate_from_config_string_int(self):
+        g = admission.gate_from_config(None, config_get=lambda root, k: "2")
+        self.assertEqual(g.max_concurrent, 2)
+
+    def test_gate_slot_single_thread_does_not_raise(self):
+        g = admission.AdmissionGate(max_concurrent=1, max_wait=1.0)
+        with g.slot():
+            pass  # single-thread should not raise Busy
+
+
 if __name__ == "__main__":
     unittest.main()
