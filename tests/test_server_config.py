@@ -63,6 +63,34 @@ class ResolveServerConfigTest(unittest.TestCase):
         cfg = server.resolve_server_config(_args(host="127.0.0.1"), env={})
         self.assertIsNone(cfg["token"])
 
+    def test_result_is_dict(self):
+        cfg = server.resolve_server_config(_args(), env={})
+        self.assertIsInstance(cfg, dict)
+
+    def test_result_has_three_keys(self):
+        cfg = server.resolve_server_config(_args(), env={})
+        for key in ("host", "port", "token"):
+            self.assertIn(key, cfg)
+
+    def test_port_in_result_is_int(self):
+        cfg = server.resolve_server_config(_args(host="0.0.0.0", token="x"), env={"PORT": "9876"})
+        self.assertIsInstance(cfg["port"], int)
+
+    def test_token_in_result_is_string_when_set(self):
+        cfg = server.resolve_server_config(_args(host="0.0.0.0", token="mytoken"), env={})
+        self.assertIsInstance(cfg["token"], str)
+
+    def test_env_token_alone_still_requires_public_host(self):
+        # LCA_TOKEN set but host is still localhost — rule 12 does not apply
+        cfg = server.resolve_server_config(_args(), env={"LCA_TOKEN": "env-only"})
+        self.assertEqual(cfg["host"], "127.0.0.1")
+        self.assertEqual(cfg["token"], "env-only")
+
+    def test_zero_port_accepted(self):
+        # port=0 → OS chooses free port; resolve_server_config should not reject it
+        cfg = server.resolve_server_config(_args(host="0.0.0.0", port=0, token="x"), env={})
+        self.assertEqual(cfg["port"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()
