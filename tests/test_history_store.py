@@ -73,6 +73,36 @@ class HistoryStoreTest(unittest.TestCase):
         errs = history_store.list_errors(self.root)
         self.assertEqual(errs[0]["message"], "two")
 
+    def test_record_snapshot_returns_dict(self):
+        result = history_store.record_snapshot(self.root, self._report())
+        self.assertIsInstance(result, dict)
+
+    def test_snapshot_has_required_keys(self):
+        result = history_store.record_snapshot(self.root, self._report())
+        for key in ("id", "recorded_at", "verdict", "worst_severity", "cpu_percent", "mem_percent"):
+            self.assertIn(key, result)
+
+    def test_snapshot_id_is_int(self):
+        result = history_store.record_snapshot(self.root, self._report())
+        self.assertIsInstance(result["id"], int)
+
+    def test_log_error_returns_dict(self):
+        result = history_store.log_error(self.root, "error", "src", "msg")
+        self.assertIsInstance(result, dict)
+
+    def test_log_error_has_required_keys(self):
+        result = history_store.log_error(self.root, "warning", "src", "msg")
+        for key in ("id", "logged_at", "level", "source", "message"):
+            self.assertIn(key, result)
+
+    def test_list_snapshots_returns_list(self):
+        result = history_store.list_snapshots(self.root)
+        self.assertIsInstance(result, list)
+
+    def test_list_errors_returns_list(self):
+        result = history_store.list_errors(self.root)
+        self.assertIsInstance(result, list)
+
 
 if __name__ == "__main__":
     unittest.main()
