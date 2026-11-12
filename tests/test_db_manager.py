@@ -110,6 +110,34 @@ class DbManagerUnitTest(unittest.TestCase):
         data = db_manager.get_db_status(self.root)
         self.assertIn("server_events", data["tables"])
 
+    def test_get_db_status_returns_dict(self):
+        data = db_manager.get_db_status(self.root)
+        self.assertIsInstance(data, dict)
+
+    def test_get_db_status_db_version_non_negative(self):
+        data = db_manager.get_db_status(self.root)
+        self.assertGreaterEqual(data["db_version"], 0)
+
+    def test_get_db_status_migrations_applied_is_int(self):
+        data = db_manager.get_db_status(self.root)
+        self.assertIsInstance(data.get("migrations_applied"), int)
+
+    def test_db_size_bytes_non_negative(self):
+        db_manager.get_db_status(self.root)  # init db
+        data = db_manager.get_db_status(self.root)
+        self.assertGreaterEqual(data.get("db_size_bytes", 0), 0)
+
+    def test_tables_contains_expected_table(self):
+        db_manager.get_db_status(self.root)
+        data = db_manager.get_db_status(self.root)
+        # server_events ต้องมีหลัง migration
+        self.assertIn("server_events", data["tables"])
+
+    def test_log_event_multiple_calls_silent(self):
+        db_manager.get_db_status(self.root)  # migrate
+        for i in range(5):
+            db_manager.log_event(self.root, "loop", f"iteration {i}")
+
 
 if __name__ == "__main__":
     unittest.main()
