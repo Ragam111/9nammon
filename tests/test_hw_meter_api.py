@@ -106,5 +106,65 @@ class HwMeterApiTest(unittest.TestCase):
         self.assertIsInstance(data["cpu_per_core"], list)
 
 
+class HwMeterApiExtraTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        model_backend.generate = (
+            lambda project_root, model, messages, num_ctx=8192, options=None: f"MODEL={model}"
+        )
+        cls._orig_snapshot = hw_meter.snapshot
+        hw_meter.snapshot = _mock_snapshot
+
+    @classmethod
+    def tearDownClass(cls):
+        model_backend.generate = _ORIG_GENERATE
+        hw_meter.snapshot = cls._orig_snapshot
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.httpd, self.port, self.session_token = _make_server(self.root)
+
+    def tearDown(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        self._tmp.cleanup()
+
+    def _get(self, path, token=None):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        hdrs = {}
+        if token:
+            hdrs["X-Auth-Token"] = token
+        conn.request("GET", path, headers=hdrs)
+        resp = conn.getresponse()
+        body = resp.read().decode("utf-8")
+        conn.close()
+        return resp.status, json.loads(body) if body else {}
+
+    def test_hw_meter_ram_pct_is_number(self):
+        _, data = self._get("/api/metrics/hw", token=self.session_token)
+        self.assertIsInstance(data["ram_pct"], (int, float))
+
+    def test_hw_meter_logical_cores_is_int(self):
+        _, data = self._get("/api/metrics/hw", token=self.session_token)
+        self.assertIsInstance(data["logical_cores"], int)
+
+    def test_hw_meter_no_token_unauthorized(self):
+        st, _ = self._get("/api/metrics/hw")
+        self.assertIn(st, (401, 403))
+
+    def test_hw_meter_recommended_model_is_string(self):
+        _, data = self._get("/api/metrics/hw", token=self.session_token)
+        self.assertIsInstance(data["recommended_model"], str)
+
+    def test_hw_meter_ram_total_gb_positive(self):
+        _, data = self._get("/api/metrics/hw", token=self.session_token)
+        self.assertGreater(data["ram_total_gb"], 0)
+
+    def test_hw_meter_response_is_json_object(self):
+        _, data = self._get("/api/metrics/hw", token=self.session_token)
+        self.assertIsInstance(data, dict)
+
+
 if __name__ == "__main__":
     unittest.main()
