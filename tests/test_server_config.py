@@ -64,5 +64,35 @@ class ResolveServerConfigTest(unittest.TestCase):
         self.assertIsNone(cfg["token"])
 
 
+# ---------------------------------------------------------------------------
+# ServerConfigExtraTest — additional coverage
+# ---------------------------------------------------------------------------
+
+class ServerConfigExtraTest(unittest.TestCase):
+    def test_resolve_returns_dict(self):
+        cfg = server.resolve_server_config(_args(), env={})
+        self.assertIsInstance(cfg, dict)
+
+    def test_host_key_in_result(self):
+        cfg = server.resolve_server_config(_args(), env={})
+        self.assertIn("host", cfg)
+
+    def test_port_key_in_result(self):
+        cfg = server.resolve_server_config(_args(), env={})
+        self.assertIn("port", cfg)
+
+    def test_token_key_in_result(self):
+        cfg = server.resolve_server_config(_args(), env={})
+        self.assertIn("token", cfg)
+
+    def test_default_host_is_loopback(self):
+        cfg = server.resolve_server_config(_args(), env={})
+        self.assertEqual(cfg["host"], "127.0.0.1")
+
+    def test_default_port_is_int(self):
+        cfg = server.resolve_server_config(_args(), env={})
+        self.assertIsInstance(cfg["port"], int)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -280,5 +280,32 @@ class TestRecommendCache(_RouterBase):
         self.assertGreater(result["cached_until"], time.time())
 
 
+# ---------------------------------------------------------------------------
+# RouterExtraTest — additional coverage
+# ---------------------------------------------------------------------------
+
+class RouterExtraTest(unittest.TestCase):
+    def test_tier_models_is_dict(self):
+        self.assertIsInstance(router._TIER_MODELS, dict)
+
+    def test_netbook_tier_present(self):
+        self.assertIn("netbook", router._TIER_MODELS)
+
+    def test_workstation_tier_present(self):
+        self.assertIn("workstation", router._TIER_MODELS)
+
+    def test_server_tier_present(self):
+        self.assertIn("server", router._TIER_MODELS)
+
+    def test_netbook_models_non_empty(self):
+        self.assertGreater(len(router._TIER_MODELS["netbook"]), 0)
+
+    def test_model_priority_is_int(self):
+        for tier, models in router._TIER_MODELS.items():
+            for m in models:
+                self.assertIsInstance(m["priority"], int,
+                                      f"{tier}/{m['name']} priority not int")
+
+
 if __name__ == "__main__":
     unittest.main()

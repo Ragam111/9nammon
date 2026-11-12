@@ -223,5 +223,34 @@ class StatusTest(unittest.TestCase):
             self.assertIn("ปิดตามตารางเวลา", info["message"])
 
 
+# ---------------------------------------------------------------------------
+# ScheduleGateExtraTest — additional coverage
+# ---------------------------------------------------------------------------
+
+class ScheduleGateExtraTest(unittest.TestCase):
+    def setUp(self):
+        schedule_gate.invalidate_cache()
+
+    def test_is_open_returns_bool(self):
+        result = schedule_gate.is_open(_utc_at_th_hour(12), 6, 20)
+        self.assertIsInstance(result, bool)
+
+    def test_next_window_returns_dict(self):
+        result = schedule_gate.next_window(_utc_at_th_hour(12), 6, 20)
+        self.assertIsInstance(result, dict)
+
+    def test_default_open_hour_is_int(self):
+        self.assertIsInstance(schedule_gate.DEFAULT_OPEN_HOUR, int)
+
+    def test_default_close_hour_is_int(self):
+        self.assertIsInstance(schedule_gate.DEFAULT_CLOSE_HOUR, int)
+
+    def test_clamp_zero_is_valid_hour(self):
+        self.assertEqual(schedule_gate._clamp_hour(0, 7), 0)
+
+    def test_clamp_23_is_valid_hour(self):
+        self.assertEqual(schedule_gate._clamp_hour(23, 7), 23)
+
+
 if __name__ == "__main__":
     unittest.main()
