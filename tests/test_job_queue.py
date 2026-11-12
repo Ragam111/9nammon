@@ -76,5 +76,41 @@ class JobQueueTest(unittest.TestCase):
         self.assertFalse(job_queue.delete_job(self.root, job["id"]))
 
 
+class JobQueueExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_enqueue_returns_dict_with_id(self):
+        job = job_queue.enqueue(self.root, "deploy")
+        self.assertIsInstance(job, dict)
+        self.assertIn("id", job)
+
+    def test_list_jobs_empty_initially(self):
+        self.assertEqual(job_queue.list_jobs(self.root), [])
+
+    def test_enqueue_default_payload_is_none_or_empty(self):
+        job = job_queue.enqueue(self.root, "sync")
+        self.assertIn(job["payload"], (None, {}, ""))
+
+    def test_set_status_done_reflects_in_list(self):
+        job = job_queue.enqueue(self.root, "task")
+        job_queue.set_status(self.root, job["id"], "done")
+        done_jobs = job_queue.list_jobs(self.root, status="done")
+        self.assertEqual(len(done_jobs), 1)
+        self.assertEqual(done_jobs[0]["id"], job["id"])
+
+    def test_get_job_missing_returns_none(self):
+        self.assertIsNone(job_queue.get_job(self.root, 99999))
+
+    def test_multiple_enqueue_increases_list(self):
+        for i in range(3):
+            job_queue.enqueue(self.root, f"job_{i}")
+        self.assertEqual(len(job_queue.list_jobs(self.root)), 3)
+
+
 if __name__ == "__main__":
     unittest.main()

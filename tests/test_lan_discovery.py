@@ -131,7 +131,6 @@ class LanDiscoveryUnitTest(unittest.TestCase):
         (เพราะ 127.x ถูกกรองใน get_local_ips() แต่ _probe ยังรองรับ)
         ทดสอบว่า _probe คืน dict ที่ถูกต้องเมื่อ server ตอบ"""
         import http.server
-        responses = []
 
         class _MockHandler(http.server.BaseHTTPRequestHandler):
             def do_GET(self):
@@ -154,6 +153,37 @@ class LanDiscoveryUnitTest(unittest.TestCase):
             self.assertIn("url", result)
         finally:
             httpd.shutdown()
+
+
+class LanDiscoveryExtraTest(unittest.TestCase):
+    def test_get_local_ips_items_are_strings(self):
+        ips = lan_discovery.get_local_ips()
+        for ip in ips:
+            self.assertIsInstance(ip, str)
+
+    def test_discover_returns_dict(self):
+        result = lan_discovery.discover(
+            base_ip="127.0.0.1", port=19998, timeout=0.05, max_threads=2)
+        self.assertIsInstance(result, dict)
+
+    def test_discover_elapsed_non_negative(self):
+        result = lan_discovery.discover(
+            base_ip="127.0.0.1", port=19997, timeout=0.05, max_threads=2)
+        self.assertGreaterEqual(result.get("elapsed_s", 0), 0)
+
+    def test_discover_scanned_non_negative(self):
+        result = lan_discovery.discover(
+            base_ip="127.0.0.1", port=19996, timeout=0.05, max_threads=2)
+        self.assertGreaterEqual(result.get("scanned", 0), 0)
+
+    def test_discover_nodes_is_list(self):
+        result = lan_discovery.discover(
+            base_ip="127.0.0.1", port=19995, timeout=0.05, max_threads=2)
+        self.assertIsInstance(result.get("nodes", []), list)
+
+    def test_probe_unreachable_returns_none(self):
+        result = lan_discovery._probe("127.0.0.1", 19994, timeout=0.05)
+        self.assertIsNone(result)
 
 
 if __name__ == "__main__":
