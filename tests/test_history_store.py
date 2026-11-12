@@ -76,3 +76,46 @@ class HistoryStoreTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HistoryStoreExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _report(self, cpu=5.0, mem=10.0):
+        return {
+            "snapshot": {"cpu": {"percent": cpu}, "memory": {"percent": mem}},
+            "verdict": "ok",
+            "worst_severity": "OK",
+        }
+
+    def test_record_snapshot_returns_dict(self):
+        result = history_store.record_snapshot(self.root, self._report())
+        self.assertIsInstance(result, dict)
+
+    def test_snapshot_has_cpu_percent(self):
+        result = history_store.record_snapshot(self.root, self._report(cpu=42.0))
+        self.assertIn("cpu_percent", result)
+        self.assertEqual(result["cpu_percent"], 42.0)
+
+    def test_list_snapshots_returns_list(self):
+        result = history_store.list_snapshots(self.root)
+        self.assertIsInstance(result, list)
+
+    def test_log_error_returns_dict(self):
+        result = history_store.log_error(self.root, "info", "src", "msg")
+        self.assertIsInstance(result, dict)
+
+    def test_list_errors_returns_list(self):
+        result = history_store.list_errors(self.root)
+        self.assertIsInstance(result, list)
+
+    def test_two_snapshots_gives_len_2(self):
+        history_store.record_snapshot(self.root, self._report())
+        history_store.record_snapshot(self.root, self._report())
+        rows = history_store.list_snapshots(self.root)
+        self.assertEqual(len(rows), 2)
