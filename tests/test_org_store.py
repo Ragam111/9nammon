@@ -209,5 +209,37 @@ class QuotaTest(OrgStoreTestBase):
         self.assertEqual(remaining, org_store.TIER_DAILY_LIMIT["free"] - 1)
 
 
+class OrgStoreExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_bootstrap_needed_returns_bool(self):
+        result = org_store.bootstrap_needed(self.root)
+        self.assertIsInstance(result, bool)
+
+    def test_tier_daily_limit_has_free_key(self):
+        self.assertIn("free", org_store.TIER_DAILY_LIMIT)
+
+    def test_tier_daily_limit_has_paid_key(self):
+        self.assertIn("paid", org_store.TIER_DAILY_LIMIT)
+
+    def test_role_at_least_user_vs_user(self):
+        self.assertTrue(org_store.role_at_least("USER", "USER"))
+
+    def test_list_api_keys_empty_before_any_created(self):
+        org_store.create_user(self.root, "ceo", "password123", "CEO")
+        keys = org_store.list_api_keys(self.root)
+        self.assertEqual(keys, [])
+
+    def test_create_user_returns_dict_with_role(self):
+        rec = org_store.create_user(self.root, "ceo", "password123", "CEO")
+        self.assertIsInstance(rec, dict)
+        self.assertIn("role", rec)
+
+
 if __name__ == "__main__":
     unittest.main()
