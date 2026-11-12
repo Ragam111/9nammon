@@ -72,6 +72,36 @@ class HealthyTest(unittest.TestCase):
         self.assertIsNone(report.primary_bottleneck)
         self.assertIn("healthy", report.verdict.lower())
 
+    def test_report_has_verdict(self):
+        report = Analyzer().analyze(make_snapshot())
+        self.assertIsInstance(report.verdict, str)
+        self.assertGreater(len(report.verdict), 0)
+
+    def test_report_worst_is_severity(self):
+        report = Analyzer().analyze(make_snapshot())
+        self.assertIsInstance(report.worst, Severity)
+
+    def test_findings_is_list(self):
+        report = Analyzer().analyze(make_snapshot())
+        self.assertIsInstance(report.findings, list)
+
+
+class SeverityTest(unittest.TestCase):
+    def test_severity_has_ok(self):
+        self.assertTrue(hasattr(Severity, "OK"))
+
+    def test_severity_has_warning(self):
+        self.assertTrue(hasattr(Severity, "WARNING"))
+
+    def test_severity_has_critical(self):
+        self.assertTrue(hasattr(Severity, "CRITICAL"))
+
+    def test_critical_greater_than_warning(self):
+        self.assertGreater(Severity.CRITICAL, Severity.WARNING)
+
+    def test_warning_greater_than_ok(self):
+        self.assertGreater(Severity.WARNING, Severity.OK)
+
 
 class CpuTest(unittest.TestCase):
     def test_saturated_cpu_is_critical(self):
@@ -88,6 +118,12 @@ class CpuTest(unittest.TestCase):
         self.assertTrue(
             any(f.resource == "CPU" and f.severity >= Severity.WARNING for f in report.findings)
         )
+
+    def test_low_cpu_no_cpu_warning(self):
+        snap = make_snapshot(cpu_percent=10.0, per_core=[10.0, 10.0])
+        report = Analyzer().analyze(snap)
+        cpu_warnings = [f for f in report.findings if f.resource == "CPU" and f.severity >= Severity.WARNING]
+        self.assertEqual(cpu_warnings, [])
 
 
 class MemoryTest(unittest.TestCase):
@@ -129,6 +165,13 @@ class DiskTest(unittest.TestCase):
         bn = report.primary_bottleneck
         self.assertEqual(bn.resource, "DISK_IO")
 
+    def test_half_full_disk_no_critical(self):
+        disk = DiskUsage("/", "sda1", "ext4", 100 * GB, 50 * GB, 50 * GB, 50.0)
+        report = Analyzer().analyze(make_snapshot(disks=[disk]))
+        self.assertFalse(
+            any(f.resource == "DISK" and f.severity == Severity.CRITICAL for f in report.findings)
+        )
+
 
 class PriorityTest(unittest.TestCase):
     def test_memory_wins_tie_against_cpu(self):
@@ -140,11 +183,26 @@ class PriorityTest(unittest.TestCase):
         report = Analyzer().analyze(snap)
         self.assertEqual(report.primary_bottleneck.resource, "MEMORY")
 
+    def test_primary_bottleneck_is_none_when_healthy(self):
+        report = Analyzer().analyze(make_snapshot())
+        self.assertIsNone(report.primary_bottleneck)
+
 
 class ThresholdValidationTest(unittest.TestCase):
     def test_invalid_thresholds_rejected(self):
         with self.assertRaises(ValueError):
             Analyzer(Thresholds(cpu_warn=96.0, cpu_crit=95.0))
+
+    def test_valid_custom_thresholds_accepted(self):
+        a = Analyzer(Thresholds(cpu_warn=70.0, cpu_crit=90.0))
+        self.assertIsNotNone(a)
+
+    def test_custom_threshold_lowers_cpu_warn(self):
+        # With a low warn threshold, moderate CPU should trigger a finding.
+        a = Analyzer(Thresholds(cpu_warn=20.0, cpu_crit=90.0))
+        snap = make_snapshot(cpu_percent=50.0, per_core=[50.0, 50.0])
+        report = a.analyze(snap)
+        self.assertTrue(any(f.resource == "CPU" for f in report.findings))
 
 
 if __name__ == "__main__":

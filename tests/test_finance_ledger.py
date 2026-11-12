@@ -49,6 +49,28 @@ class FinanceLedgerTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             finance_ledger.record_entry(self.root, 10, "out", status="received")
 
+    def test_record_returns_dict(self):
+        rec = finance_ledger.record_entry(self.root, 100, "out")
+        self.assertIsInstance(rec, dict)
+
+    def test_record_has_required_keys(self):
+        rec = finance_ledger.record_entry(self.root, 200, "in")
+        for key in ("id", "amount", "direction", "status", "note", "created_at"):
+            self.assertIn(key, rec)
+
+    def test_record_id_is_int(self):
+        rec = finance_ledger.record_entry(self.root, 50, "out")
+        self.assertIsInstance(rec["id"], int)
+
+    def test_record_amount_is_float(self):
+        rec = finance_ledger.record_entry(self.root, 300, "in")
+        self.assertIsInstance(rec["amount"], float)
+
+    def test_record_out_direction_works(self):
+        rec = finance_ledger.record_entry(self.root, 400, "out", note="ค่าบริการ")
+        self.assertEqual(rec["direction"], "out")
+        self.assertEqual(rec["status"], "pending")
+
     # ---- list ----
     def test_list_newest_first_and_filters(self):
         finance_ledger.record_entry(self.root, 100, "in", note="first")
@@ -64,6 +86,14 @@ class FinanceLedgerTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             finance_ledger.list_entries(self.root, direction="bogus")
 
+    def test_list_returns_list(self):
+        result = finance_ledger.list_entries(self.root)
+        self.assertIsInstance(result, list)
+
+    def test_get_entry_returns_none_for_missing(self):
+        result = finance_ledger.get_entry(self.root, 99999)
+        self.assertIsNone(result)
+
     # ---- set_status ----
     def test_set_status_flow(self):
         rec = finance_ledger.record_entry(self.root, 1500, "in", note="เบิก")
@@ -77,6 +107,15 @@ class FinanceLedgerTest(unittest.TestCase):
             finance_ledger.set_status(self.root, rec["id"], "paid")  # in -> paid ไม่ได้
         with self.assertRaises(ValueError):
             finance_ledger.set_status(self.root, rec["id"], "bogus")
+
+    def test_set_status_out_to_paid(self):
+        rec = finance_ledger.record_entry(self.root, 500, "out")
+        updated = finance_ledger.set_status(self.root, rec["id"], "paid")
+        self.assertEqual(updated["status"], "paid")
+
+    def test_set_status_missing_id_returns_none(self):
+        result = finance_ledger.set_status(self.root, 99999, "cancelled")
+        self.assertIsNone(result)
 
     # ---- delete ----
     def test_delete(self):
@@ -102,6 +141,11 @@ class FinanceLedgerTest(unittest.TestCase):
         s = finance_ledger.summary(self.root)
         self.assertEqual(s["balance"], 0)
         self.assertEqual(s["count"], 0)
+
+    def test_summary_has_required_keys(self):
+        s = finance_ledger.summary(self.root)
+        for key in ("received_in", "paid_out", "pending_in", "balance", "count"):
+            self.assertIn(key, s)
 
 
 if __name__ == "__main__":
