@@ -41,3 +41,26 @@ class ChatPageBudgetTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ChatPageExtraTest(unittest.TestCase):
+    def test_chat_html_exists(self):
+        self.assertTrue((ROOT / "app" / "chat.html").is_file())
+
+    def test_chat_js_exists(self):
+        self.assertTrue((ROOT / "app" / "chat.js").is_file())
+
+    def test_chat_css_exists(self):
+        self.assertTrue((ROOT / "app" / "chat.css").is_file())
+
+    def test_chat_html_has_doctype(self):
+        html = (ROOT / "app" / "chat.html").read_text(encoding="utf-8")
+        self.assertTrue(html.lstrip().lower().startswith("<!doctype"))
+
+    def test_chat_js_is_nonzero_bytes(self):
+        size = (ROOT / "app" / "chat.js").stat().st_size
+        self.assertGreater(size, 0)
+
+    def test_chat_html_references_chat_js(self):
+        html = (ROOT / "app" / "chat.html").read_text(encoding="utf-8")
+        self.assertIn("chat.js", html)
