@@ -105,5 +105,27 @@ class MessagesTest(unittest.TestCase):
         self.assertEqual(len(msgs), 2)
 
 
+class AgentHarnessExtraTest(unittest.TestCase):
+    def test_max_task_chars_is_positive(self):
+        self.assertGreater(harness.MAX_TASK_CHARS, 0)
+
+    def test_default_model_is_string(self):
+        self.assertIsInstance(harness.DEFAULT_MODEL, str)
+
+    def test_messages_returns_list(self):
+        self.assertIsInstance(harness._messages("ceo", "task"), list)
+
+    def test_messages_at_least_two(self):
+        self.assertGreaterEqual(len(harness._messages("ceo", "task")), 2)
+
+    def test_messages_first_is_system(self):
+        self.assertEqual(harness._messages("ceo", "task")[0]["role"], "system")
+
+    def test_messages_user_content_matches_task(self):
+        msgs = harness._messages("ceo", "my specific task")
+        user_msgs = [m for m in msgs if m["role"] == "user"]
+        self.assertTrue(any("my specific task" in m["content"] for m in user_msgs))
+
+
 if __name__ == "__main__":
     unittest.main()
