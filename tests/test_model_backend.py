@@ -214,5 +214,36 @@ class BackendSettingsTest(unittest.TestCase):
         self.assertTrue(r["available"])
 
 
+class ModelBackendExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_backend_error_is_exception_subclass(self):
+        self.assertTrue(issubclass(mb.BackendError, Exception))
+
+    def test_ollama_backend_is_backend_instance(self):
+        self.assertIsInstance(mb.OllamaBackend(), mb.Backend)
+
+    def test_openai_compat_is_backend_instance(self):
+        self.assertIsInstance(mb.OpenAICompatBackend(), mb.Backend)
+
+    def test_get_backend_settings_returns_dict(self):
+        s = mb.get_backend_settings(self.root)
+        self.assertIsInstance(s, dict)
+
+    def test_get_backend_settings_has_model_backend_key(self):
+        s = mb.get_backend_settings(self.root)
+        self.assertIn("MODEL_BACKEND", s)
+
+    def test_probe_backend_has_available_key(self):
+        with mock.patch.object(mb.OllamaBackend, "is_available", lambda self, **k: False):
+            r = mb.probe_backend(self.root)
+        self.assertIn("available", r)
+
+
 if __name__ == "__main__":
     unittest.main()

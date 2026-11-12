@@ -313,6 +313,43 @@ class TestListMigrations(unittest.TestCase):
             self.assertTrue(py_path is None or isinstance(py_path, Path))
 
 
+# ---------------------------------------------------------------------------
+# DbExtraTest
+# ---------------------------------------------------------------------------
+
+class DbExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.tmp_path = Path(self._tmpdir.name)
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def test_split_sql_pure_comment_returns_empty(self):
+        self.assertEqual(split_sql("-- comment only"), [])
+
+    def test_db_path_always_named_lca_db(self):
+        self.assertEqual(db_path("/any/root").name, "lca.db")
+
+    def test_migration_error_is_exception(self):
+        self.assertTrue(issubclass(MigrationError, Exception))
+
+    def test_connect_raw_allows_create_and_select(self):
+        conn = connect_raw(self.tmp_path / "extra.db")
+        conn.execute("CREATE TABLE et (v TEXT)")
+        conn.execute("INSERT INTO et VALUES ('hello')")
+        row = conn.execute("SELECT v FROM et").fetchone()
+        conn.close()
+        self.assertEqual(row[0], "hello")
+
+    def test_list_migrations_has_at_least_one_entry(self):
+        self.assertGreater(len(list_migrations()), 0)
+
+    def test_list_migrations_first_number_is_positive(self):
+        result = list_migrations()
+        self.assertGreater(result[0][0], 0)
+
+
 if __name__ == "__main__":
     unittest.main()
 
