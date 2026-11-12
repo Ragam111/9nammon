@@ -81,5 +81,56 @@ class FormatResultsTest(unittest.TestCase):
         self.assertIn("2.", out)
 
 
+class WebSearchExtraTest(unittest.TestCase):
+    def test_max_results_is_positive_int(self):
+        self.assertIsInstance(web_search.MAX_RESULTS, int)
+        self.assertGreater(web_search.MAX_RESULTS, 0)
+
+    @patch("urllib.request.urlopen")
+    @patch("app.web_search.get_key", return_value="k")
+    def test_search_returns_list(self, _mk, mock_urlopen):
+        resp_data = {"web": {"results": [
+            {"title": "T", "url": "https://t.com", "description": "d"}
+        ]}}
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = json.dumps(resp_data).encode("utf-8")
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_resp
+        results = web_search.search_web("q", Path("/tmp"))
+        self.assertIsInstance(results, list)
+
+    @patch("urllib.request.urlopen")
+    @patch("app.web_search.get_key", return_value="k")
+    def test_result_has_required_keys(self, _mk, mock_urlopen):
+        resp_data = {"web": {"results": [
+            {"title": "T", "url": "https://t.com", "description": "d"}
+        ]}}
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = json.dumps(resp_data).encode("utf-8")
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_resp
+        results = web_search.search_web("q", Path("/tmp"))
+        self.assertGreater(len(results), 0)
+        for key in ("title", "url", "snippet"):
+            self.assertIn(key, results[0])
+
+    def test_format_results_returns_str(self):
+        results = [{"title": "X", "url": "https://x.com", "snippet": "s"}]
+        out = web_search.format_results_for_context(results)
+        self.assertIsInstance(out, str)
+
+    def test_format_empty_returns_str(self):
+        out = web_search.format_results_for_context([])
+        self.assertIsInstance(out, str)
+        self.assertGreater(len(out), 0)
+
+    @patch("app.web_search.get_key", return_value=None)
+    def test_no_key_raises_runtime_error(self, _mk):
+        with self.assertRaises(RuntimeError):
+            web_search.search_web("q", Path("/tmp"))
+
+
 if __name__ == "__main__":
     unittest.main()
