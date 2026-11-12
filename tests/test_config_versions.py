@@ -1,4 +1,4 @@
-"""test_config_versions.py — เทส snapshot + rollback ของ config (กัน incident)
+"""เทส snapshot + rollback ของ config (กัน incident)
 
 ตรวจ: snapshot เก็บเวอร์ชัน, list คืน metadata (ไม่เผย secret ค่าเต็ม),
 rollback ย้อน config.json จริง + snapshot ปัจจุบันก่อน (ย้อนได้อีก), id ผิด → ValueError
@@ -42,7 +42,7 @@ class ConfigVersionsTest(unittest.TestCase):
         self._write_config({"OPENAI_API_KEY": "sk-super-secret"})
         cv.snapshot(self.root)
         versions = cv.list_versions(self.root)
-        # metadata ต้องไม่มีค่า secret โผล่
+        # metadata ต้องไม่มีค่า secret โผ่ล
         self.assertNotIn("sk-super-secret", json.dumps(versions))
         self.assertEqual(versions[0]["keys"], 1)
 
@@ -81,6 +81,43 @@ class ConfigVersionsTest(unittest.TestCase):
 
     def test_empty_when_no_snapshots(self):
         self.assertEqual(cv.list_versions(self.root), [])
+
+
+class ConfigVersionsExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _write_config(self, d):
+        config_manager._config_path(self.root).write_text(
+            json.dumps(d, ensure_ascii=False), encoding="utf-8")
+
+    def test_list_versions_returns_list(self):
+        self.assertIsInstance(cv.list_versions(self.root), list)
+
+    def test_list_empty_when_no_snapshots(self):
+        self.assertEqual(cv.list_versions(self.root), [])
+
+    def test_snapshot_returns_dict(self):
+        self._write_config({"K": "v"})
+        meta = cv.snapshot(self.root)
+        self.assertIsInstance(meta, dict)
+
+    def test_snapshot_has_id(self):
+        self._write_config({"K": "v"})
+        meta = cv.snapshot(self.root)
+        self.assertIn("id", meta)
+
+    def test_snapshot_increments_list(self):
+        self._write_config({"K": "v"})
+        cv.snapshot(self.root)
+        self.assertEqual(len(cv.list_versions(self.root)), 1)
+
+    def test_max_versions_is_positive(self):
+        self.assertGreater(cv.MAX_VERSIONS, 0)
 
 
 if __name__ == "__main__":

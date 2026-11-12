@@ -313,6 +313,39 @@ class TestListMigrations(unittest.TestCase):
             self.assertTrue(py_path is None or isinstance(py_path, Path))
 
 
+class DbExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp_path = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_migration_error_is_exception(self):
+        self.assertTrue(issubclass(MigrationError, Exception))
+
+    def test_split_sql_empty_returns_empty_list(self):
+        self.assertEqual(split_sql(""), [])
+
+    def test_split_sql_single_statement(self):
+        result = split_sql("SELECT 1")
+        self.assertEqual(result, ["SELECT 1"])
+
+    def test_db_path_returns_path(self):
+        result = db_path(str(self.tmp_path))
+        self.assertIsInstance(result, Path)
+
+    def test_write_lock_same_root_is_same(self):
+        lock1 = write_lock(str(self.tmp_path / "r1"))
+        lock2 = write_lock(str(self.tmp_path / "r1"))
+        self.assertIs(lock1, lock2)
+
+    def test_connect_raw_returns_connection(self):
+        conn = connect_raw(self.tmp_path / "extra.db")
+        self.assertIsInstance(conn, sqlite3.Connection)
+        conn.close()
+
+
 if __name__ == "__main__":
     unittest.main()
 

@@ -1,4 +1,4 @@
-"""test_conn_usage.py — นับ token/ค่าใช้จ่ายต่อ connection (Observability)"""
+"""นับ token/ค่าใช้จ่ายต่อ connection (Observability)"""
 
 import sys
 import tempfile
@@ -68,6 +68,36 @@ class ConnUsageTest(unittest.TestCase):
         self.assertEqual(s["totals"]["requests"], 1)
         self.assertEqual(s["connections"][0]["conn_name"], "B")
         self.assertGreater(s["connections"][0]["output_tokens"], 0)
+
+
+class ConnUsageExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_estimate_tokens_empty_is_zero(self):
+        self.assertEqual(conn_usage.estimate_tokens(""), 0)
+
+    def test_estimate_tokens_positive_for_text(self):
+        self.assertGreater(conn_usage.estimate_tokens("hello world"), 0)
+
+    def test_price_per_1k_tokens_positive(self):
+        self.assertGreater(conn_usage.PRICE_PER_1K_TOKENS, 0)
+
+    def test_summary_returns_dict(self):
+        s = conn_usage.summary(self.root)
+        self.assertIsInstance(s, dict)
+
+    def test_summary_has_totals_key(self):
+        s = conn_usage.summary(self.root)
+        self.assertIn("totals", s)
+
+    def test_summary_has_connections_key(self):
+        s = conn_usage.summary(self.root)
+        self.assertIn("connections", s)
 
 
 if __name__ == "__main__":
