@@ -101,6 +101,34 @@ class StatsApiTest(unittest.TestCase):
         # ต้องมี entry อย่างน้อย 1 (อย่างน้อย /api/health หรือ /api/admin/stats)
         self.assertGreater(len(data["by_endpoint"]), 0)
 
+    # ── type checks ─────────────────────────────────────────────────────────
+
+    def test_stats_last_24h_is_int(self):
+        _, data = self._get("/api/admin/stats", token=self.session_token)
+        self.assertIsInstance(data["last_24h"], int)
+
+    def test_stats_total_requests_is_int(self):
+        _, data = self._get("/api/admin/stats", token=self.session_token)
+        self.assertIsInstance(data["total_requests"], int)
+
+    def test_stats_total_errors_is_int(self):
+        _, data = self._get("/api/admin/stats", token=self.session_token)
+        self.assertIsInstance(data["total_errors"], int)
+
+    def test_stats_error_rate_between_0_and_1(self):
+        _, data = self._get("/api/admin/stats", token=self.session_token)
+        self.assertGreaterEqual(data["error_rate"], 0.0)
+        self.assertLessEqual(data["error_rate"], 1.0)
+
+    def test_stats_by_endpoint_items_have_required_keys(self):
+        self._get("/api/health")
+        _, data = self._get("/api/admin/stats", token=self.session_token)
+        items = data["by_endpoint"]
+        self.assertGreater(len(items), 0)
+        item = items[0]
+        for field in ("endpoint", "count"):
+            self.assertIn(field, item, f"by_endpoint item missing key: {field}")
+
 
 if __name__ == "__main__":
     unittest.main()

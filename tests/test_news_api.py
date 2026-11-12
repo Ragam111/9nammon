@@ -100,6 +100,30 @@ class NewsApiTest(unittest.TestCase):
         for field in ("title", "link", "pubDate", "source"):
             self.assertIn(field, article, f"missing field: {field}")
 
+    def test_news_feeds_is_int(self):
+        _, data = self._get("/api/news", token=self.session_token)
+        # feeds คือจำนวน feed ที่ query ไม่ใช่ list
+        self.assertIsInstance(data["feeds"], int)
+
+    def test_news_errors_is_list(self):
+        _, data = self._get("/api/news", token=self.session_token)
+        self.assertIsInstance(data["errors"], list)
+
+    def test_news_cached_until_is_int(self):
+        _, data = self._get("/api/news", token=self.session_token)
+        # cached_until คือ Unix timestamp (int) ไม่ใช่ string
+        self.assertIsInstance(data["cached_until"], int)
+
+    def test_news_article_title_is_string(self):
+        _, data = self._get("/api/news", token=self.session_token)
+        self.assertGreater(len(data["articles"]), 0)
+        self.assertIsInstance(data["articles"][0]["title"], str)
+
+    def test_news_article_link_is_string(self):
+        _, data = self._get("/api/news", token=self.session_token)
+        self.assertGreater(len(data["articles"]), 0)
+        self.assertIsInstance(data["articles"][0]["link"], str)
+
 
 if __name__ == "__main__":
     unittest.main()
