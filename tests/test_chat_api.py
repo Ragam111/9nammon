@@ -299,3 +299,73 @@ class ChatApiTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ChatApiExtraTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+
+        def chat(messages, model, *, provider, project_root=None, **_opts):
+            return _response(f"{provider}:{model}", provider, model)
+
+        self.patch = mock.patch("app.providers.chat", chat)
+        self.patch.start()
+        handler = server.make_handler(self.root, None)
+        self.auth = {"X-Auth-Token": handler.session_token}
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        self.port = self.httpd.server_address[1]
+        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+
+    def tearDown(self):
+        self.patch.stop()
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        self.tmp.cleanup()
+
+    def _post(self, path, payload):
+        import http.client
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        body = json.dumps(payload).encode("utf-8")
+        conn.request("POST", path, body=body, headers={"Content-Type": "application/json", **self.auth})
+        resp = conn.getresponse()
+        raw = resp.read().decode("utf-8")
+        conn.close()
+        return resp.status, json.loads(raw) if raw else {}
+
+    def _get(self, path):
+        import http.client
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("GET", path, headers=self.auth)
+        resp = conn.getresponse()
+        raw = resp.read().decode("utf-8")
+        conn.close()
+        return resp.status, json.loads(raw) if raw else {}
+
+    def test_conversations_list_returns_200(self):
+        st, _ = self._get("/api/chat/conversations")
+        self.assertEqual(st, 200)
+
+    def test_create_conversation_returns_dict(self):
+        st, data = self._post("/api/chat/conversations", {"title": "test"})
+        self.assertEqual(st, 200)
+        self.assertIsInstance(data, dict)
+
+    def test_create_conversation_has_conversation_key(self):
+        _, data = self._post("/api/chat/conversations", {})
+        self.assertIn("conversation", data)
+
+    def test_created_conversation_has_id(self):
+        _, data = self._post("/api/chat/conversations", {})
+        self.assertIn("id", data["conversation"])
+
+    def test_providers_endpoint_returns_200(self):
+        st, _ = self._get("/api/chat/providers")
+        self.assertEqual(st, 200)
+
+    def test_unknown_provider_returns_400(self):
+        st, data = self._post("/api/chat", {
+            "provider": "not-a-real-provider", "model": "x",
+            "messages": [{"role": "user", "content": "hi"}],
+        })
+        self.assertEqual(st, 400)

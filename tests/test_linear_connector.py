@@ -96,3 +96,26 @@ class UpdateIssueStatusTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LinearConnectorExtraTest(unittest.TestCase):
+    def test_linear_api_url_is_string(self):
+        self.assertIsInstance(linear_connector.LINEAR_API_URL, str)
+
+    def test_linear_api_url_contains_linear_app(self):
+        self.assertIn("linear.app", linear_connector.LINEAR_API_URL)
+
+    def test_my_issues_query_is_string(self):
+        self.assertIsInstance(linear_connector.MY_ISSUES_QUERY, str)
+
+    def test_my_issues_query_has_assignedissues(self):
+        self.assertIn("assignedIssues", linear_connector.MY_ISSUES_QUERY)
+
+    def test_get_api_key_strips_surrounding_whitespace(self):
+        with patch.dict(os.environ, {"LINEAR_API_KEY": "  lin_stripped  "}):
+            key = linear_connector._get_api_key()
+        self.assertEqual(key, "lin_stripped")
+
+    def test_update_issue_no_confirm_raises_runtime(self):
+        with self.assertRaises(RuntimeError):
+            linear_connector.update_issue_status("ENG-99", "some-state-id")
