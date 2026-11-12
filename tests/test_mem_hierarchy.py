@@ -43,14 +43,13 @@ class DiskBenchTest(unittest.TestCase):
     def test_cleans_up_temp_file(self):
         with tempfile.TemporaryDirectory() as d:
             mh.bench_disk(d, size_mb=4)
-            # ไฟล์ .memh_*.tmp ต้องถูกลบหมด ไม่ค้าง
             leftovers = list(Path(d).glob(".memh_*.tmp"))
         self.assertEqual(leftovers, [])
 
     def test_creates_missing_dir(self):
         with tempfile.TemporaryDirectory() as d:
             sub = Path(d) / "new" / "nested"
-            r = mh.bench_disk(sub, size_mb=2)      # dir ยังไม่มี → ต้องสร้างให้
+            r = mh.bench_disk(sub, size_mb=2)
         self.assertGreater(r["write_mbps"], 0.0)
 
 
@@ -66,7 +65,6 @@ class MeasureAllTest(unittest.TestCase):
         for k in ("ram_mbps", "disk_write_mbps", "disk_read_mbps",
                   "net_loopback_mbps", "bottleneck", "size_mb"):
             self.assertIn(k, r)
-        # คอขวดต้องเป็นหนึ่งในชั้นที่วัด (ไม่ใช่ None เพราะทุกชั้นวัดติด)
         self.assertIn(r["bottleneck"],
                       ("RAM (copy)", "Disk write", "Disk read", "Network (loopback)"))
 
@@ -76,6 +74,39 @@ class MeasureAllTest(unittest.TestCase):
         text = mh.format_report(r)
         self.assertIn("คอขวด", text)
         self.assertIn(r["bottleneck"], text)
+
+
+class MemHierarchyExtraTest(unittest.TestCase):
+    def test_mbps_large_value(self):
+        result = mh._mbps(1000 * mh.MB, 1.0)
+        self.assertAlmostEqual(result, 1000.0, places=1)
+
+    def test_bench_disk_returns_dict_with_both_keys(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = mh.bench_disk(d, size_mb=2)
+        self.assertIn("write_mbps", r)
+        self.assertIn("read_mbps", r)
+
+    def test_measure_all_records_size_mb(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = mh.measure_all(target_dir=d, size_mb=4)
+        self.assertEqual(r["size_mb"], 4)
+
+    def test_measure_all_values_are_positive(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = mh.measure_all(target_dir=d, size_mb=4)
+        for key in ("ram_mbps", "disk_write_mbps", "disk_read_mbps", "net_loopback_mbps"):
+            self.assertGreater(r[key], 0.0, f"{key} ต้องเป็น > 0")
+
+    def test_format_report_contains_ram(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = mh.measure_all(target_dir=d, size_mb=4)
+        text = mh.format_report(r)
+        self.assertIn("RAM", text)
+
+    def test_bench_ram_returns_float(self):
+        result = mh.bench_ram(size_mb=2, repeat=1)
+        self.assertIsInstance(result, float)
 
 
 if __name__ == "__main__":

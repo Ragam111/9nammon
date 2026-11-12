@@ -101,5 +101,40 @@ class NewsApiTest(unittest.TestCase):
             self.assertIn(field, article, f"missing field: {field}")
 
 
+class NewsApiExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._orig_fetch = news_store._fetch_feed
+        news_store._fetch_feed = _mock_fetch
+        news_store._cache.clear()
+
+    def tearDown(self):
+        news_store._fetch_feed = self._orig_fetch
+        news_store._cache.clear()
+
+    def test_get_news_returns_dict(self):
+        result = news_store.get_news(["mock://feed"])
+        self.assertIsInstance(result, dict)
+
+    def test_get_news_has_articles_key(self):
+        result = news_store.get_news(["mock://feed"])
+        self.assertIn("articles", result)
+
+    def test_get_news_count_is_int(self):
+        result = news_store.get_news(["mock://feed"])
+        self.assertIsInstance(result["count"], int)
+
+    def test_get_news_errors_is_list(self):
+        result = news_store.get_news(["mock://feed"])
+        self.assertIsInstance(result["errors"], list)
+
+    def test_get_news_feeds_is_int(self):
+        result = news_store.get_news(["mock://feed"])
+        self.assertIsInstance(result["feeds"], int)
+
+    def test_mock_fetch_returns_two_articles(self):
+        articles = _mock_fetch("mock://feed")
+        self.assertEqual(len(articles), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -49,7 +49,6 @@ class NotifierTest(unittest.TestCase):
         with mock.patch("urllib.request.urlopen", return_value=_FakeResp(204)) as m:
             res = notifier.notify(self.root, "deploy", "merged PR #42", channels=("discord",))
         self.assertEqual(res["discord"], "sent")
-        # ยืนยันว่า compose ใส่ event + text ลง payload
         sent_req = m.call_args[0][0]
         self.assertIn(b"deploy", sent_req.data)
         self.assertIn("merged PR #42".encode("utf-8"), sent_req.data)
@@ -68,7 +67,7 @@ class NotifierTest(unittest.TestCase):
         with mock.patch("urllib.request.urlopen",
                         side_effect=urllib.error.URLError("boom secret")):
             res = notifier.notify(self.root, "e", "t", channels=("discord",))
-        self.assertEqual(res["discord"], "error: URLError")  # ไม่เผย webhook/secret
+        self.assertEqual(res["discord"], "error: URLError")
 
     def test_email_sent(self):
         for k, v in {
@@ -92,13 +91,45 @@ class NotifierTest(unittest.TestCase):
     def test_email_skips_without_recipient(self):
         config_manager.set_key(self.root, "SMTP_HOST", "smtp.test")
         config_manager.set_key(self.root, "SMTP_FROM", "u@test")
-        # ไม่มี SMTP_TO -> skip
         res = notifier.notify(self.root, "e", "t", channels=("email",))
         self.assertEqual(res["email"], "skipped (no config)")
 
     def test_unknown_channel(self):
         res = notifier.notify(self.root, "e", "t", channels=("carrier-pigeon",))
         self.assertEqual(res["carrier-pigeon"], "error: unknown channel")
+
+
+class NotifierExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_notify_result_is_dict(self):
+        result = notifier.notify(self.root, "evt", "hello")
+        self.assertIsInstance(result, dict)
+
+    def test_no_config_discord_skipped(self):
+        res = notifier.notify(self.root, "evt", "msg", channels=("discord",))
+        self.assertIn("skipped", res["discord"])
+
+    def test_no_config_email_skipped(self):
+        res = notifier.notify(self.root, "evt", "msg", channels=("email",))
+        self.assertIn("skipped", res["email"])
+
+    def test_empty_text_raises_value_error(self):
+        with self.assertRaises(ValueError):
+            notifier.notify(self.root, "evt", "")
+
+    def test_whitespace_only_text_raises_value_error(self):
+        with self.assertRaises(ValueError):
+            notifier.notify(self.root, "evt", "   ")
+
+    def test_notify_result_contains_channel_key(self):
+        res = notifier.notify(self.root, "evt", "msg", channels=("discord",))
+        self.assertIn("discord", res)
 
 
 if __name__ == "__main__":
