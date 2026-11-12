@@ -83,3 +83,39 @@ class FormatResultsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WebSearchExtraTest(unittest.TestCase):
+    def test_max_results_is_positive(self):
+        self.assertGreater(web_search.MAX_RESULTS, 0)
+
+    def test_max_results_is_int(self):
+        self.assertIsInstance(web_search.MAX_RESULTS, int)
+
+    def test_format_results_returns_string(self):
+        out = web_search.format_results_for_context([])
+        self.assertIsInstance(out, str)
+
+    def test_format_empty_returns_nonempty_string(self):
+        out = web_search.format_results_for_context([])
+        self.assertGreater(len(out), 0)
+
+    def test_format_single_result_has_index_1(self):
+        results = [{"title": "X", "url": "https://x.com", "snippet": "s"}]
+        out = web_search.format_results_for_context(results)
+        self.assertIn("1.", out)
+
+    def test_search_result_snippet_key(self):
+        # search_web maps 'description' -> 'snippet' in the returned dict
+        with patch("urllib.request.urlopen") as mock_urlopen, \
+             patch("app.web_search.get_key", return_value="key"):
+            resp_data = {"web": {"results": [
+                {"title": "T", "url": "https://t.com", "description": "desc"}
+            ]}}
+            mock_resp = MagicMock()
+            mock_resp.read.return_value = json.dumps(resp_data).encode("utf-8")
+            mock_resp.__enter__ = lambda s: s
+            mock_resp.__exit__ = MagicMock(return_value=False)
+            mock_urlopen.return_value = mock_resp
+            results = web_search.search_web("q", Path("/tmp"))
+        self.assertIn("snippet", results[0])

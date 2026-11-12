@@ -59,7 +59,7 @@ class StatsApiTest(unittest.TestCase):
         conn.close()
         return resp.status, json.loads(body) if body else {}
 
-    # ── basic 200 + shape ───────────────────────────────────────────────────
+    # ── basic 200 + shape ───────────────────────────────────────────────
 
     def test_stats_returns_200(self):
         # local bind + session token = CEO auto → ADMIN
@@ -75,7 +75,7 @@ class StatsApiTest(unittest.TestCase):
         _, data = self._get("/api/admin/stats", token=self.session_token)
         self.assertIsInstance(data["error_rate"], float)
 
-    # ── RBAC ────────────────────────────────────────────────────────────────
+    # ── RBAC ────────────────────────────────────────────────────────────────────────────
 
     def test_stats_requires_auth_token(self):
         # ไม่ส่ง token เลย (not CEO bind, not token) — ต้องได้ 401
@@ -84,7 +84,7 @@ class StatsApiTest(unittest.TestCase):
         st, data = self._get("/api/admin/stats", token="wrong-token-xyz")
         self.assertIn(st, (401, 403), f"ต้องได้ 401/403 ด้วย token ผิด แต่ได้ {st}")
 
-    # ── accumulation ────────────────────────────────────────────────────────
+    # ── accumulation ─────────────────────────────────────────────────────────────
 
     def test_stats_total_increases_after_requests(self):
         # เรียก /api/health สองครั้ง แล้วดู total_requests เพิ่มขึ้น
@@ -104,3 +104,59 @@ class StatsApiTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StatsApiExtraTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        model_backend.generate = (
+            lambda project_root, model, messages, num_ctx=8192, options=None: f"MODEL={model}"
+        )
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.httpd, self.port, self.session_token = _make_server(self.root)
+
+    def tearDown(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        self._tmp.cleanup()
+
+    def _get(self, path, token=None):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        hdrs = {}
+        if token:
+            hdrs["X-Auth-Token"] = token
+        conn.request("GET", path, headers=hdrs)
+        resp = conn.getresponse()
+        body = resp.read().decode("utf-8")
+        conn.close()
+        return resp.status, json.loads(body) if body else {}
+
+    def test_total_requests_is_int(self):
+        _, data = self._get("/api/admin/stats", token=self.session_token)
+        self.assertIsInstance(data["total_requests"], int)
+
+    def test_total_errors_is_int(self):
+        _, data = self._get("/api/admin/stats", token=self.session_token)
+        self.assertIsInstance(data["total_errors"], int)
+
+    def test_last_24h_is_nonneg_int(self):
+        _, data = self._get("/api/admin/stats", token=self.session_token)
+        self.assertIsInstance(data["last_24h"], int)
+        self.assertGreaterEqual(data["last_24h"], 0)
+
+    def test_error_rate_between_0_and_1(self):
+        _, data = self._get("/api/admin/stats", token=self.session_token)
+        self.assertGreaterEqual(data["error_rate"], 0.0)
+        self.assertLessEqual(data["error_rate"], 1.0)
+
+    def test_by_endpoint_is_list(self):
+        _, data = self._get("/api/admin/stats", token=self.session_token)
+        self.assertIsInstance(data["by_endpoint"], list)
+
+    def test_error_rate_zero_on_fresh_server(self):
+        _, data = self._get("/api/admin/stats", token=self.session_token)
+        # fresh server has no requests → error_rate should be 0.0
+        self.assertEqual(data["error_rate"], 0.0)
