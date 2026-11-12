@@ -83,5 +83,50 @@ class ConfigVersionsTest(unittest.TestCase):
         self.assertEqual(cv.list_versions(self.root), [])
 
 
+class ConfigVersionsExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _write_config(self, d):
+        config_manager._config_path(self.root).write_text(
+            json.dumps(d, ensure_ascii=False), encoding="utf-8")
+
+    def test_max_versions_is_positive_int(self):
+        self.assertIsInstance(cv.MAX_VERSIONS, int)
+        self.assertGreater(cv.MAX_VERSIONS, 0)
+
+    def test_snapshot_id_is_string(self):
+        self._write_config({"K": "v"})
+        meta = cv.snapshot(self.root)
+        self.assertIsInstance(meta["id"], str)
+        self.assertTrue(len(meta["id"]) > 0)
+
+    def test_snapshot_has_ts_key(self):
+        self._write_config({"K": "v"})
+        meta = cv.snapshot(self.root)
+        self.assertIn("ts", meta)
+
+    def test_list_versions_returns_list(self):
+        result = cv.list_versions(self.root)
+        self.assertIsInstance(result, list)
+
+    def test_snapshot_label_stored(self):
+        self._write_config({"K": "v"})
+        cv.snapshot(self.root, label="my-label")
+        versions = cv.list_versions(self.root)
+        self.assertTrue(any(v["label"] == "my-label" for v in versions))
+
+    def test_list_versions_newest_first(self):
+        self._write_config({"K": "v"})
+        cv.snapshot(self.root, label="first")
+        cv.snapshot(self.root, label="second")
+        versions = cv.list_versions(self.root)
+        self.assertEqual(versions[0]["label"], "second")
+
+
 if __name__ == "__main__":
     unittest.main()
