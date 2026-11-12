@@ -297,5 +297,61 @@ class ChatApiTest(unittest.TestCase):
         self.assertIn("unknown provider", data["error"])
 
 
+class ChatApiExtraTest(ChatApiTest):
+    def test_create_conversation_returns_id(self):
+        st, data = self._post("/api/chat/conversations", {"title": "extra"})
+        self.assertEqual(st, 200)
+        self.assertIn("conversation", data)
+        self.assertIn("id", data["conversation"])
+
+    def test_list_conversations_endpoint_returns_data(self):
+        self._post("/api/chat/conversations", {"title": "c1"})
+        st, data = self._get("/api/chat/conversations")
+        self.assertEqual(st, 200)
+        convs = data.get("conversations", data) if isinstance(data, dict) else data
+        self.assertIsInstance(convs, list)
+
+    def test_stateless_chat_returns_reply(self):
+        st, data = self._post("/api/chat", {
+            "provider": "openai",
+            "model": "gpt-4o-mini",
+            "messages": [{"role": "user", "content": "hi"}],
+        })
+        self.assertEqual(st, 200)
+        self.assertIn("reply", data)
+
+    def test_chat_reply_includes_provider(self):
+        st, data = self._post("/api/chat", {
+            "provider": "anthropic",
+            "model": "claude-haiku-4-5",
+            "messages": [{"role": "user", "content": "test"}],
+        })
+        self.assertEqual(st, 200)
+        self.assertIn("provider", data)
+
+    def test_missing_auth_returns_401(self):
+        import http.client
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("POST", "/api/chat", body=b"{}",
+                     headers={"Content-Type": "application/json"})
+        resp = conn.getresponse()
+        resp.read()
+        conn.close()
+        self.assertEqual(resp.status, 401)
+
+    def test_conversation_messages_saved(self):
+        _, created = self._post("/api/chat/conversations", {})
+        cid = created["conversation"]["id"]
+        self._post("/api/chat", {
+            "conversation_id": cid,
+            "content": "hello",
+            "provider": "openai",
+            "model": "gpt-4o-mini",
+        })
+        st, loaded = self._get(f"/api/chat/conversations?id={cid}")
+        self.assertEqual(st, 200)
+        self.assertGreater(len(loaded["messages"]), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
