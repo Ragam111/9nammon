@@ -2,7 +2,7 @@
 
 ฉีด sysinfo + mem_result เข้าไป (ไม่วัดจริง = เร็ว, deterministic) แล้วตรวจว่า:
 - จัดระดับถูก: netbook (เป้าหมาย i3/8GB/HDD), workstation, server
-- แนะนำ config สมเหตุผล (netbook → cpu/ngl0)
+- แนะนำ config สมเหตุสมผล (netbook → cpu/ngl0)
 - next_upgrade ชี้ SSD ก่อนเมื่อเป็น HDD (คอขวด data movement)
 """
 
@@ -135,6 +135,46 @@ class ProfileTest(unittest.TestCase):
         text = hp.format_report(p)
         self.assertIn("NETBOOK", text)
         self.assertIn("อัปเกรด", text)
+
+
+class HwProfileExtraTest(unittest.TestCase):
+    def test_classify_tier_returns_dict_with_tier(self):
+        result = hp.classify_tier(4, 16 * GB, disk_write_mbps=800.0, has_compute_gpu=False)
+        self.assertIsInstance(result, dict)
+        self.assertIn("tier", result)
+
+    def test_recommend_config_returns_dict(self):
+        tier = hp.classify_tier(4, 16 * GB, disk_write_mbps=800.0, has_compute_gpu=False)
+        result = hp.recommend_config(tier)
+        self.assertIsInstance(result, dict)
+
+    def test_format_report_returns_string(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = hp.profile(
+                project_root=Path(d),
+                sysinfo=_sysinfo(2, 8),
+                mem_result={"disk_write_mbps": 80.0, "bottleneck": "Disk write", "size_mb": 32},
+            )
+        result = hp.format_report(p)
+        self.assertIsInstance(result, str)
+
+    def test_classify_tier_server_many_cores(self):
+        result = hp.classify_tier(32, 64 * GB, disk_write_mbps=1000.0, has_compute_gpu=False)
+        self.assertEqual(result["tier"], "server")
+
+    def test_next_upgrade_returns_string(self):
+        tier = hp.classify_tier(2, 8 * GB, disk_write_mbps=80.0, has_compute_gpu=False)
+        result = hp.next_upgrade(tier, has_compute_gpu=False)
+        self.assertIsInstance(result, str)
+
+    def test_profile_has_recommended_config(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = hp.profile(
+                project_root=Path(d),
+                sysinfo=_sysinfo(4, 16),
+                mem_result={"disk_write_mbps": 800.0, "bottleneck": "Network", "size_mb": 32},
+            )
+        self.assertIn("recommended_config", p)
 
 
 if __name__ == "__main__":

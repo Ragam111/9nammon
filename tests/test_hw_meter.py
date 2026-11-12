@@ -207,3 +207,31 @@ class TestSnapshotProfileException(_HwMeterBase):
 
     def test_recommended_model_empty_on_profile_error(self):
         self.assertEqual(self._call(raises=True)["recommended_model"], "")
+
+
+class HwMeterExtraTest(_HwMeterBase):
+    def test_snapshot_cpu_pct_non_negative(self):
+        result = self._call(snap=_make_snap(cpu_pct=25.0))
+        self.assertGreaterEqual(result["cpu_pct"], 0)
+
+    def test_snapshot_ram_pct_in_range(self):
+        result = self._call(snap=_make_snap(ram_pct=42.0))
+        self.assertGreaterEqual(result["ram_pct"], 0)
+        self.assertLessEqual(result["ram_pct"], 100)
+
+    def test_snapshot_logical_cores_positive(self):
+        result = self._call(snap=_make_snap(logical_cores=8))
+        self.assertGreater(result["logical_cores"], 0)
+
+    def test_snapshot_tier_reasons_is_list(self):
+        result = self._call()
+        self.assertIsInstance(result["tier_reasons"], list)
+
+    def test_snapshot_per_core_len_matches_logical_cores(self):
+        result = self._call(snap=_make_snap(logical_cores=4,
+                                            per_core=[10.0, 20.0, 15.0, 25.0]))
+        self.assertEqual(len(result["cpu_per_core"]), 4)
+
+    def test_snapshot_recommended_model_is_string(self):
+        result = self._call()
+        self.assertIsInstance(result["recommended_model"], str)

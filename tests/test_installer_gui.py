@@ -1,4 +1,4 @@
-"""test_installer_gui.py — ตรรกะติดตั้งของ installer GUI (ไม่แตะ tkinter/เน็ตจริง)
+"""test_installer_gui.py — ตรรกะติดตั้งของ installer GUI (ไม่แต้อ tkinter/เน็ตจริง)
 
 mock การดาวน์โหลด (urlretrieve) ด้วย zip ปลอมที่สร้างเอง → เทส do_install คัดลอกครบ +
 progress ถึง 100 + สร้าง start-lca.bat + desktop icon. ไม่ import tkinter (อยู่ใน launch_gui เท่านั้น)
@@ -21,7 +21,7 @@ import installer_gui  # noqa: E402
 
 
 def _make_fake_zip(zip_path: Path):
-    """สร้าง zip เลียนแบบ GitHub (โฟลเดอร์ราก 9nammon-main/ + ไฟล์โปรแกรม)"""
+    """สร้าง zip เลียนแบบ GitHub (โฟล์เดอร์ราก 9nammon-main/ + ไฟล์โปรแกรม)"""
     with zipfile.ZipFile(zip_path, "w") as zf:
         zf.writestr("9nammon-main/server.py", "# server\n")
         zf.writestr("9nammon-main/local_coder.py", "# cli\n")
@@ -351,13 +351,13 @@ class CheckFreeDiskTest(unittest.TestCase):
             self.assertIn("TEMP", msg)
 
     def test_probe_free_returns_bytes(self):
-        """helper _probe_free คืนจำนวน bytes ว่างของดิสก์"""
+        """หลุด _probe_free คืนจำนวน bytes ว่างของดิสก์"""
         with tempfile.TemporaryDirectory() as tmp:
             free = installer_gui._probe_free(tmp)
             self.assertGreater(free, 0)
 
     def test_probe_free_walks_up_nonexistent(self):
-        """walk up หา parent ที่มีจริง"""
+        """วาลก up หา parent ที่มีจริง"""
         fake = "/tmp/zzzz-no-such-dir/deeper/install"
         free = installer_gui._probe_free(fake)
         self.assertGreater(free, 0)
@@ -371,6 +371,31 @@ class CheckFreeDiskTest(unittest.TestCase):
             with self.assertRaises(RuntimeError) as cm:
                 installer_gui.do_install(tmp, False, lambda p, m: None)
             self.assertIn("ไม่พอ", str(cm.exception))
+
+
+class InstallerGuiExtraTest(unittest.TestCase):
+    def test_copy_files_is_non_empty(self):
+        self.assertGreater(len(installer_gui.COPY_FILES), 0)
+
+    def test_default_install_dir_returns_string(self):
+        result = installer_gui.default_install_dir()
+        self.assertIsInstance(result, str)
+
+    def test_check_free_disk_returns_three_elements(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = installer_gui.check_free_disk(tmp, min_bytes=1)
+            self.assertEqual(len(result), 3)
+
+    def test_probe_free_returns_positive(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            free = installer_gui._probe_free(tmp)
+            self.assertGreater(free, 0)
+
+    def test_checksummismatch_is_exception(self):
+        self.assertTrue(issubclass(installer_gui.ChecksumMismatch, Exception))
+
+    def test_copy_files_contains_server_py(self):
+        self.assertIn("server.py", installer_gui.COPY_FILES)
 
 
 if __name__ == "__main__":
