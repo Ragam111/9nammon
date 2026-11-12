@@ -119,5 +119,63 @@ class RequestBodySizeLimitTest(unittest.TestCase):
                             "payload ภายใน limit ต้องไม่ถูกปฏิเสธด้วย body size")
 
 
+class SecurityExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        handler = server.make_handler(Path(self._tmp.name), MASTER_TOKEN)
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        self.port = self.httpd.server_address[1]
+        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+
+    def tearDown(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        self._tmp.cleanup()
+
+    def _get(self, path, headers=None):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("GET", path, headers=headers or {})
+        resp = conn.getresponse()
+        resp.read()
+        conn.close()
+        return resp.status
+
+    def test_health_no_auth_required(self):
+        status = self._get("/api/health")
+        self.assertEqual(status, 200)
+
+    def test_correct_token_me_200(self):
+        status = self._get("/api/me", headers={"X-Auth-Token": MASTER_TOKEN})
+        self.assertEqual(status, 200)
+
+    def test_no_token_me_401(self):
+        status = self._get("/api/me")
+        self.assertEqual(status, 401)
+
+    def test_prefix_of_token_rejected(self):
+        prefix = MASTER_TOKEN[:5]
+        status = self._get("/api/me", headers={"X-Auth-Token": prefix})
+        self.assertEqual(status, 401)
+
+    def test_token_with_extra_char_rejected(self):
+        status = self._get("/api/me", headers={"X-Auth-Token": MASTER_TOKEN + "!"})
+        self.assertEqual(status, 401)
+
+    def test_oversized_body_returns_400(self):
+        huge_cl = 3 * 1024 * 1024
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.putrequest("POST", "/api/todos")
+        conn.putheader("Content-Type", "application/json")
+        conn.putheader("Content-Length", str(huge_cl))
+        conn.putheader("X-Auth-Token", MASTER_TOKEN)
+        conn.endheaders()
+        conn.send(b'{"text":"x"}')
+        resp = conn.getresponse()
+        body = resp.read().decode("utf-8")
+        conn.close()
+        self.assertEqual(resp.status, 400)
+        self.assertIn("ใหญ่เกิน", body)
+
+
 if __name__ == "__main__":
     unittest.main()
