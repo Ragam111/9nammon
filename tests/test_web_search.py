@@ -81,5 +81,38 @@ class FormatResultsTest(unittest.TestCase):
         self.assertIn("2.", out)
 
 
+# ---------------------------------------------------------------------------
+# WebSearchExtraTest
+# ---------------------------------------------------------------------------
+
+class WebSearchExtraTest(unittest.TestCase):
+    def test_max_results_is_positive(self):
+        self.assertGreater(web_search.MAX_RESULTS, 0)
+
+    def test_format_empty_contains_no_results_msg(self):
+        out = web_search.format_results_for_context([])
+        self.assertIn("ไม่พบผลลัพธ์", out)
+
+    def test_format_single_result_includes_title(self):
+        results = [{"title": "My Title", "url": "https://t.co", "snippet": "snip"}]
+        out = web_search.format_results_for_context(results)
+        self.assertIn("My Title", out)
+
+    def test_format_single_result_includes_url(self):
+        results = [{"title": "T", "url": "https://unique-url.com", "snippet": "s"}]
+        out = web_search.format_results_for_context(results)
+        self.assertIn("https://unique-url.com", out)
+
+    def test_format_numbered_starts_at_one(self):
+        results = [{"title": "A", "url": "u1", "snippet": "s"}]
+        out = web_search.format_results_for_context(results)
+        self.assertIn("1.", out)
+
+    @patch("app.web_search.get_key", return_value=None)
+    def test_no_key_raises_runtime_error(self, _mock):
+        with self.assertRaises(RuntimeError):
+            web_search.search_web("query", Path("/tmp"))
+
+
 if __name__ == "__main__":
     unittest.main()
