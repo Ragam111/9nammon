@@ -74,5 +74,46 @@ class HistoryStoreTest(unittest.TestCase):
         self.assertEqual(errs[0]["message"], "two")
 
 
+class HistoryStoreExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _report(self, cpu=10.0, mem=20.0):
+        return {
+            "snapshot": {"cpu": {"percent": cpu}, "memory": {"percent": mem}},
+            "verdict": "ok",
+            "worst_severity": "OK",
+        }
+
+    def test_record_snapshot_returns_dict(self):
+        result = history_store.record_snapshot(self.root, self._report())
+        self.assertIsInstance(result, dict)
+
+    def test_list_snapshots_returns_list(self):
+        rows = history_store.list_snapshots(self.root)
+        self.assertIsInstance(rows, list)
+
+    def test_list_errors_returns_list(self):
+        rows = history_store.list_errors(self.root)
+        self.assertIsInstance(rows, list)
+
+    def test_log_error_returns_dict(self):
+        result = history_store.log_error(self.root, "info", "src", "msg")
+        self.assertIsInstance(result, dict)
+
+    def test_snapshot_cpu_stored_correctly(self):
+        history_store.record_snapshot(self.root, self._report(cpu=77.5))
+        rows = history_store.list_snapshots(self.root)
+        self.assertEqual(rows[0]["cpu_percent"], 77.5)
+
+    def test_empty_errors_list_initially(self):
+        rows = history_store.list_errors(self.root)
+        self.assertEqual(rows, [])
+
+
 if __name__ == "__main__":
     unittest.main()

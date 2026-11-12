@@ -72,5 +72,40 @@ class DatasetStoreTest(unittest.TestCase):
             dataset_store.export_jsonl(self.root, fmt="bogus")
 
 
+class DatasetStoreExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_add_returns_dict(self):
+        s = dataset_store.add_sample(self.root, "prompt", "response")
+        self.assertIsInstance(s, dict)
+
+    def test_add_has_id(self):
+        s = dataset_store.add_sample(self.root, "p", "r")
+        self.assertIn("id", s)
+        self.assertIsNotNone(s["id"])
+
+    def test_count_returns_int(self):
+        n = dataset_store.count(self.root)
+        self.assertIsInstance(n, int)
+
+    def test_count_increases_after_add(self):
+        before = dataset_store.count(self.root)
+        dataset_store.add_sample(self.root, "p", "r")
+        self.assertEqual(dataset_store.count(self.root), before + 1)
+
+    def test_list_returns_list(self):
+        rows = dataset_store.list_samples(self.root)
+        self.assertIsInstance(rows, list)
+
+    def test_delete_nonexistent_returns_false(self):
+        result = dataset_store.delete_sample(self.root, 99999)
+        self.assertFalse(result)
+
+
 if __name__ == "__main__":
     unittest.main()
