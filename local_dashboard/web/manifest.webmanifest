@@ -1,0 +1,19 @@
+{
+  "name": "LCA Local Dashboard",
+  "short_name": "LCA Dash",
+  "description": "แดชบอร์ดเครื่องนี้ของ Local Code Assistant",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f4f6f3",
+  "theme_color": "#1f6b3a",
+  "lang": "th",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

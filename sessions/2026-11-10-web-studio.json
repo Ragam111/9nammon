@@ -1,0 +1,42 @@
+{
+  "title": "สตูดิโอเว็บ Token LCA เดินได้แล้ว",
+  "source": "studio",
+  "space": "studio",
+  "steps": [
+    {
+      "at": "2026-11-10T05:12:00.000Z",
+      "layer": "core",
+      "file": "docs/WEB_STUDIO_LAUNCH.md",
+      "action": "Read",
+      "detail": "อ่านสัญญาสตูดิโอเว็บสด แขกใช้ฟรี บัญชีแยกถัง โควตาเริ่ม 8,000"
+    },
+    {
+      "at": "2026-11-10T05:20:00.000Z",
+      "layer": "frontend",
+      "file": "app/chat.js",
+      "action": "Re-check",
+      "detail": "ห้าแชทส่งได้ทันที คำตอบอยู่แค่หน้า ไม่ถูกยกเข้าบัญชีทีหลัง"
+    },
+    {
+      "at": "2026-11-10T05:28:00.000Z",
+      "layer": "backend",
+      "file": "app/space_store.py",
+      "action": "Fix",
+      "detail": "บัญชีแยกถังส่วนตัวกับถังบริษัท เทปแชทและมติสภาไม่ปนกัน"
+    },
+    {
+      "at": "2026-11-10T05:32:00.000Z",
+      "layer": "backend",
+      "file": "app/usage_store.py",
+      "action": "หัก T-LCA",
+      "detail": "หัก 1 เมื่อเก็บบทแชทหรือมติสภา เทปสตูดิโอไม่หัก หมดแล้วไม่เรียกสมองต่อ"
+    },
+    {
+      "at": "2026-11-10T05:36:00.000Z",
+      "layer": "core",
+      "file": "SKILL.md",
+      "action": "Report",
+      "detail": "rapid-iteration-ecosystem ติดทุกม้วนที่บันทึก Read Re-check Fix Report สตูดิโอเว็บไม่แทน server.py และไม่ย้ายตัวติดตั้ง Windows"
+    }
+  ]
+}
