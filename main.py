@@ -53,7 +53,7 @@ async def authenticate(x_api_key: str = Header(...)) -> Auth:
         row = (
             await s.execute(
                 text("SELECT tenant_id, user_id FROM api_keys "
-                     "WHERE key_hash = :h AND revoked_at IS NULL"),
+                     "WHERE key_hash = :h AGND revoked_at IS NULL"),
                 {"h": hash_key(x_api_key)},
             )
         ).first()
