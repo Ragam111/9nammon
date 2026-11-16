@@ -1,0 +1,450 @@
+"""
+test_server_pages.py — integration test ของระบบหน้าเว็บ (web) ทุกหน้าในระบบ LCA
+
+ตรวจว่า STATIC_ROUTES เสิร์ฟครบทุกหน้า (chat / dev / login / support) + asset (css/js)
+ด้วย content-type ถูกต้อง และ route ที่ไม่มีคืน 404 — สตาร์ท server จริงบนพอร์ตสุ่ม
+mock call_ollama ไว้ ไม่ต้องมี Ollama จริง
+"""
+
+import http.client
+import sys
+import tempfile
+import threading
+import unittest
+from http.server import ThreadingHTTPServer
+from pathlib import Path
+from unittest import mock
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+import server  # noqa: E402
+
+
+class ServerPagesTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        server.call_ollama = lambda model, messages, num_ctx=8192: "mocked-reply"
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        root = Path(self._tmp.name)
+        # ไม่ตั้ง master token → server สุ่ม session token (สิทธิ์ CEO เมื่อส่งกลับมา)
+        # หน้า shell เสิร์ฟได้ไม่ต้อง auth; API ที่เปลี่ยนข้อมูลต้องแนบ token นี้
+        handler = server.make_handler(root, None)
+        self.session_token = handler.session_token
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        self.port = self.httpd.server_address[1]
+        self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
+        self.thread.start()
+        orig = http.client.HTTPConnection.request
+
+        def _request(conn, method, url, body=None, headers=None, *, encode_chunked=False):
+            hdrs = dict(headers or {})
+            hdrs.setdefault("X-Auth-Token", self.session_token)
+            return orig(conn, method, url, body=body, headers=hdrs, encode_chunked=encode_chunked)
+
+        self._req_patch = mock.patch.object(http.client.HTTPConnection, "request", _request)
+        self._req_patch.start()
+        self.addCleanup(self._req_patch.stop)
+
+    def tearDown(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        self._tmp.cleanup()
+
+    def _get(self, path):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("GET", path)
+        resp = conn.getresponse()
+        body = resp.read()
+        ctype = resp.getheader("Content-Type")
+        cache = resp.getheader("Cache-Control")
+        conn.close()
+        return resp.status, ctype, cache, body
+
+    def test_all_pages_served(self):
+        # route -> (content-type มีคำนี้, ต้องมี Cache-Control ไหม)
+        cases = {
+            "/":        ("text/html", False),
+            "/dev":     ("text/html", False),
+            "/login":   ("text/html", False),
+            "/support": ("text/html", False),
+            "/app.css": ("text/css", True),
+            "/app.js":  ("javascript", True),
+        }
+        for path, (ctype_part, want_cache) in cases.items():
+            st, ctype, cache, body = self._get(path)
+            self.assertEqual(st, 200, f"{path} ควรได้ 200 (ได้ {st})")
+            self.assertIn(ctype_part, ctype, f"{path} content-type ผิด: {ctype}")
+            self.assertTrue(len(body) > 0, f"{path} body ว่าง")
+            if want_cache:
+                self.assertIsNotNone(cache, f"{path} ควรมี Cache-Control")
+
+    def test_pages_match_static_routes_table(self):
+        # ทุก entry ใน STATIC_ROUTES ต้องเสิร์ฟได้จริง (กันเพิ่ม route แล้วลืมวางไฟล์)
+        for route in server.STATIC_ROUTES:
+            st, _, _, _ = self._get(route)
+            self.assertEqual(st, 200, f"route {route} ใน STATIC_ROUTES เสิร์ฟไม่ได้ ({st})")
+
+    def test_login_page_references_shared_auth_js(self):
+        _, _, _, body = self._get("/login")
+        self.assertIn(b"/app.js", body)
+
+    def test_support_page_posts_to_ticket_api(self):
+        _, _, _, body = self._get("/support")
+        self.assertIn(b"/api/support/ticket", body)
+
+    def test_dev_page_has_support_dashboard(self):
+        # S2: /dev ต้องมี support dashboard ที่เรียก list + เปลี่ยนสถานะ ticket
+        _, _, _, body = self._get("/dev")
+        self.assertIn(b"/api/admin/support/tickets", body)
+        self.assertIn(b"/api/admin/support/tickets/status", body)
+        self.assertIn(b"support-wrap", body)
+
+    def test_dev_page_has_usage_monitor(self):
+        # มอนิเตอร์ต่อ API key: /dev ต้องมี panel ที่ดึง usage summary (by_key)
+        _, _, _, body = self._get("/dev")
+        self.assertIn(b"/api/admin/usage/summary", body)
+        self.assertIn(b"usage-wrap", body)
+
+    def test_dev_page_has_cluster_monitor(self):
+        # มอนิเตอร์คลัสเตอร์: /dev ต้องมี panel ที่ดึง health ของทุก node + เพิ่ม node ได้
+        _, _, _, body = self._get("/dev")
+        self.assertIn(b"/api/admin/cluster/health", body)
+        self.assertIn(b"/api/admin/cluster/nodes", body)
+        self.assertIn(b"cluster-wrap", body)
+
+    def test_dev_page_has_ecosystem_settings(self):
+        # ecosystem: /dev ต้องตั้งค่าตัวตน node + join hub ได้
+        _, _, _, body = self._get("/dev")
+        self.assertIn(b"/api/admin/cluster/settings", body)
+        self.assertIn(b"/api/admin/cluster/join", body)
+
+    def test_dev_page_has_hw_profile(self):
+        # hardware profile: /dev ต้องมี panel ที่ดึงโปรไฟล์เครื่อง + แนะนำ config
+        _, _, _, body = self._get("/dev")
+        self.assertIn(b"/api/admin/hw-profile", body)
+        self.assertIn(b"hwprofile-wrap", body)
+
+    def test_hw_profile_endpoint_returns_profile(self):
+        # GET /api/admin/hw-profile (no-disk) ต้องคืนโปรไฟล์ที่มี tier + recommended_config
+        import json as _json
+        st, ctype, _, body = self._get("/api/admin/hw-profile")
+        self.assertEqual(st, 200)
+        data = _json.loads(body)
+        self.assertIn("profile", data)
+        self.assertIn("tier", data["profile"])
+        self.assertIn("MAX_CONCURRENT_GENERATIONS", data["profile"]["recommended_config"])
+
+    def test_dev_page_has_model_backend_settings(self):
+        # เสียบ cloud GPU: /dev ต้องตั้งค่า + ทดสอบ model backend ได้
+        _, _, _, body = self._get("/dev")
+        self.assertIn(b"/api/admin/model-backend/settings", body)
+        self.assertIn(b"/api/admin/model-backend/test", body)
+
+    def test_chat_stream_emits_sse_deltas(self):
+        # /api/chat/stream ต้อง stream คำตอบทีละ chunk แบบ SSE แล้วปิดด้วย done
+        import json as _json
+        from unittest import mock
+        fake = ["def ", "foo", "()"]
+        with mock.patch.object(server.model_backend, "generate_stream",
+                               lambda *a, **k: iter(fake)):
+            conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+            conn.request("POST", "/api/chat/stream",
+                         body=_json.dumps({"messages": [{"role": "user", "content": "hi"}]}),
+                         headers={"Content-Type": "application/json"})
+            resp = conn.getresponse()
+            self.assertEqual(resp.status, 200)
+            self.assertIn("text/event-stream", resp.getheader("Content-Type"))
+            body = resp.read().decode("utf-8")
+            conn.close()
+        # รวม delta จากทุก event ต้องได้ข้อความเต็ม + มี event done ปิดท้าย
+        deltas = []
+        for block in body.split("\n\n"):
+            block = block.strip()
+            if block.startswith("data:"):
+                evt = _json.loads(block[5:].strip())
+                if "delta" in evt:
+                    deltas.append(evt["delta"])
+        self.assertEqual("".join(deltas), "def foo()")
+        self.assertIn('"done": true', body)
+
+    def test_dev_page_has_config_versions(self):
+        # config rollback: /dev ต้องมี panel ที่ snapshot/list/rollback ได้
+        _, _, _, body = self._get("/dev")
+        self.assertIn(b"cfgver-wrap", body)
+        self.assertIn(b"/api/admin/config/snapshot", body)
+        self.assertIn(b"/api/admin/config/rollback", body)
+
+    def test_config_version_snapshot_list_rollback(self):
+        # local mode = CEO → snapshot + list + rollback ใช้ได้ครบ (flow กัน incident)
+        import json as _json
+        def _post(path, body):
+            conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+            conn.request("POST", path, body=_json.dumps(body),
+                         headers={"Content-Type": "application/json"})
+            r = conn.getresponse(); data = r.read(); conn.close()
+            return r.status, _json.loads(data or b"{}")
+        # snapshot 1 อัน
+        st, data = _post("/api/admin/config/snapshot", {"label": "ก่อนปล่อย"})
+        self.assertEqual(st, 200)
+        vid = data["snapshot"]["id"]
+        # list ต้องเห็นเวอร์ชันนั้น
+        st, _, _, body = self._get("/api/admin/config/versions")
+        self.assertEqual(st, 200)
+        self.assertIn(vid.encode(), body)
+        # rollback กลับเวอร์ชันนั้น (ต้องสำเร็จ)
+        st, data = _post("/api/admin/config/rollback", {"id": vid})
+        self.assertEqual(st, 200)
+        self.assertEqual(data["rolledback"]["restored"], vid)
+        # rollback id มั่ว → 404
+        st, _ = _post("/api/admin/config/rollback", {"id": "v-nope"})
+        self.assertEqual(st, 404)
+
+    def test_spaces_page_served(self):
+        st, ctype, _, body = self._get("/spaces")
+        self.assertEqual(st, 200)
+        self.assertIn("text/html", ctype)
+        self.assertIn(b"/api/spaces", body)
+
+    def test_spaces_create_list_items(self):
+        # local mode = CEO → สร้างพื้นที่ + ลงข้อความ + list ได้ (private/shared)
+        import json as _json
+        def _post(path, body):
+            conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+            conn.request("POST", path, body=_json.dumps(body),
+                         headers={"Content-Type": "application/json"})
+            r = conn.getresponse(); data = r.read(); conn.close()
+            return r.status, _json.loads(data or b"{}")
+        st, data = _post("/api/spaces", {"name": "ห้องบริษัท", "visibility": "shared"})
+        self.assertEqual(st, 200)
+        sid = data["space"]["id"]
+        # ลงข้อความในพื้นที่
+        st, _ = _post("/api/spaces/items", {"space": sid, "text": "ประชุม 10 โมง"})
+        self.assertEqual(st, 200)
+        # list items กลับมาเห็นข้อความ
+        st, _, _, body = self._get("/api/spaces/items?space=" + sid)
+        self.assertEqual(st, 200)
+        self.assertIn("ประชุม 10 โมง", body.decode("utf-8"))
+        # list spaces เห็นพื้นที่ที่สร้าง
+        st, _, _, body = self._get("/api/spaces")
+        self.assertIn(sid.encode(), body)
+        # เข้าพื้นที่ที่ไม่มีจริง → 404
+        st, _, _, _ = self._get("/api/spaces/items?space=sp-nope")
+        self.assertEqual(st, 404)
+
+    def test_cluster_route_preview(self):
+        # ไม่มี node → route target = null (ทำที่เครื่องนี้เอง), candidates = 0
+        import json as _json
+        st, _, _, body = self._get("/api/admin/cluster/route")
+        self.assertEqual(st, 200)
+        data = _json.loads(body)
+        self.assertIn("route", data)
+        self.assertIsNone(data["route"]["target"])
+        self.assertEqual(data["route"]["candidates"], 0)
+
+    def test_watchdog_status_endpoint(self):
+        # watchdog status: enabled (default false) + findings จาก manual check
+        import json as _json
+        st, _, _, body = self._get("/api/admin/watchdog")
+        self.assertEqual(st, 200)
+        data = _json.loads(body)
+        self.assertIn("enabled", data)
+        self.assertFalse(data["enabled"])           # ปิดเป็นค่าเริ่มต้น
+        self.assertIn("findings", data)             # list (อาจมี ollama ล่ม ใน CI)
+
+    def test_dev_page_has_features_panel(self):
+        # server features: /dev ต้องมี panel เปิด/ปิดฟีเจอร์
+        _, _, _, body = self._get("/dev")
+        self.assertIn(b"features-wrap", body)
+        self.assertIn(b"/api/admin/features", body)
+
+    def test_features_get_and_toggle(self):
+        # local mode = CEO → ดูสถานะ + เปิด/ปิดฟีเจอร์ได้
+        import json as _json
+        st, _, _, body = self._get("/api/admin/features")
+        self.assertEqual(st, 200)
+        feats = _json.loads(body)["features"]
+        wd = next(f for f in feats if f["key"] == "watchdog")
+        self.assertFalse(wd["enabled"])     # default ปิด
+        # เปิด watchdog
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("POST", "/api/admin/features",
+                     body=_json.dumps({"key": "watchdog", "enabled": True}),
+                     headers={"Content-Type": "application/json"})
+        r = conn.getresponse(); r.read(); conn.close()
+        self.assertEqual(r.status, 200)
+        # อ่านกลับ = เปิดแล้ว
+        st, _, _, body = self._get("/api/admin/features")
+        feats = _json.loads(body)["features"]
+        self.assertTrue(next(f for f in feats if f["key"] == "watchdog")["enabled"])
+        # key มั่ว → 400
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("POST", "/api/admin/features",
+                     body=_json.dumps({"key": "nope", "enabled": True}),
+                     headers={"Content-Type": "application/json"})
+        r = conn.getresponse(); r.read(); conn.close()
+        self.assertEqual(r.status, 400)
+
+    def test_agent_jobs_gated_by_feature_flag(self):
+        # ฟีเจอร์ agent ปิด default → POST /api/agent/jobs ต้อง 403
+        import json as _json
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("POST", "/api/agent/jobs", body=_json.dumps({"task": "ดู server.py"}),
+                     headers={"Content-Type": "application/json"})
+        r = conn.getresponse(); r.read(); conn.close()
+        self.assertEqual(r.status, 403)
+
+    def test_agent_jobs_enqueue_and_poll(self):
+        # เปิดฟีเจอร์ agent ก่อน (local = CEO) → n8n enqueue + poll ได้
+        import json as _json
+        def _post(path, body):
+            conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+            conn.request("POST", path, body=_json.dumps(body), headers={"Content-Type": "application/json"})
+            r = conn.getresponse(); data = r.read(); conn.close()
+            return r.status, _json.loads(data or b"{}")
+        self.assertEqual(_post("/api/admin/features", {"key": "agent", "enabled": True})[0], 200)
+        st, data = _post("/api/agent/jobs", {"task": "วิเคราะห์โค้ด", "source": "n8n"})
+        self.assertEqual(st, 200)
+        jid = data["job"]["id"]
+        self.assertEqual(data["job"]["status"], "queued")
+        # poll งานเดียว
+        st, _, _, body = self._get("/api/agent/jobs?id=" + jid)
+        self.assertEqual(st, 200)
+        self.assertEqual(_json.loads(body)["job"]["id"], jid)
+        # สรุปคิว
+        st, _, _, body = self._get("/api/agent/jobs")
+        self.assertIn(b"stats", body)
+        # id มั่ว → 404
+        st, _, _, _ = self._get("/api/agent/jobs?id=job-nope")
+        self.assertEqual(st, 404)
+
+    def test_install_page_served_public(self):
+        # หน้า /install = landing ดาวน์โหลด/ติดตั้งบนเว็บ (public, ไม่ต้องล็อกอิน)
+        st, ctype, _, body = self._get("/install")
+        self.assertEqual(st, 200)
+        self.assertIn("text/html", ctype)
+        self.assertIn(b"install.ps1", body)   # มีคำสั่งติดตั้งออนไลน์ (install.ps1 รองรับทั้ง 2 role)
+        self.assertIn(b"archive/refs/heads/main.zip", body)   # มีปุ่มดาวน์โหลด zip
+
+    def test_dev_page_has_approvals_panel(self):
+        # P6: /dev ต้องมี panel คำขออนุมัติ + เรียก endpoint อนุมัติ
+        _, _, _, body = self._get("/dev")
+        self.assertIn(b"approvals-wrap", body)
+        self.assertIn(b"/api/agent/approvals", body)
+        self.assertIn(b"/api/agent/approvals/decide", body)
+
+    def test_approvals_endpoint_gated_and_empty(self):
+        # local = CEO → ดูคำขอได้ (เริ่มต้นว่าง), decision มั่ว → 400
+        import json as _json
+        st, _, _, body = self._get("/api/agent/approvals")
+        self.assertEqual(st, 200)
+        data = _json.loads(body)
+        self.assertIn("pending", data)
+        self.assertEqual(data["pending"], [])
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("POST", "/api/agent/approvals/decide",
+                     body=_json.dumps({"id": "x", "decision": "maybe"}),
+                     headers={"Content-Type": "application/json"})
+        r = conn.getresponse(); r.read(); conn.close()
+        self.assertEqual(r.status, 400)
+
+    def _post(self, path, payload):
+        import json as _json
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("POST", path, body=_json.dumps(payload),
+                     headers={"Content-Type": "application/json"})
+        r = conn.getresponse(); body = r.read(); conn.close()
+        return r.status, body
+
+    def test_console_page_served_and_wires_apis(self):
+        # Console: หน้า /console ต้องเสิร์ฟได้ + อ้าง endpoint connections/skills/bots
+        st, ctype, _, body = self._get("/console")
+        self.assertEqual(st, 200)
+        self.assertIn("text/html", ctype)
+        self.assertIn(b"/api/connections", body)
+        self.assertIn(b"/api/skills", body)
+        self.assertIn(b"/api/bots/run", body)
+        # agent mode (ReAct): ฟอร์ม skill ต้องเลือกโหมด agent + ตั้ง max_steps ได้
+        self.assertIn(b"skl-mode", body)
+        self.assertIn(b"skl-steps", body)
+        self.assertIn(b"skl-net", body)   # เปิด tools เครือข่าย (http_get/call_connection)
+
+    def test_connections_crud_endpoints(self):
+        # local = CEO → จัดการ connection ได้; list เริ่มต้นว่าง
+        import json as _json
+        st, _, _, body = self._get("/api/connections")
+        self.assertEqual(st, 200)
+        self.assertEqual(_json.loads(body)["connections"], [])
+        # เพิ่ม openai แต่ไม่มี base_url → 400
+        st, _ = self._post("/api/connections", {"name": "x", "kind": "openai"})
+        self.assertEqual(st, 400)
+        # เพิ่ม ollama ถูกต้อง → 200 + ไม่เผย api_key
+        st, body = self._post("/api/connections",
+                              {"name": "LocalBrain", "kind": "ollama", "model": "m"})
+        self.assertEqual(st, 200)
+        rec = _json.loads(body)["connection"]
+        self.assertNotIn("api_key", rec)
+        self.assertEqual(rec["kind"], "ollama")
+        # ลบ
+        st, _ = self._post("/api/connections/delete", {"id": rec["id"]})
+        self.assertEqual(st, 200)
+
+    def test_skills_and_bots_endpoints(self):
+        import json as _json
+        st, _, _, body = self._get("/api/skills")
+        self.assertEqual(st, 200)
+        self.assertEqual(_json.loads(body)["skills"], [])
+        st, _, _, body = self._get("/api/bots")
+        self.assertEqual(st, 200)
+        self.assertEqual(_json.loads(body)["bots"], [])
+        # สร้าง skill แล้ว bot ที่ชี้ skill นั้น
+        st, body = self._post("/api/skills",
+                              {"name": "S", "system_prompt": "คุณคือบอท"})
+        self.assertEqual(st, 200)
+        sid = _json.loads(body)["skill"]["id"]
+        st, body = self._post("/api/bots", {"name": "B", "skill_id": sid})
+        self.assertEqual(st, 200)
+        # bot ที่ชี้ skill มั่ว → 400
+        st, _ = self._post("/api/bots", {"name": "B2", "skill_id": "skl-nope"})
+        self.assertEqual(st, 400)
+
+    def test_bot_run_gated_by_feature_flag(self):
+        # ฟีเจอร์ connections ปิดเป็น default → รัน bot ได้ 403 (กันยิงออกเน็ตโดยไม่ตั้งใจ)
+        st, body = self._post("/api/bots/run", {"id": "bot-x", "input": "hi"})
+        self.assertEqual(st, 403)
+        self.assertIn(b"Connections", body)
+
+    def test_stream_endpoints_wired(self):
+        import json as _json
+        # bot stream ก็ถูก gate ด้วยฟีเจอร์ connections เหมือนกัน (ปิด default → 403)
+        st, body = self._post("/api/bots/run/stream", {"id": "bot-x", "input": "hi"})
+        self.assertEqual(st, 403)
+        # playground stream: id ที่ไม่มีจริง → chat_stream validate eager → 400 (ก่อนส่ง SSE 200)
+        st, body = self._post("/api/connections/chat/stream", {"id": "con-nope", "prompt": "hi"})
+        self.assertEqual(st, 400)
+        # หน้า Console อ้าง endpoint สตรีม + มี apiStream
+        _, _, _, page = self._get("/console")
+        self.assertIn(b"/api/connections/chat/stream", page)
+        self.assertIn(b"/api/bots/run/stream", page)
+        self.assertIn(b"apiStream", page)
+
+    def test_connections_usage_endpoint(self):
+        # Observability: สรุป usage ต่อ connection (local=CEO → 200, เริ่มต้นว่าง)
+        import json as _json
+        st, _, _, body = self._get("/api/connections/usage")
+        self.assertEqual(st, 200)
+        data = _json.loads(body)["usage"]
+        self.assertIn("totals", data)
+        self.assertEqual(data["totals"]["requests"], 0)
+        # หน้า Console มีแท็บ Usage ที่เรียก endpoint นี้
+        _, _, _, page = self._get("/console")
+        self.assertIn(b"/api/connections/usage", page)
+
+    def test_unknown_route_404(self):
+        st, _, _, _ = self._get("/does-not-exist")
+        self.assertEqual(st, 404)
+
+
+if __name__ == "__main__":
+    unittest.main()

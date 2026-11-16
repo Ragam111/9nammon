@@ -1,0 +1,38 @@
+{
+  "interval_hours": 2,
+  "jobs": [
+    {
+      "name": "api-health",
+      "enabled": true,
+      "cmd": [
+        "{python}",
+        "-c",
+        "import sys, urllib.request\ntry:\n    urllib.request.urlopen('http://localhost:8000/docs', timeout=10)\n    print('api up')\nexcept Exception as e:\n    print('api DOWN:', e)\n    sys.exit(1)"
+      ],
+      "cwd": ".",
+      "timeout_sec": 30
+    },
+    {
+      "name": "sim-customers",
+      "enabled": false,
+      "_note": "Creates and deletes test tenants in the database: enable only against a test database, never production data.",
+      "cmd": [
+        "{python}",
+        "sim_customers.py"
+      ],
+      "cwd": ".",
+      "timeout_sec": 600
+    },
+    {
+      "name": "my-autopilot",
+      "enabled": false,
+      "_note": "Placeholder: put the command that starts your own autopilot step here, for example a script in D:\\Desktop\\skills-main\\00-autopilot. Check the exact command and flags of the tool you use before enabling.",
+      "cmd": [
+        "{python}",
+        "D:\\Desktop\\skills-main\\00-autopilot\\run.py"
+      ],
+      "cwd": ".",
+      "timeout_sec": 1800
+    }
+  ]
+}

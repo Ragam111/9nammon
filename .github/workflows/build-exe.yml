@@ -1,0 +1,66 @@
+name: build-exe
+
+# build ตัวติดตั้ง GUI ไฟล์เดียว TokenLCAlimit.exe บน Windows runner แล้วแปะเข้า Release
+# - push tag v* (เช่น v0.1.0) → build + สร้าง/อัปเดต Release ให้ดาวน์โหลด .exe ได้เลย
+# - workflow_dispatch (กดเองในแท็บ Actions) → build + แนบเป็น artifact ของ run (ไว้ทดสอบ)
+# หมายเหตุ: ต้อง build บน Windows เท่านั้น (.exe ที่รันบน Windows); runner อื่น build ไม่ได้
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+# ต้องเขียน Release ได้ (แนบไฟล์ .exe) — ขอสิทธิ์เท่าที่จำเป็น
+permissions:
+  contents: write
+
+jobs:
+  build-windows-exe:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PyInstaller
+        run: pip install "pyinstaller>=6,<7"
+
+      - name: Build TokenLCAlimit.exe (ตัวติดตั้ง)
+        run: pyinstaller --onefile --windowed --name TokenLCAlimit installer_gui.py
+
+      - name: Build LCA-Desktop.exe (แอปก้อนเดียว เปิดแชตได้เลย)
+        run: pyinstaller --onefile --windowed --name LCA-Desktop --add-data "app;app" --add-data "sysmanager;sysmanager" --add-data "local_coder.py;." lca_app.py
+
+      # เก็บเป็น artifact ของ run เสมอ — กดดาวน์โหลด .exe ได้แม้ตอนรันเองแบบไม่มี tag
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TokenLCAlimit-exe
+          path: dist/TokenLCAlimit.exe
+          if-no-files-found: error
+
+      - name: Upload desktop-app artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LCA-Desktop-exe
+          path: dist/LCA-Desktop.exe
+          if-no-files-found: error
+
+      # แปะเข้า Release เฉพาะตอน push tag (ใช้ gh CLI ที่ติดมากับ runner อยู่แล้ว)
+      - name: Attach .exe to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          NOTES=$'**LCA-Desktop.exe** — แอปก้อนเดียว ดับเบิลคลิกเปิดหน้าต่างแชตได้เลย (ฝัง Python+server มาด้วย)\n- โหมด cloud: ตั้ง connection (OpenAI-compatible + key) ที่ /console แล้วแชตได้เหมือน ChatGPT (ไม่ต้องลง Ollama)\n- โหมด local/ส่วนตัว: ลง Ollama → ข้อมูลไม่ออกเครื่องเลย (bind 127.0.0.1)\n\n**TokenLCAlimit.exe** — ตัวติดตั้งแบบ GUI (วางซอร์ส+launcher; ต้องมี Python+Ollama)\n\n⚠️ การรองรับ CPU/GPU เป็นเรื่องของ Ollama (โหมด local); โหมด cloud ไม่สนฮาร์ดแวร์'
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/LCA-Desktop.exe dist/TokenLCAlimit.exe --clobber
+          else
+            gh release create "$TAG" dist/LCA-Desktop.exe dist/TokenLCAlimit.exe --title "LCA $TAG" --notes "$NOTES"
+          fi

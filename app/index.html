@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Local Code Assistant</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body class="page-chat">
+
+<div id="sidebar">
+  <h2>โมเดล</h2>
+  <select id="model-select">
+    <option value="qwen2.5-coder:0.5b">qwen2.5-coder:0.5b</option>
+    <option value="qwen2.5-coder:1.5b">qwen2.5-coder:1.5b</option>
+    <option value="qwen2.5-coder:7b">qwen2.5-coder:7b</option>
+    <option value="qwen2.5-coder:14b">qwen2.5-coder:14b</option>
+  </select>
+
+  <h2>ภาษา</h2>
+  <select id="lang-select">
+    <option value="th">ไทย</option>
+    <option value="en">English</option>
+  </select>
+
+  <h2>Todo</h2>
+  <input id="todo-input" placeholder="เพิ่ม todo แล้วกด Enter">
+  <p id="todo-msg"></p>
+  <ul id="todo-list"></ul>
+</div>
+
+<div id="main">
+  <div id="main-head">
+    <button id="sidebar-toggle" aria-label="สลับเมนู">☰ เมนู</button>
+    <span class="main-title">Local Code Assistant</span>
+    <a href="/chat" style="margin-left:auto;color:inherit">Chat Hub</a>
+  </div>
+  <div id="chat"></div>
+  <div id="status-bar">โมเดลไม่ได้ต่อเน็ตเอง — ระบบรันผ่าน Ollama ในเครื่องเท่านั้น</div>
+  <div id="input-bar">
+    <textarea id="user-input" rows="2" placeholder="พิมพ์ข้อความ... (Shift+Enter ขึ้นบรรทัดใหม่)"></textarea>
+    <button id="send-btn">ส่ง</button>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+<script>
+const chatEl = document.getElementById('chat');
+const inputEl = document.getElementById('user-input');
+const sendBtn = document.getElementById('send-btn');
+const modelSelect = document.getElementById('model-select');
+const langSelect = document.getElementById('lang-select');
+const todoInput = document.getElementById('todo-input');
+const todoList = document.getElementById('todo-list');
+const todoMsg = document.getElementById('todo-msg');
+const sidebarToggle = document.getElementById('sidebar-toggle');
+
+let history = [];
+
+// จอเล็ก: เริ่มด้วยเมนูพับไว้ ให้เห็นแชทเต็มจอก่อน
+if (window.matchMedia && window.matchMedia('(max-width: 720px)').matches) {
+  document.body.classList.add('nav-collapsed');
+}
+sidebarToggle.addEventListener('click', () => document.body.classList.toggle('nav-collapsed'));
+
+function addMessage(role, text) {
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+  div.textContent = text;
+  chatEl.appendChild(div);
+  chatEl.scrollTop = chatEl.scrollHeight;
+  return div;
+}
+
+async function sendMessage() {
+  const text = inputEl.value.trim();
+  if (!text) return;
+  inputEl.value = '';
+  sendBtn.disabled = true;
+
+  addMessage('user', text);
+  history.push({ role: 'user', content: text });
+  const thinking = addMessage('system-note', '(กำลังคิด...)');
+  thinking.classList.add('thinking');
+
+  try {
+    const res = await fetch('/api/chat/stream', {
+      method: 'POST',
+      headers: window.lca.headers({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({
+        model: modelSelect.value,
+        messages: history,
+        lang: langSelect.value,
+        num_ctx: 8192,
+      }),
+    });
+    if (!res.ok || !res.body) {
+      // สตรีมเปิดไม่ได้ (เช่น 401/429/502) — body เป็น JSON error ก้อนเดียว
+      const data = await res.json().catch(() => ({ error: 'HTTP ' + res.status }));
+      thinking.remove();
+      addMessage('system-note', '[error] ' + (data.error || res.status));
+      return;
+    }
+    // อ่านสตรีม SSE: แต่ละ event ขึ้นต้น "data: " ตามด้วย JSON, คั่น event ด้วย \n\n
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let bubble = null, full = '', buf = '';
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let sep;
+      while ((sep = buf.indexOf('\n\n')) !== -1) {
+        const line = buf.slice(0, sep).trim();
+        buf = buf.slice(sep + 2);
+        if (!line.startsWith('data:')) continue;
+        let evt;
+        try { evt = JSON.parse(line.slice(5).trim()); } catch { continue; }
+        if (evt.error) {
+          thinking.remove();
+          addMessage('system-note', '[error] ' + evt.error);
+          return;
+        }
+        if (evt.delta) {
+          if (!bubble) { thinking.remove(); bubble = addMessage('assistant', ''); }
+          full += evt.delta;
+          bubble.textContent = full;
+          chatEl.scrollTop = chatEl.scrollHeight;
+        }
+        // evt.done = จบสตรีม ไม่ต้องทำอะไรเพิ่ม
+      }
+    }
+    thinking.remove();
+    if (full) history.push({ role: 'assistant', content: full });
+    else addMessage('system-note', '[error] ไม่ได้รับคำตอบจากโมเดล');
+  } catch (err) {
+    thinking.remove();
+    addMessage('system-note', '[error] ต่อ server ไม่ได้: ' + err.message);
+  } finally {
+    sendBtn.disabled = false;
+    inputEl.focus();
+  }
+}
+
+sendBtn.addEventListener('click', sendMessage);
+inputEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+});
+
+// ---------- Todo ----------
+function setTodoMsg(text, isErr) {
+  todoMsg.textContent = text || '';
+  todoMsg.className = isErr ? 'err' : '';
+}
+
+async function loadTodos() {
+  try {
+    const res = await fetch('/api/todos', { headers: window.lca.authHeaders() });
+    if (res.status === 401) {
+      todoList.innerHTML = '';
+      setTodoMsg('ต้องล็อกอิน/ตั้ง token เพื่อดู todo', true);
+      return;
+    }
+    if (!res.ok) {
+      setTodoMsg('โหลด todo ไม่ได้ (error ' + res.status + ')', true);
+      return;
+    }
+    const todos = await res.json();
+    setTodoMsg('');
+    todoList.innerHTML = '';
+    todos.forEach((t) => {
+      const li = document.createElement('li');
+      li.className = t.done ? 'done' : '';
+      const label = document.createElement('span');
+      label.textContent = '#' + t.id + ' ' + t.text;
+      label.style.cursor = 'pointer';
+      label.addEventListener('click', () => toggleTodo(t.id));
+      const del = document.createElement('button');
+      del.textContent = '🗑';
+      del.title = 'ลบ';
+      del.className = 'todo-del';
+      del.addEventListener('click', (e) => { e.stopPropagation(); deleteTodo(t.id); });
+      li.appendChild(label);
+      li.appendChild(del);
+      todoList.appendChild(li);
+    });
+  } catch (err) {
+    setTodoMsg('ต่อ server ไม่ได้', true);
+    console.error('โหลด todo ไม่สำเร็จ:', err);
+  }
+}
+
+async function toggleTodo(id) {
+  try {
+    await fetch('/api/todos/toggle', {
+      method: 'POST',
+      headers: window.lca.headers({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ id }),
+    });
+    loadTodos();
+  } catch (err) {
+    console.error('toggle todo ไม่สำเร็จ:', err);
+  }
+}
+
+async function deleteTodo(id) {
+  try {
+    await fetch('/api/todos/delete', {
+      method: 'POST',
+      headers: window.lca.headers({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ id }),
+    });
+    loadTodos();
+  } catch (err) {
+    console.error('ลบ todo ไม่สำเร็จ:', err);
+  }
+}
+
+todoInput.addEventListener('keydown', async (e) => {
+  if (e.key === 'Enter') {
+    const text = todoInput.value.trim();
+    if (!text) return;
+    todoInput.value = '';
+    try {
+      await fetch('/api/todos', {
+        method: 'POST',
+        headers: window.lca.headers({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ text }),
+      });
+      loadTodos();
+    } catch (err) {
+      console.error('เพิ่ม todo ไม่สำเร็จ:', err);
+    }
+  }
+});
+
+loadTodos();
+</script>
+
+</body>
+</html>

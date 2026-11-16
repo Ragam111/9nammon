@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>แจ้งปัญหา / Support — LCA</title>
+  <link rel="stylesheet" href="/app.css" />
+  <script src="/app.js" defer></script>
+</head>
+<body class="page-dev">
+  <header>
+    <h1>LCA · Support</h1>
+    <a href="/" class="muted" style="margin-left:auto">← กลับหน้าแชต</a>
+    <a href="/login" class="muted">เข้าสู่ระบบ</a>
+  </header>
+
+  <main>
+    <!-- ---------- ฟอร์มแจ้งเรื่อง (ต้องล็อกอิน USER ขึ้นไป; โหมด local = CEO ใช้ได้เลย) ---------- -->
+    <div class="card" style="margin-bottom:14px">
+      <h2>แจ้งปัญหา / ขอฟีเจอร์</h2>
+      <div style="display:grid; gap:8px; grid-template-columns:1fr 1fr">
+        <input id="subject" placeholder="หัวข้อ" style="grid-column:1/-1" />
+        <select id="kind" class="sel">
+          <option value="bug">bug — ข้อผิดพลาด</option>
+          <option value="feature">feature — ขอฟีเจอร์</option>
+          <option value="question">question — คำถาม</option>
+          <option value="other">other — อื่นๆ</option>
+        </select>
+        <input id="channel" placeholder="ช่องทาง (เช่น web)" value="web" />
+        <textarea id="body" rows="4" placeholder="รายละเอียด" style="grid-column:1/-1; font:inherit; background:var(--lca-surface-2); color:var(--lca-fg); border:1px solid var(--lca-line); border-radius:var(--lca-r); padding:9px 11px"></textarea>
+      </div>
+      <div style="display:flex; gap:8px; align-items:center; margin-top:10px">
+        <button id="submit">ส่งเรื่อง</button>
+        <span id="submit-msg" class="note" style="margin:0"></span>
+      </div>
+    </div>
+
+    <!-- ---------- รายการ ticket (เฉพาะ ADMIN) ---------- -->
+    <div id="admin" class="card" style="display:none">
+      <h2>รายการเรื่องที่แจ้งเข้ามา (ADMIN)</h2>
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px">
+        <select id="filter-status" class="sel">
+          <option value="">ทุกสถานะ</option>
+          <option value="open">open</option>
+          <option value="in_progress">in_progress</option>
+          <option value="resolved">resolved</option>
+          <option value="closed">closed</option>
+        </select>
+        <button id="reload">โหลดใหม่</button>
+        <span id="counts" class="note" style="margin:0"></span>
+      </div>
+      <p id="admin-err" class="err" style="display:none"></p>
+      <div style="overflow:auto">
+        <table>
+          <thead><tr><th>#</th><th>หัวข้อ</th><th>ชนิด</th><th>ผู้แจ้ง</th><th>สถานะ</th><th></th></tr></thead>
+          <tbody id="rows"><tr><td colspan="6" class="muted">ยังไม่ได้โหลด</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <style>
+    /* select ใช้สไตล์เดียวกับ input ของ page-dev — ประกาศตรงนี้ไม่ต้องแตะ design system กลาง */
+    .page-dev .sel { font:inherit; background:var(--lca-surface-2); color:var(--lca-fg); border:1px solid var(--lca-line); border-radius:var(--lca-r); padding:9px 11px; }
+  </style>
+
+  <script>
+    function qs(id) { return document.getElementById(id); }
+    var STATUSES = ["open", "in_progress", "resolved", "closed"];
+
+    async function submitTicket() {
+      var subject = qs("subject").value.trim();
+      var body = qs("body").value.trim();
+      if (!subject || !body) { qs("submit-msg").textContent = "ต้องมีหัวข้อและรายละเอียด"; return; }
+      qs("submit").disabled = true;
+      qs("submit-msg").textContent = "กำลังส่ง…";
+      try {
+        var res = await fetch("/api/support/ticket", {
+          method: "POST",
+          headers: window.lca.headers({ "Content-Type": "application/json" }),
+          body: JSON.stringify({
+            subject: subject, body: body,
+            kind: qs("kind").value, channel: qs("channel").value.trim() || "web"
+          })
+        });
+        var data = await res.json();
+        if (res.ok) {
+          qs("submit-msg").textContent = "ส่งแล้ว — #" + data.ticket.id;
+          qs("subject").value = ""; qs("body").value = "";
+          if (qs("admin").style.display !== "none") loadTickets();
+        } else {
+          qs("submit-msg").textContent = "ผิดพลาด: " + (data.error || res.status);
+        }
+      } catch (e) {
+        qs("submit-msg").textContent = "เชื่อมต่อ server ไม่ได้";
+      }
+      qs("submit").disabled = false;
+    }
+
+    function statusSelect(id, current) {
+      var opts = STATUSES.map(function (s) {
+        return '<option value="' + s + '"' + (s === current ? " selected" : "") + ">" + s + "</option>";
+      }).join("");
+      return '<select class="sel row-status" data-id="' + id + '">' + opts + "</select>";
+    }
+
+    async function loadTickets() {
+      qs("admin-err").style.display = "none";
+      var status = qs("filter-status").value;
+      var url = "/api/admin/support/tickets" + (status ? "?status=" + encodeURIComponent(status) : "");
+      try {
+        var res = await fetch(url, { headers: window.lca.authHeaders() });
+        var data = await res.json();
+        if (!res.ok) { qs("admin-err").textContent = data.error || ("error " + res.status); qs("admin-err").style.display = ""; return; }
+        var tickets = data.tickets || [];
+        qs("counts").textContent = Object.keys(data.counts || {}).map(function (k) { return k + ":" + data.counts[k]; }).join("  ");
+        if (!tickets.length) { qs("rows").innerHTML = '<tr><td colspan="6" class="muted">ยังไม่มีเรื่องแจ้ง</td></tr>'; return; }
+        qs("rows").innerHTML = tickets.map(function (t) {
+          return "<tr><td>" + t.id + "</td><td>" + esc(t.subject) + "</td><td>" + esc(t.kind) +
+                 "</td><td>" + esc(t.reporter || "—") + "</td><td>" + statusSelect(t.id, t.status) + "</td>" +
+                 '<td><button class="save-status" data-id="' + t.id + '">บันทึก</button></td></tr>';
+        }).join("");
+        bindRowButtons();
+      } catch (e) {
+        qs("admin-err").textContent = "เชื่อมต่อ server ไม่ได้"; qs("admin-err").style.display = "";
+      }
+    }
+
+    function esc(s) {
+      return String(s).replace(/[&<>"']/g, function (c) {
+        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+      });
+    }
+
+    function bindRowButtons() {
+      Array.prototype.forEach.call(document.querySelectorAll(".save-status"), function (btn) {
+        btn.addEventListener("click", async function () {
+          var id = btn.getAttribute("data-id");
+          var sel = document.querySelector('.row-status[data-id="' + id + '"]');
+          btn.disabled = true;
+          try {
+            var res = await fetch("/api/admin/support/tickets/status", {
+              method: "POST",
+              headers: window.lca.headers({ "Content-Type": "application/json" }),
+              body: JSON.stringify({ id: Number(id), status: sel.value })
+            });
+            if (!res.ok) { var d = await res.json(); alert("บันทึกไม่สำเร็จ: " + (d.error || res.status)); }
+          } catch (e) { alert("เชื่อมต่อ server ไม่ได้"); }
+          btn.disabled = false;
+          loadTickets();
+        });
+      });
+    }
+
+    window.addEventListener("DOMContentLoaded", async function () {
+      qs("submit").addEventListener("click", submitTicket);
+      qs("reload").addEventListener("click", loadTickets);
+      qs("filter-status").addEventListener("change", loadTickets);
+      // แสดงแผง admin เฉพาะคนที่สิทธิ์ถึง (ADMIN/CEO) — โหมด local ก็เห็น
+      var me = await window.lca.whoami();
+      if (me && (me.role === "ADMIN" || me.role === "CEO")) {
+        qs("admin").style.display = "";
+        loadTickets();
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,381 @@
+"""connections.py — ทะเบียน "ต่อสมอง AI ภายนอก" (external model/app servers)
+
+โจทย์ (ตามที่ user สั่ง): อยากให้ LCA เป็นคอนโซลแบบ TokenMe ที่ "ต่อแอป/เซิร์ฟเวอร์ AI
+อื่น ๆ ได้หลายตัว" — สมอง (AGI brain) หนึ่งตัว = หนึ่ง connection. เลือกใช้ใน Skills/Bot ได้.
+
+ยืนบนของที่มีอยู่แล้ว: model_backend มี OpenAICompatBackend (คุยภาษา OpenAI /v1 ที่
+TokenMe / vLLM / llama.cpp server / LM Studio / cloud เกือบทุกตัวพูดเหมือนกัน) และ
+OllamaBackend (local). connection หนึ่งตัวจึงแค่ "จำค่าที่ต้องใช้ต่อ backend ตัวนั้น".
+
+ชนิด (kind):
+  openai  — OpenAI-compatible endpoint (base_url ลงท้าย /v1 + api_key)  → ต่อ TokenMe/cloud/vLLM
+  ollama  — Ollama ในเครื่อง (ฟรี ใช้วันนี้)                           → base_url ไม่จำเป็น
+
+ความปลอดภัย (Rule 23): api_key เป็นความลับ — seal ผ่าน app.secret_store
+(Windows DPAPI CurrentUser; นอก Windows เป็น secrets.bin โหมด 0600) แล้วเก็บแค่
+ตัวชี้ใน connections.json (gitignored). **ไม่เคยคืนค่าเต็มออก API** (คืนแค่
+api_key_set: true/false). อ่านเจอ plaintext เก่าจะ seal แล้วเขียนกลับ;
+ถ้า seal ไม่ได้ ค่าเดิมยังอยู่. atomic write + lock.
+
+stdlib ล้วน.
+"""
+
+from __future__ import annotations
+
+import threading
+import time
+import urllib.parse
+import uuid
+from pathlib import Path
+
+from app import model_backend
+from app import store_schema
+from app import conn_usage
+
+try:
+    from app import secret_store
+except ImportError:  # import ตรงจากโฟลเดอร์ app/
+    import secret_store  # type: ignore
+
+STORE_FILE = "connections.json"
+SCHEMA_VERSION = 1       # ยังไม่เคยเปลี่ยน schema — baseline
+MIGRATIONS = []          # ยังไม่มี migration (เพิ่มตอนเปลี่ยน schema จริง)
+MAX_RECORDS = 500
+KIND_OPENAI = "openai"
+KIND_OLLAMA = "ollama"
+VALID_KINDS = (KIND_OPENAI, KIND_OLLAMA)
+
+_lock = threading.Lock()
+
+
+class ConnectionError(Exception):
+    """ต่อ/เรียก connection ไม่สำเร็จ หรือ input ผิด — ผู้เรียกแปลงเป็น 400/502 ได้"""
+
+
+def _path(project_root) -> Path:
+    return Path(project_root) / STORE_FILE
+
+
+def _seal_api_keys(project_root, recs: list) -> bool:
+    """Replace plaintext api_key with a secret ref. Failed seals stay plaintext."""
+    changed = False
+    for rec in recs:
+        if not isinstance(rec, dict):
+            continue
+        api_key = rec.get("api_key")
+        if not isinstance(api_key, str) or api_key == "":
+            continue
+        conn_id = rec.get("id")
+        if not conn_id:
+            continue
+        entry = secret_store.connection_entry_name(str(conn_id))
+        try:
+            secret_store.store(project_root, entry, api_key)
+        except secret_store.SecretError as exc:
+            print(
+                f"[secrets][warn] เข้ารหัส api_key ของ connection {conn_id} ไม่ได้: "
+                f"{type(exc).__name__} — คงค่าเดิมไว้"
+            )
+            continue
+        rec["api_key"] = secret_store.make_ref(entry)
+        changed = True
+    return changed
+
+
+def _reveal_api_key(project_root, rec: dict) -> dict:
+    """Copy of ``rec`` with api_key in plaintext. Does not write the store."""
+    out = dict(rec)
+    name = secret_store.ref_name(out.get("api_key"))
+    if not name:
+        return out
+    try:
+        plain = secret_store.reveal(project_root, name)
+    except secret_store.SecretError:
+        print(
+            f"[secrets][warn] อ่าน api_key ของ connection {rec.get('id')} ไม่ได้ "
+            "— ไม่ลบค่าที่เก็บไว้"
+        )
+        out["api_key"] = ""
+        return out
+    if plain is None:
+        try:
+            still_there = secret_store.has_entry(project_root, name)
+        except secret_store.SecretError:
+            still_there = True
+        if not still_there:
+            print(f"[secrets][warn] ไม่พบ api_key ที่ seal ของ connection {rec.get('id')}")
+        out["api_key"] = ""
+        return out
+    out["api_key"] = plain
+    return out
+
+
+def _load(project_root) -> list:
+    recs, upgraded = store_schema.load(_path(project_root), SCHEMA_VERSION, MIGRATIONS)
+    sealed = _seal_api_keys(project_root, recs)
+    if upgraded or sealed:        # อัปเกรด/seal แล้ว → เขียนกลับให้ถาวร
+        _save_raw(project_root, recs)
+    return recs
+
+
+def _save_raw(project_root, recs: list) -> None:
+    p = _path(project_root)
+    tmp = p.with_suffix(p.suffix + ".tmp")
+    try:
+        tmp.write_text(store_schema.dumps(recs, SCHEMA_VERSION), encoding="utf-8")
+        tmp.replace(p)
+    except OSError as e:
+        print(f"[connections][error] เขียน {STORE_FILE} ไม่ได้: {e}")
+
+
+def _save(project_root, recs: list) -> None:
+    _seal_api_keys(project_root, recs)
+    _save_raw(project_root, recs)
+
+
+def _validate_base_url(kind: str, base_url: str) -> str:
+    """openai ต้องมี base_url ที่เป็น http(s)://host...  — ollama ปล่อยว่างได้"""
+    base_url = (base_url or "").strip().rstrip("/")
+    if kind == KIND_OPENAI:
+        if not base_url:
+            raise ConnectionError("kind=openai ต้องระบุ base_url (เช่น https://api.tokenme.limited/api/v1)")
+        p = urllib.parse.urlparse(base_url)
+        if p.scheme not in ("http", "https") or not p.hostname:
+            raise ConnectionError(f"base_url ไม่ถูกต้อง: {base_url!r} (ต้องเป็น http(s)://host.../v1)")
+    return base_url
+
+
+def _public(rec: dict) -> dict:
+    """ตัดความลับออกก่อนคืนออก API — ไม่เผย api_key เต็ม (Rule 23)"""
+    return {
+        "id": rec.get("id"),
+        "name": rec.get("name"),
+        "kind": rec.get("kind"),
+        "base_url": rec.get("base_url", ""),
+        "model": rec.get("model", ""),
+        "enabled": bool(rec.get("enabled", True)),
+        "api_key_set": bool(rec.get("api_key")),
+        "created_at": rec.get("created_at"),
+        "updated_at": rec.get("updated_at"),
+    }
+
+
+def list_connections(project_root) -> list:
+    """คืนทุก connection (redacted — ไม่มี api_key เต็ม)"""
+    with _lock:
+        return [_public(r) for r in _load(project_root)]
+
+
+def get(project_root, conn_id: str, *, raw: bool = False):
+    """คืน connection ตัวเดียว. raw=True คืน record เต็ม (api_key เป็น plaintext)
+    — ใช้ภายในเท่านั้น. ไฟล์บนดิสก์ยังเป็น ref"""
+    with _lock:
+        for r in _load(project_root):
+            if r.get("id") == conn_id:
+                if raw:
+                    return _reveal_api_key(project_root, r)
+                return _public(r)
+    return None
+
+
+def add(project_root, name: str, kind: str, base_url: str = "",
+        model: str = "", api_key: str = "", enabled: bool = True) -> dict:
+    """เพิ่ม connection ใหม่ — คืน record (redacted). input ผิด → ConnectionError"""
+    name = (name or "").strip()
+    if not name:
+        raise ConnectionError("ต้องระบุชื่อ connection")
+    kind = (kind or "").strip().lower()
+    if kind not in VALID_KINDS:
+        raise ConnectionError(f"kind ต้องเป็น {list(VALID_KINDS)} (ได้ {kind!r})")
+    base_url = _validate_base_url(kind, base_url)
+    rec = {
+        "id": "con-" + uuid.uuid4().hex[:12],
+        "name": name,
+        "kind": kind,
+        "base_url": base_url,
+        "model": (model or "").strip(),
+        "api_key": (api_key or "").strip(),
+        "enabled": bool(enabled),
+        "created_at": time.time(),
+        "updated_at": time.time(),
+    }
+    with _lock:
+        recs = _load(project_root)
+        if any(r.get("name") == name for r in recs):
+            raise ConnectionError(f"มี connection ชื่อ {name!r} อยู่แล้ว")
+        recs.append(rec)
+        dropped = recs[:-MAX_RECORDS] if len(recs) > MAX_RECORDS else []
+        if dropped:
+            recs = recs[-MAX_RECORDS:]
+        _save(project_root, recs)
+        for old in dropped:
+            _forget_api_keys(project_root, old.get("id", ""), [old], recs)
+    return _public(rec)
+
+
+def update(project_root, conn_id: str, fields: dict) -> dict:
+    """แก้ connection — เฉพาะคีย์ที่รู้จัก. api_key ส่งมาเฉพาะตอนจะเปลี่ยน (ว่าง=ไม่ทับ).
+    คืน record (redacted). ไม่พบ/ผิด → ConnectionError"""
+    fields = fields or {}
+    with _lock:
+        recs = _load(project_root)
+        rec = next((r for r in recs if r.get("id") == conn_id), None)
+        if rec is None:
+            raise ConnectionError("ไม่พบ connection นี้")
+        if "name" in fields and str(fields["name"]).strip():
+            new_name = str(fields["name"]).strip()
+            if any(r.get("name") == new_name and r.get("id") != conn_id for r in recs):
+                raise ConnectionError(f"มี connection ชื่อ {new_name!r} อยู่แล้ว")
+            rec["name"] = new_name
+        if "kind" in fields and str(fields["kind"]).strip():
+            kind = str(fields["kind"]).strip().lower()
+            if kind not in VALID_KINDS:
+                raise ConnectionError(f"kind ต้องเป็น {list(VALID_KINDS)} (ได้ {kind!r})")
+            rec["kind"] = kind
+        if "base_url" in fields:
+            rec["base_url"] = _validate_base_url(rec["kind"], str(fields["base_url"]))
+        if "model" in fields:
+            rec["model"] = str(fields["model"]).strip()
+        if "enabled" in fields:
+            rec["enabled"] = bool(fields["enabled"])
+        if fields.get("api_key"):           # ส่งมาเฉพาะตอนจะเปลี่ยน
+            rec["api_key"] = str(fields["api_key"]).strip()
+        rec["updated_at"] = time.time()
+        _save(project_root, recs)
+        return _public(rec)
+
+
+def remove(project_root, conn_id: str) -> bool:
+    with _lock:
+        recs = _load(project_root)
+        new = [r for r in recs if r.get("id") != conn_id]
+        if len(new) == len(recs):
+            return False
+        _save(project_root, new)
+        gone = [r for r in recs if r.get("id") == conn_id]
+        _forget_api_keys(project_root, conn_id, gone, new)
+        return True
+
+
+def _forget_api_keys(project_root, conn_id: str, gone: list, kept: list) -> None:
+    """Delete the sealed api_key of a removed connection (conn:<id> and any
+    ref it held). An entry still referenced by a remaining connection stays."""
+    names = {secret_store.connection_entry_name(str(conn_id))}
+    for rec in gone:
+        ref = secret_store.ref_name(rec.get("api_key"))
+        if ref:
+            names.add(ref)
+    names -= {secret_store.ref_name(r.get("api_key")) for r in kept}
+    try:
+        secret_store.delete_where(project_root, lambda name: name in names)
+    except secret_store.SecretError as exc:
+        print(
+            f"[secrets][warn] ลบ api_key ของ connection {conn_id} ไม่ได้: "
+            f"{type(exc).__name__} — ไม่เขียนทับไฟล์ลับ"
+        )
+
+
+def _backend_for(rec: dict):
+    """สร้าง Backend object ให้ connection (reuse model_backend ที่พิสูจน์แล้ว)"""
+    kind = rec.get("kind")
+    if kind == KIND_OPENAI:
+        return model_backend.OpenAICompatBackend(rec.get("base_url", ""), rec.get("api_key") or None)
+    if kind == KIND_OLLAMA:
+        return model_backend.OllamaBackend()
+    raise ConnectionError(f"kind ไม่รองรับ: {kind}")
+
+
+def test(project_root, conn_id: str) -> dict:
+    """เช็กว่า connection "ต่อติดไหม" (reachable) — ไม่ generate จริง (ไม่กิน token)"""
+    rec = get(project_root, conn_id, raw=True)
+    if rec is None:
+        raise ConnectionError("ไม่พบ connection นี้")
+    backend = _backend_for(rec)
+    try:
+        ok = bool(backend.is_available())
+    except Exception as e:   # pragma: no cover - is_available ควร degrade อยู่แล้ว
+        return {"id": conn_id, "kind": rec.get("kind"), "available": False, "error": e.__class__.__name__}
+    return {"id": conn_id, "kind": rec.get("kind"), "available": ok}
+
+
+def chat(project_root, conn_id: str, messages: list, model: str = "",
+         options: dict = None) -> str:
+    """ส่งข้อความไปที่ "สมอง" ของ connection นี้แล้วคืนคำตอบ (blocking).
+    model ว่าง → ใช้ model ที่ตั้งไว้ใน connection. enabled=False → ConnectionError."""
+    rec = get(project_root, conn_id, raw=True)
+    if rec is None:
+        raise ConnectionError("ไม่พบ connection นี้")
+    if not rec.get("enabled", True):
+        raise ConnectionError(f"connection {rec.get('name')!r} ถูกปิดอยู่")
+    use_model = (model or "").strip() or rec.get("model", "")
+    if not use_model:
+        raise ConnectionError("ต้องระบุ model (connection นี้ไม่ได้ตั้ง default model ไว้)")
+    backend = _backend_for(rec)
+    try:
+        out = backend.generate(use_model, messages, options=options)
+    except model_backend.BackendError as e:
+        raise ConnectionError(str(e)) from e
+    conn_usage.record_usage(project_root, rec["id"], rec.get("name", ""),
+                            conn_usage.estimate_messages_tokens(messages),
+                            conn_usage.estimate_tokens(out))
+    return out
+
+
+def chat_stream(project_root, conn_id: str, messages: list, model: str = "",
+                options: dict = None):
+    """เหมือน chat แต่ yield คำตอบทีละ chunk (generator) — ให้ Playground/Bot เห็นคำตอบ
+    ทยอยขึ้น (SSE). enabled=False/ไม่พบ/ไม่มี model → ConnectionError (ก่อนเริ่ม yield)."""
+    rec = get(project_root, conn_id, raw=True)
+    if rec is None:
+        raise ConnectionError("ไม่พบ connection นี้")
+    if not rec.get("enabled", True):
+        raise ConnectionError(f"connection {rec.get('name')!r} ถูกปิดอยู่")
+    use_model = (model or "").strip() or rec.get("model", "")
+    if not use_model:
+        raise ConnectionError("ต้องระบุ model (connection นี้ไม่ได้ตั้ง default model ไว้)")
+    backend = _backend_for(rec)
+
+    def _gen():
+        out_parts = []
+        try:
+            for chunk in backend.generate_stream(use_model, messages, options=options):
+                out_parts.append(chunk)
+                yield chunk
+        except model_backend.BackendError as e:
+            raise ConnectionError(str(e)) from e
+        # นับ usage หลังสตรีมจบครบ (พังกลางคัน = ไม่นับ)
+        conn_usage.record_usage(project_root, rec["id"], rec.get("name", ""),
+                                conn_usage.estimate_messages_tokens(messages),
+                                conn_usage.estimate_tokens("".join(out_parts)))
+    return _gen()
+
+
+def chat_stream(project_root, conn_id: str, messages: list, model: str = "",
+                options: dict = None):
+    """เหมือน chat แต่ yield คำตอบทีละ chunk (generator) — ให้ Playground/Bot เห็นคำตอบ
+    ทยอยขึ้น (SSE). enabled=False/ไม่พบ/ไม่มี model → ConnectionError (ก่อนเริ่ม yield)."""
+    rec = get(project_root, conn_id, raw=True)
+    if rec is None:
+        raise ConnectionError("ไม่พบ connection นี้")
+    if not rec.get("enabled", True):
+        raise ConnectionError(f"connection {rec.get('name')!r} ถูกปิดอยู่")
+    use_model = (model or "").strip() or rec.get("model", "")
+    if not use_model:
+        raise ConnectionError("ต้องระบุ model (connection นี้ไม่ได้ตั้ง default model ไว้)")
+    backend = _backend_for(rec)
+
+    def _gen():
+        try:
+            for chunk in backend.generate_stream(use_model, messages, options=options):
+                yield chunk
+        except model_backend.BackendError as e:
+            raise ConnectionError(str(e)) from e
+    return _gen()
+
+
+def make_generate_fn(project_root, conn_id: str, model: str = "", options: dict = None):
+    """คืน callable(messages)->str ที่ยิงไปสมองของ connection นี้ — ให้ agent ReAct (core.run)
+    ใช้ connection ที่เลือกเป็น "สมอง" แทน backend กลาง (ไม่ผูก MODEL_BACKEND)"""
+    def _gen(messages):
+        return chat(project_root, conn_id, messages, model=model, options=options)
+    return _gen

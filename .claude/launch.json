@@ -1,0 +1,16 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "lca-demo",
+      "runtimeExecutable": "D:\\9nammon-main\\9nammon-main\\.venv\\Scripts\\python.exe",
+      "runtimeArgs": [
+        "D:\\9nammon-main\\9nammon-main\\server.py",
+        "D:\\UntiyEngine\\claude\\8b4e962084f2aaf1\\07672aa9-0276-4e60-903a-26aa56383905\\scratchpad\\ui_root",
+        "--host", "127.0.0.1",
+        "--port", "8431"
+      ],
+      "port": 8431
+    }
+  ]
+}

@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>พื้นที่ — LCA</title>
+<link rel="stylesheet" href="/app.css">
+<style>
+  .layout { display:flex; gap:12px; height:calc(100vh - 80px); }
+  .sidebar { width:260px; flex:none; overflow-y:auto; border-right:1px solid #2a2e37; padding-right:10px; }
+  .main { flex:1; display:flex; flex-direction:column; min-width:0; }
+  .space-item { padding:8px 10px; border-radius:8px; cursor:pointer; margin-bottom:4px; }
+  .space-item:hover { background:#22262f; }
+  .space-item.active { background:#2563eb; color:#fff; }
+  .badge { font-size:11px; opacity:.7; margin-left:6px; }
+  #items { flex:1; overflow-y:auto; padding:10px 0; display:flex; flex-direction:column; gap:8px; }
+  .item { max-width:80%; padding:8px 12px; border-radius:10px; background:#22262f; border:1px solid #2a2e37; }
+  .item .who { font-size:11px; opacity:.6; margin-bottom:2px; }
+  .composer { display:flex; gap:8px; padding-top:8px; border-top:1px solid #2a2e37; }
+  .composer input { flex:1; }
+  .err { color:#e5534b; margin:6px 0; display:none; }
+  .newspace { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
+  .newspace input { flex:1; min-width:100px; }
+</style>
+</head>
+<body>
+  <header class="topbar"><strong>พื้นที่ (ส่วนตัว / บริษัท)</strong> <a href="/">กลับหน้าแชต</a></header>
+  <div id="err" class="err"></div>
+  <div class="layout">
+    <div class="sidebar">
+      <div class="newspace">
+        <input id="new-name" placeholder="ชื่อพื้นที่ใหม่">
+        <select id="new-vis">
+          <option value="private">ส่วนตัว</option>
+          <option value="shared">บริษัท (shared)</option>
+        </select>
+        <button id="create" type="button">สร้าง</button>
+      </div>
+      <div id="space-list">กำลังโหลด...</div>
+    </div>
+    <div class="main">
+      <h2 id="space-title" style="margin:4px 0">เลือกพื้นที่</h2>
+      <div id="items"></div>
+      <div class="composer">
+        <input id="msg" placeholder="พิมพ์ข้อความ..." disabled>
+        <button id="send" type="button" disabled>ส่ง</button>
+      </div>
+    </div>
+  </div>
+<script src="/app.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+let currentSpace = null;
+function showErr(t){ const e=$('err'); e.textContent=t||''; e.style.display=t?'':'none'; }
+function esc(s){ return String(s==null?'':s).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c])); }
+
+async function loadSpaces(){
+  showErr('');
+  try {
+    const res = await fetch('/api/spaces', { headers: lca.authHeaders() });
+    if(res.status===401){ showErr('ต้องล็อกอินก่อน (ไป /login)'); return; }
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok){ showErr(data.error||('error '+res.status)); return; }
+    renderSpaces(data.spaces||[]);
+  } catch(e){ showErr('ต่อ server ไม่ได้'); }
+}
+function renderSpaces(spaces){
+  const box=$('space-list'); box.innerHTML='';
+  if(!spaces.length){ box.textContent='ยังไม่มีพื้นที่ — สร้างใหม่ด้านบน'; return; }
+  spaces.forEach(s=>{
+    const d=document.createElement('div');
+    d.className='space-item'+(currentSpace&&currentSpace.id===s.id?' active':'');
+    d.innerHTML=esc(s.name)+'<span class="badge">'+(s.visibility==='shared'?'บริษัท':'ส่วนตัว')+'</span>';
+    d.addEventListener('click',()=>selectSpace(s));
+    box.appendChild(d);
+  });
+}
+async function selectSpace(s){
+  currentSpace=s; $('space-title').textContent=s.name+' ('+(s.visibility==='shared'?'บริษัท':'ส่วนตัว')+')';
+  $('msg').disabled=false; $('send').disabled=false;
+  document.querySelectorAll('.space-item').forEach(el=>el.classList.remove('active'));
+  await loadItems();
+  loadSpaces();
+}
+async function loadItems(){
+  if(!currentSpace) return;
+  try {
+    const res = await fetch('/api/spaces/items?space='+encodeURIComponent(currentSpace.id), { headers: lca.authHeaders() });
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok){ showErr(data.error||('error '+res.status)); return; }
+    const box=$('items'); box.innerHTML='';
+    (data.items||[]).forEach(it=>{
+      const d=document.createElement('div'); d.className='item';
+      d.innerHTML='<div class="who">'+esc(it.author)+'</div>'+esc(it.text);
+      box.appendChild(d);
+    });
+    box.scrollTop=box.scrollHeight;
+  } catch(e){ showErr('ต่อ server ไม่ได้'); }
+}
+async function send(){
+  const text=$('msg').value.trim(); if(!text||!currentSpace) return;
+  $('msg').value='';
+  try {
+    const res = await fetch('/api/spaces/items', {
+      method:'POST', headers:Object.assign({'Content-Type':'application/json'},lca.authHeaders()),
+      body:JSON.stringify({space:currentSpace.id,text})
+    });
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok){ showErr(data.error||('error '+res.status)); return; }
+    loadItems();
+  } catch(e){ showErr('ต่อ server ไม่ได้'); }
+}
+async function createSpace(){
+  const name=$('new-name').value.trim(); if(!name){ showErr('ใส่ชื่อพื้นที่ก่อน'); return; }
+  try {
+    const res = await fetch('/api/spaces', {
+      method:'POST', headers:Object.assign({'Content-Type':'application/json'},lca.authHeaders()),
+      body:JSON.stringify({name,visibility:$('new-vis').value})
+    });
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok){ showErr(data.error||('error '+res.status)); return; }
+    $('new-name').value=''; loadSpaces();
+  } catch(e){ showErr('ต่อ server ไม่ได้'); }
+}
+$('create').addEventListener('click',createSpace);
+$('send').addEventListener('click',send);
+$('msg').addEventListener('keydown',(e)=>{ if(e.key==='Enter'){ e.preventDefault(); send(); }});
+loadSpaces();
+</script>
+</body>
+</html>

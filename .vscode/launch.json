@@ -1,0 +1,57 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "LCA Server (web UI :8420)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/server.py",
+      "args": ["${workspaceFolder}", "--host", "127.0.0.1", "--port", "8420"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "env": {
+        "PORT": "",
+        "LCA_HOST": ""
+      }
+    },
+    {
+      "name": "LCA Desktop (lca_app.py)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/lca_app.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "LCA CLI (local_coder.py)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/local_coder.py",
+      "args": ["${workspaceFolder}", "--model", "qwen2.5-coder:3b"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "Installer GUI",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/installer_gui.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "Debug current test file",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["-q", "${file}"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    }
+  ]
+}

@@ -1,0 +1,681 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LCA — Dev View</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body class="page-dev">
+  <header>
+    <h1>LCA — Dev View</h1>
+    <span class="muted" id="who">ต้องเป็น ADMIN ขึ้นไป</span>
+    <span style="flex:1"></span>
+    <input id="token" type="password" placeholder="X-Auth-Token หรือ API key" autocomplete="off" />
+    <button id="load">โหลดข้อมูล</button>
+  </header>
+  <main>
+    <p class="muted">หน้าสำหรับนักพัฒนา — spec เครื่อง (<code>/api/sysinfo</code>) + ทรัพยากรสด/คอขวด
+      (<code>/api/metrics</code>) ทั้งคู่ gate สิทธิ์ ADMIN</p>
+    <div id="error" class="err"></div>
+    <section id="metrics-wrap" class="card" style="margin-bottom:12px" hidden>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px">
+        <h2 style="margin:0">ทรัพยากรสด</h2>
+        <button id="refresh-metrics" type="button">รีเฟรช</button>
+      </div>
+      <div id="metrics"></div>
+    </section>
+    <section id="support-wrap" class="card" style="margin-bottom:12px" hidden>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px">
+        <h2 style="margin:0">Support tickets</h2>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="support-filter" class="sel" aria-label="กรองสถานะ">
+            <option value="">ทุกสถานะ</option>
+            <option value="open">open</option>
+            <option value="in_progress">in_progress</option>
+            <option value="resolved">resolved</option>
+            <option value="closed">closed</option>
+          </select>
+          <button id="refresh-support" type="button">รีเฟรช</button>
+        </div>
+      </div>
+      <div id="support-counts" class="support-tiles"></div>
+      <p id="support-err" class="err" style="display:none"></p>
+      <div id="support-table"></div>
+    </section>
+    <section id="usage-wrap" class="card" style="margin-bottom:12px" hidden>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px">
+        <h2 style="margin:0">Usage / API-key monitor</h2>
+        <button id="refresh-usage" type="button">รีเฟรช</button>
+      </div>
+      <div id="usage-tiles" class="support-tiles"></div>
+      <p id="usage-err" class="err" style="display:none"></p>
+      <div id="usage-table"></div>
+    </section>
+    <section id="cfgver-wrap" class="card" style="margin-bottom:12px" hidden>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px">
+        <h2 style="margin:0">Config versions (rollback)</h2>
+        <button id="cfg-snapshot" type="button">เก็บ snapshot ตอนนี้</button>
+      </div>
+      <input id="cfg-label" type="text" placeholder="label (เช่น ก่อนปล่อย v1.2)" style="margin-bottom:10px;width:100%">
+      <div id="cfgver-err" style="display:none;color:#e5534b;margin-bottom:8px"></div>
+      <div id="cfgver-table">กำลังโหลด...</div>
+    </section>
+    <section id="hwprofile-wrap" class="card" style="margin-bottom:12px" hidden>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px">
+        <h2 style="margin:0">Hardware profile</h2>
+        <button id="refresh-hwprofile" type="button">ตรวจเครื่อง (วัด disk)</button>
+      </div>
+      <div id="hwprofile-body">กำลังอ่านโปรไฟล์เครื่อง...</div>
+    </section>
+    <section id="features-wrap" class="card" style="margin-bottom:12px" hidden>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px">
+        <h2 style="margin:0">Server features (เปิด/ปิด)</h2>
+        <button id="refresh-features" type="button">รีเฟรช</button>
+      </div>
+      <p id="features-err" class="err" style="display:none"></p>
+      <div id="features-list"></div>
+    </section>
+    <section id="approvals-wrap" class="card" style="margin-bottom:12px" hidden>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px">
+        <h2 style="margin:0">คำขออนุมัติจาก Agent (P6)</h2>
+        <button id="refresh-approvals" type="button">รีเฟรช</button>
+      </div>
+      <p style="color:#9aa0ac;font-size:13px;margin:0 0 8px">
+        agent เสนอเขียนไฟล์/รันคำสั่งที่ย้อนไม่ได้ — จะไม่ลงมือจนกว่าจะกดอนุมัติที่นี่</p>
+      <p id="approvals-err" class="err" style="display:none"></p>
+      <div id="approvals-list"></div>
+    </section>
+    <section id="cluster-wrap" class="card" style="margin-bottom:12px" hidden>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px">
+        <h2 style="margin:0">Cluster monitor</h2>
+        <button id="refresh-cluster" type="button">รีเฟรช</button>
+      </div>
+      <form id="cluster-add" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+        <input id="cluster-name" type="text" placeholder="ชื่อ node (เช่น netbook-arm)" required>
+        <input id="cluster-url" type="text" placeholder="http://192.168.1.50:8420" required>
+        <button type="submit">เพิ่ม node</button>
+      </form>
+      <div id="cluster-tiles" class="support-tiles"></div>
+      <p id="cluster-err" class="err" style="display:none"></p>
+      <div id="cluster-table"></div>
+      <details style="margin-top:14px">
+        <summary style="cursor:pointer;font-weight:600">ตั้งค่า ecosystem (ตัวตนเครื่องนี้ + เข้าร่วม hub)</summary>
+        <form id="eco-form" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">
+          <input id="eco-node-name" type="text" placeholder="NODE_NAME (ชื่อเครื่องนี้)">
+          <input id="eco-node-url" type="text" placeholder="NODE_URL (http://ip-เครื่องนี้:8420)">
+          <input id="eco-hub-url" type="text" placeholder="HUB_URL (http://ip-hub:8420)">
+          <input id="eco-hub-token" type="password" placeholder="HUB_TOKEN (ไม่โชว์ค่าเดิม)">
+          <button type="submit">บันทึกการตั้งค่า</button>
+          <button id="eco-join" type="button">เข้าร่วม hub เดี๋ยวนี้</button>
+        </form>
+        <p id="eco-msg" class="muted" style="margin-top:8px"></p>
+      </details>
+      <details style="margin-top:10px">
+        <summary style="cursor:pointer;font-weight:600">เสียบ cloud GPU (model backend)</summary>
+        <form id="mb-form" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">
+          <select id="mb-backend">
+            <option value="ollama">ollama (local CPU — default)</option>
+            <option value="openai">openai (cloud GPU / vLLM — OpenAI-compatible)</option>
+          </select>
+          <input id="mb-base-url" type="text" placeholder="OPENAI_BASE_URL (http://host:port/v1)">
+          <input id="mb-api-key" type="password" placeholder="OPENAI_API_KEY (ไม่โชว์ค่าเดิม)">
+          <button type="submit">บันทึก</button>
+          <button id="mb-test" type="button">ทดสอบการเชื่อมต่อ</button>
+        </form>
+        <p id="mb-msg" class="muted" style="margin-top:8px"></p>
+      </details>
+    </section>
+    <div id="content" class="grid"></div>
+  </main>
+
+  <style>
+    /* select + tile เฉพาะหน้า dev — ใช้ token design system กลาง ไม่แตะ app.css */
+    .page-dev .sel { font:inherit; background:var(--lca-surface-2); color:var(--lca-fg); border:1px solid var(--lca-line); border-radius:var(--lca-r); padding:9px 11px; }
+    .page-dev .support-tiles { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:12px; }
+    .page-dev .tile { display:flex; flex-direction:column; gap:2px; min-width:72px; padding:10px 12px; border:1px solid var(--lca-line); border-radius:var(--lca-r); }
+    .page-dev .tile .lca-num { font-size:20px; font-weight:600; }
+    .page-dev .tile .muted { font-family:var(--lca-mono); font-size:11px; }
+  </style>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    // จำ token ไว้ใน sessionStorage (ต่อ tab) เพื่อสะดวก — ไม่เก็บถาวร
+    try { $('token').value = sessionStorage.getItem('lca_dev_token') || ''; } catch (e) {}
+
+    function launchedSessionToken() {
+      // session ที่เซิร์ฟเวอร์ฝังในหน้า หรือ #lca_token= — ไม่เขียนลงช่อง password
+      if (window.__LCA_SESSION_TOKEN) return String(window.__LCA_SESSION_TOKEN);
+      try {
+        const m = (location.hash || '').match(/(?:^#|&)lca_token=([^&]+)/);
+        return m ? decodeURIComponent(m[1]) : '';
+      } catch (e) { return ''; }
+    }
+
+    function authHeaders() {
+      const t = $('token').value.trim() || launchedSessionToken();
+      // รองรับทั้ง master token และ API key — ส่งทั้งคู่ server จะเลือกเอง
+      return t ? { 'X-Auth-Token': t, 'X-API-Key': t } : {};
+    }
+
+    function card(title, rowsHtml) {
+      return `<div class="card"><h2>${title}</h2>${rowsHtml}</div>`;
+    }
+    function kv(k, v) { return `<div class="kv"><span class="muted">${k}</span><span>${v ?? '-'}</span></div>`; }
+    const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+    // ---------- ทรัพยากรสด (/api/metrics) ----------
+    function pctClass(p) { p = Number(p) || 0; return p >= 90 ? 'bad' : p >= 70 ? 'warn' : ''; }
+    function meterRow(lab, pct) {
+      const p = Math.max(0, Math.min(100, Number(pct) || 0));
+      return `<div class="meter"><div class="row"><span class="lab">${esc(lab)}</span>` +
+             `<span class="lca-num">${p.toFixed(0)}%</span></div>` +
+             `<div class="track"><div class="fill ${pctClass(p)}" style="width:${p}%"></div></div></div>`;
+    }
+    function renderMetrics(m) {
+      const snap = m.snapshot || {}, mem = snap.memory || {}, cpu = snap.cpu || {};
+      let rows = meterRow('CPU', cpu.percent) + meterRow('RAM', mem.percent);
+      if (mem.swap_total) rows += meterRow('SWAP', mem.swap_percent);
+      (snap.disks || []).filter((d) => !d.readonly).slice(0, 2)
+        .forEach((d) => { rows += meterRow('DISK ' + d.mountpoint, d.percent); });
+
+      let html = `<div style="display:flex;flex-direction:column;gap:12px">${rows}</div>`;
+      html += `<div class="note" style="margin-top:12px">${esc(m.verdict || '')}</div>`;
+      if (m.lca && m.lca.note) html += `<div class="note">LCA: ${esc(m.lca.note)}</div>`;
+      const alerts = (m.findings || []).filter((f) => f.severity !== 'OK' && f.severity !== 'INFO');
+      alerts.forEach((f) => { html += `<div class="kv"><span class="muted">${esc(f.resource)}</span><span>${esc(f.message)}</span></div>`; });
+      $('metrics').innerHTML = html;
+    }
+    async function loadMetrics() {
+      try {
+        const res = await fetch('/api/metrics', { headers: authHeaders() });
+        if (!res.ok) { $('metrics').innerHTML = `<div class="err">โหลด metrics ไม่ได้ (${res.status})</div>`; }
+        else { renderMetrics(await res.json()); }
+      } catch (err) {
+        $('metrics').innerHTML = '<div class="err">ต่อ server ไม่ได้</div>';
+      }
+      $('metrics-wrap').hidden = false;
+    }
+
+    // ---------- Support tickets (/api/admin/support/tickets) ----------
+    const SUP_STATUSES = ['open', 'in_progress', 'resolved', 'closed'];
+    function supStatusSelect(id, current) {
+      const opts = SUP_STATUSES.map((s) =>
+        `<option value="${s}"${s === current ? ' selected' : ''}>${s}</option>`).join('');
+      return `<select class="sel sup-row-status" data-id="${esc(id)}">${opts}</select>`;
+    }
+    function renderSupportCounts(counts) {
+      counts = counts || {};
+      const order = ['total'].concat(SUP_STATUSES);
+      $('support-counts').innerHTML = order.map((k) => {
+        const n = counts[k] != null ? counts[k] : 0;
+        return `<div class="tile"><span class="lca-num">${esc(n)}</span><span class="muted">${k}</span></div>`;
+      }).join('');
+    }
+    function renderSupportRows(tickets) {
+      if (!tickets.length) { $('support-table').innerHTML = '<div class="muted">ยังไม่มีเรื่องแจ้ง</div>'; return; }
+      let h = '<table><tr><th>#</th><th>ช่อง</th><th>ชนิด</th><th>หัวข้อ</th><th>ผู้แจ้ง</th><th>สถานะ</th><th></th></tr>';
+      tickets.forEach((t) => {
+        h += `<tr><td>${esc(t.id)}</td><td>${esc(t.channel)}</td><td>${esc(t.kind)}</td>` +
+             `<td>${esc(t.subject)}</td><td>${esc(t.reporter || '—')}</td>` +
+             `<td>${supStatusSelect(t.id, t.status)}</td>` +
+             `<td><button class="sup-save" data-id="${esc(t.id)}" type="button">บันทึก</button></td></tr>`;
+      });
+      h += '</table>';
+      $('support-table').innerHTML = h;
+    }
+    async function loadSupport() {
+      $('support-err').style.display = 'none';
+      const status = $('support-filter').value;
+      const url = '/api/admin/support/tickets' + (status ? '?status=' + encodeURIComponent(status) : '');
+      try {
+        const res = await fetch(url, { headers: authHeaders() });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { $('support-err').textContent = data.error || ('error ' + res.status); $('support-err').style.display = ''; }
+        else { renderSupportCounts(data.counts); renderSupportRows(data.tickets || []); }
+      } catch (err) {
+        $('support-err').textContent = 'ต่อ server ไม่ได้'; $('support-err').style.display = '';
+      }
+      $('support-wrap').hidden = false;
+    }
+
+    // ---------- Usage / API-key monitor (/api/admin/usage/summary) ----------
+    function renderUsage(data) {
+      const tiles = [
+        { n: data.total_units, lab: 'total units' },
+        { n: (data.total_cost != null ? data.total_cost : 0), lab: 'cost (' + esc(data.currency || '') + ')' },
+        { n: (data.by_key || []).length, lab: 'keys ที่ใช้งาน' },
+      ];
+      $('usage-tiles').innerHTML = tiles.map((t) =>
+        `<div class="tile"><span class="lca-num">${esc(t.n)}</span><span class="muted">${t.lab}</span></div>`).join('');
+
+      const rows = data.by_key || [];
+      if (!rows.length) { $('usage-table').innerHTML = '<div class="muted">ยังไม่มี usage ต่อ key (ยังไม่มีใครยิงผ่าน API key)</div>'; return; }
+      let h = '<table><tr><th>key_id</th><th>owner</th><th>tier</th><th>units</th><th>events</th><th>cost</th></tr>';
+      rows.forEach((r) => {
+        h += `<tr><td>${esc(r.key_id)}</td><td>${esc(r.owner || '—')}</td><td>${esc(r.tier || '—')}</td>` +
+             `<td>${esc(r.units)}</td><td>${esc(r.events)}</td><td>${esc(r.cost)}</td></tr>`;
+      });
+      h += '</table>';
+      $('usage-table').innerHTML = h;
+    }
+    async function loadUsage() {
+      $('usage-err').style.display = 'none';
+      try {
+        const res = await fetch('/api/admin/usage/summary', { headers: authHeaders() });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { $('usage-err').textContent = data.error || ('error ' + res.status); $('usage-err').style.display = ''; }
+        else { renderUsage(data.summary || data); }
+      } catch (err) {
+        $('usage-err').textContent = 'ต่อ server ไม่ได้'; $('usage-err').style.display = '';
+      }
+      $('usage-wrap').hidden = false;
+    }
+
+    // ---------- Cluster monitor (/api/admin/cluster/*) ----------
+    function renderCluster(data) {
+      const s = data.summary || { total: 0, up: 0, down: 0 };
+      const tiles = [
+        { n: s.total, lab: 'nodes ทั้งหมด' },
+        { n: s.up, lab: 'online' },
+        { n: s.down, lab: 'offline' },
+      ];
+      $('cluster-tiles').innerHTML = tiles.map((t) =>
+        `<div class="tile"><span class="lca-num">${esc(t.n)}</span><span class="muted">${t.lab}</span></div>`).join('');
+
+      const rows = data.nodes || [];
+      if (!rows.length) { $('cluster-table').innerHTML = '<div class="muted">ยังไม่มี node — เพิ่มด้านบน (ชื่อ + url ของ LCA อีกเครื่อง)</div>'; return; }
+      let h = '<table><tr><th>node</th><th>url</th><th>สถานะ</th><th>ollama</th><th>RAM</th><th>โมเดลแนะนำ</th><th></th></tr>';
+      rows.forEach((r) => {
+        const he = (r.health || {});
+        const stat = r.reachable
+          ? '<span class="tag ok">online</span>'
+          : `<span class="tag bad">offline</span> <span class="muted">${esc(r.error || '')}</span>`;
+        const ollama = r.reachable ? esc(he.ollama || '—') : '—';
+        const ram = r.reachable ? (he.ram_pressure ? 'ตึง' : 'ปกติ') : '—';
+        const model = r.reachable ? esc(he.recommended_model || '—') : '—';
+        h += `<tr><td>${esc(r.name)}</td><td>${esc(r.url)}</td><td>${stat}</td>` +
+             `<td>${ollama}</td><td>${ram}</td><td>${model}</td>` +
+             `<td><button type="button" data-node="${esc(r.name)}" class="cluster-rm">ลบ</button></td></tr>`;
+      });
+      h += '</table>';
+      $('cluster-table').innerHTML = h;
+      document.querySelectorAll('.cluster-rm').forEach((b) =>
+        b.addEventListener('click', () => removeNode(b.getAttribute('data-node'))));
+    }
+    function renderCfgVersions(versions) {
+      const esc = (s) => String(s == null ? '' : s).replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+      if (!versions.length) { $('cfgver-table').textContent = 'ยังไม่มี snapshot — กด "เก็บ snapshot ตอนนี้" ก่อนปล่อยของ'; return; }
+      const rows = versions.map(v => {
+        const t = new Date((v.ts || 0) * 1000).toLocaleString();
+        return '<tr><td><code>' + esc(v.id) + '</code></td><td>' + esc(t) + '</td><td>' +
+          esc(v.label) + '</td><td>' + esc(v.keys) + ' key</td>' +
+          '<td><button type="button" class="cfg-rollback" data-id="' + esc(v.id) + '">rollback</button></td></tr>';
+      }).join('');
+      $('cfgver-table').innerHTML = '<table><tr><th>id</th><th>เวลา</th><th>label</th><th>ขนาด</th><th></th></tr>' + rows + '</table>';
+      document.querySelectorAll('.cfg-rollback').forEach(b =>
+        b.addEventListener('click', () => rollbackConfig(b.getAttribute('data-id'))));
+    }
+    async function loadCfgVersions() {
+      $('cfgver-err').style.display = 'none';
+      try {
+        const res = await fetch('/api/admin/config/versions', { headers: authHeaders() });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { $('cfgver-err').textContent = data.error || ('error ' + res.status); $('cfgver-err').style.display = ''; }
+        else { renderCfgVersions(data.versions || []); }
+      } catch (err) { $('cfgver-err').textContent = 'ต่อ server ไม่ได้'; $('cfgver-err').style.display = ''; }
+      $('cfgver-wrap').hidden = false;
+    }
+    async function snapshotConfig() {
+      try {
+        const res = await fetch('/api/admin/config/snapshot', {
+          method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+          body: JSON.stringify({ label: $('cfg-label').value.trim() }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { $('cfgver-err').textContent = data.error || ('error ' + res.status); $('cfgver-err').style.display = ''; return; }
+        $('cfg-label').value = ''; loadCfgVersions();
+      } catch (err) { $('cfgver-err').textContent = 'ต่อ server ไม่ได้'; $('cfgver-err').style.display = ''; }
+    }
+    async function rollbackConfig(id) {
+      if (!confirm('ย้อน config กลับเวอร์ชัน ' + id + ' ?\n(ของปัจจุบันจะถูก snapshot ไว้ก่อน ย้อนกลับได้อีก)')) return;
+      try {
+        const res = await fetch('/api/admin/config/rollback', {
+          method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+          body: JSON.stringify({ id }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { $('cfgver-err').textContent = data.error || ('error ' + res.status); $('cfgver-err').style.display = ''; return; }
+        loadCfgVersions();
+      } catch (err) { $('cfgver-err').textContent = 'ต่อ server ไม่ได้'; $('cfgver-err').style.display = ''; }
+    }
+    function renderHwProfile(p) {
+      const esc = (s) => String(s == null ? '' : s).replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+      const rec = p.recommended_config || {};
+      const recRows = Object.keys(rec).filter(k => !k.startsWith('_'))
+        .map(k => '<tr><td>' + esc(k) + '</td><td><code>' + esc(rec[k]) + '</code></td></tr>').join('');
+      $('hwprofile-body').innerHTML =
+        '<p><strong>ระดับเครื่อง:</strong> ' + esc((p.tier || '').toUpperCase()) +
+        ' &nbsp; <strong>CPU:</strong> ' + esc(p.cpu_model) + ' (' + esc(p.physical_cores) + ' core)' +
+        ' &nbsp; <strong>RAM:</strong> ' + esc(p.ram_gb) + ' GB' +
+        ' &nbsp; <strong>ดิสก์:</strong> ' + (p.is_hdd ? 'HDD (คอขวด I/O)' : 'SSD/เร็ว') + '</p>' +
+        '<p><strong>แนะนำ config:</strong></p><table>' + recRows + '</table>' +
+        '<p><strong>อัปเกรดคุ้มสุดถัดไป:</strong> ' + esc(p.next_upgrade) + '</p>';
+    }
+    async function loadHwProfile(disk) {
+      try {
+        const url = '/api/admin/hw-profile' + (disk ? '?disk=1' : '');
+        const res = await fetch(url, { headers: authHeaders() });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { $('hwprofile-body').textContent = data.error || ('error ' + res.status); }
+        else { renderHwProfile(data.profile || {}); }
+      } catch (err) {
+        $('hwprofile-body').textContent = 'ต่อ server ไม่ได้';
+      }
+      $('hwprofile-wrap').hidden = false;
+    }
+    // ---------- Server features (เปิด/ปิด + มอนิเตอร์) ----------
+    function escapeHtml(s) { return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+    function renderFeatures(list) {
+      $('features-list').innerHTML = (list || []).map(f => {
+        const on = f.enabled;
+        return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #2a2e37">
+          <div><strong>${escapeHtml(f.name)}</strong> <span style="color:${on?'#4ade80':'#9aa0ac'}">${on?'● เปิด':'○ ปิด'}</span>
+          <div style="color:#9aa0ac;font-size:13px">${escapeHtml(f.desc)}</div></div>
+          <button type="button" data-feat="${escapeHtml(f.key)}" data-next="${on?'0':'1'}">${on?'ปิด':'เปิด'}</button>
+        </div>`;
+      }).join('') || '(ไม่มีฟีเจอร์)';
+      $('features-list').querySelectorAll('button[data-feat]').forEach(b =>
+        b.addEventListener('click', () => toggleFeature(b.dataset.feat, b.dataset.next === '1')));
+    }
+    async function loadFeatures() {
+      $('features-err').style.display = 'none';
+      try {
+        const res = await fetch('/api/admin/features', { headers: authHeaders() });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { $('features-err').textContent = data.error || ('error ' + res.status); $('features-err').style.display = ''; }
+        else { renderFeatures(data.features); }
+      } catch (err) { $('features-err').textContent = 'ต่อ server ไม่ได้'; $('features-err').style.display = ''; }
+      $('features-wrap').hidden = false;
+    }
+    // ---------- Agent approvals (P6) ----------
+    function renderApprovals(pending) {
+      if (!pending || !pending.length) { $('approvals-list').innerHTML = '<p style="color:#9aa0ac">ไม่มีคำขอรออนุมัติ</p>'; return; }
+      $('approvals-list').innerHTML = pending.map(a => {
+        const d = a.detail || {};
+        const what = a.kind === 'run_command'
+          ? ('รันคำสั่ง: ' + escapeHtml(d.command || ''))
+          : ('เขียนไฟล์: ' + escapeHtml(d.path || '') + ' (' + ((d.content || '').length) + ' ตัวอักษร)');
+        return `<div style="border:1px solid #2a2e37;border-radius:10px;padding:10px 12px;margin-bottom:8px">
+          <div style="font-size:13px;color:#9aa0ac">id: ${escapeHtml(a.id)} · workspace: ${escapeHtml(a.workspace || '')}</div>
+          <div style="margin:4px 0"><strong>${what}</strong></div>
+          <button type="button" data-apr="${escapeHtml(a.id)}" data-dec="approve" style="background:#16a34a;color:#fff">อนุมัติ (ลงมือจริง)</button>
+          <button type="button" data-apr="${escapeHtml(a.id)}" data-dec="reject">ปฏิเสธ</button>
+        </div>`;
+      }).join('');
+      $('approvals-list').querySelectorAll('button[data-apr]').forEach(b =>
+        b.addEventListener('click', () => decideApproval(b.dataset.apr, b.dataset.dec)));
+    }
+    async function loadApprovals() {
+      $('approvals-err').style.display = 'none';
+      try {
+        const res = await fetch('/api/agent/approvals', { headers: authHeaders() });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { $('approvals-err').textContent = data.error || ('error ' + res.status); $('approvals-err').style.display = ''; }
+        else { renderApprovals(data.pending); }
+      } catch (err) { $('approvals-err').textContent = 'ต่อ server ไม่ได้'; $('approvals-err').style.display = ''; }
+      $('approvals-wrap').hidden = false;
+    }
+    async function decideApproval(id, decision) {
+      $('approvals-err').style.display = 'none';
+      try {
+        const res = await fetch('/api/agent/approvals/decide', {
+          method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+          body: JSON.stringify({ id, decision }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { $('approvals-err').textContent = data.error || ('error ' + res.status); $('approvals-err').style.display = ''; }
+      } catch (err) { $('approvals-err').textContent = 'ต่อ server ไม่ได้'; $('approvals-err').style.display = ''; }
+      loadApprovals();
+    }
+    async function toggleFeature(key, enabled) {
+      $('features-err').style.display = 'none';
+      try {
+        const res = await fetch('/api/admin/features', {
+          method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+          body: JSON.stringify({ key, enabled }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { $('features-err').textContent = data.error || ('error ' + res.status); $('features-err').style.display = ''; }
+      } catch (err) { $('features-err').textContent = 'ต่อ server ไม่ได้'; $('features-err').style.display = ''; }
+      loadFeatures();
+    }
+    async function loadCluster() {
+      $('cluster-err').style.display = 'none';
+      try {
+        const res = await fetch('/api/admin/cluster/health', { headers: authHeaders() });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { $('cluster-err').textContent = data.error || ('error ' + res.status); $('cluster-err').style.display = ''; }
+        else { renderCluster(data); }
+      } catch (err) {
+        $('cluster-err').textContent = 'ต่อ server ไม่ได้'; $('cluster-err').style.display = '';
+      }
+      $('cluster-wrap').hidden = false;
+    }
+    async function addNode(name, url) {
+      $('cluster-err').style.display = 'none';
+      try {
+        const res = await fetch('/api/admin/cluster/nodes', {
+          method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+          body: JSON.stringify({ name, url }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { $('cluster-err').textContent = data.error || ('error ' + res.status); $('cluster-err').style.display = ''; return; }
+        loadCluster();
+      } catch (err) {
+        $('cluster-err').textContent = 'ต่อ server ไม่ได้'; $('cluster-err').style.display = '';
+      }
+    }
+    async function removeNode(name) {
+      try {
+        await fetch('/api/admin/cluster/nodes/remove', {
+          method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+          body: JSON.stringify({ name }),
+        });
+      } catch (err) { /* degrade: reload จะสะท้อนสถานะจริง */ }
+      loadCluster();
+    }
+
+    // ---------- Ecosystem settings (ตัวตน node นี้ + join hub) ----------
+    async function loadEcoSettings() {
+      try {
+        const res = await fetch('/api/admin/cluster/settings', { headers: authHeaders() });
+        const data = await res.json().catch(() => ({}));
+        const s = (data.settings || {});
+        $('eco-node-name').value = s.NODE_NAME || '';
+        $('eco-node-url').value = s.NODE_URL || '';
+        $('eco-hub-url').value = s.HUB_URL || '';
+        $('eco-hub-token').placeholder = s.hub_token_set ? 'HUB_TOKEN (ตั้งไว้แล้ว — เว้นว่างถ้าไม่เปลี่ยน)' : 'HUB_TOKEN';
+      } catch (err) { /* เงียบ — panel อื่นยังใช้ได้ */ }
+    }
+    async function saveEcoSettings() {
+      $('eco-msg').textContent = 'กำลังบันทึก...';
+      const body = {
+        NODE_NAME: $('eco-node-name').value.trim(),
+        NODE_URL: $('eco-node-url').value.trim(),
+        HUB_URL: $('eco-hub-url').value.trim(),
+      };
+      const tok = $('eco-hub-token').value;   // ส่งเฉพาะเมื่อกรอก (ไม่ทับค่าเดิมด้วยค่าว่าง)
+      if (tok) body.HUB_TOKEN = tok;
+      try {
+        const res = await fetch('/api/admin/cluster/settings', {
+          method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+          body: JSON.stringify(body),
+        });
+        const data = await res.json().catch(() => ({}));
+        $('eco-msg').textContent = res.ok ? 'บันทึกแล้ว ✓' : (data.error || ('error ' + res.status));
+        $('eco-hub-token').value = '';
+        if (res.ok) loadEcoSettings();
+      } catch (err) { $('eco-msg').textContent = 'ต่อ server ไม่ได้'; }
+    }
+    async function joinHub() {
+      $('eco-msg').textContent = 'กำลังเข้าร่วม hub...';
+      try {
+        const res = await fetch('/api/admin/cluster/join', {
+          method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+          body: '{}',
+        });
+        const data = await res.json().catch(() => ({}));
+        $('eco-msg').textContent = (res.ok && data.ok)
+          ? ('เข้าร่วม hub สำเร็จ ✓ (' + esc((data.hub || '')) + ')')
+          : ('เข้าร่วมไม่สำเร็จ: ' + esc(data.error || ('error ' + res.status)));
+      } catch (err) { $('eco-msg').textContent = 'ต่อ server ไม่ได้'; }
+    }
+
+    // ---------- Model backend (เสียบ cloud GPU ผ่าน OpenAI-compatible) ----------
+    async function loadBackendSettings() {
+      try {
+        const res = await fetch('/api/admin/model-backend/settings', { headers: authHeaders() });
+        const data = await res.json().catch(() => ({}));
+        const s = (data.settings || {});
+        $('mb-backend').value = s.MODEL_BACKEND || 'ollama';
+        $('mb-base-url').value = s.OPENAI_BASE_URL || '';
+        $('mb-api-key').placeholder = s.openai_api_key_set ? 'OPENAI_API_KEY (ตั้งไว้แล้ว — เว้นว่างถ้าไม่เปลี่ยน)' : 'OPENAI_API_KEY';
+      } catch (err) { /* เงียบ */ }
+    }
+    async function saveBackendSettings() {
+      $('mb-msg').textContent = 'กำลังบันทึก...';
+      const body = { MODEL_BACKEND: $('mb-backend').value, OPENAI_BASE_URL: $('mb-base-url').value.trim() };
+      const k = $('mb-api-key').value;
+      if (k) body.OPENAI_API_KEY = k;
+      try {
+        const res = await fetch('/api/admin/model-backend/settings', {
+          method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+          body: JSON.stringify(body),
+        });
+        const data = await res.json().catch(() => ({}));
+        $('mb-msg').textContent = res.ok ? 'บันทึกแล้ว ✓' : (data.error || ('error ' + res.status));
+        $('mb-api-key').value = '';
+        if (res.ok) loadBackendSettings();
+      } catch (err) { $('mb-msg').textContent = 'ต่อ server ไม่ได้'; }
+    }
+    async function testBackend() {
+      $('mb-msg').textContent = 'กำลังทดสอบ...';
+      try {
+        const res = await fetch('/api/admin/model-backend/test', {
+          method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+          body: '{}',
+        });
+        const data = await res.json().catch(() => ({}));
+        $('mb-msg').textContent = data.available
+          ? ('เชื่อมต่อได้ ✓ (backend=' + esc(data.backend) + ')')
+          : ('ต่อไม่ติด: backend=' + esc(data.backend || '?') + (data.error ? ' (' + esc(data.error) + ')' : ''));
+      } catch (err) { $('mb-msg').textContent = 'ต่อ server ไม่ได้'; }
+    }
+
+    function render(info) {
+      const c = info.cpu || {};
+      const cores = c.physical_cores ? `${c.physical_cores}P / ${c.logical_cores}L` : `${c.logical_cores}L`;
+      const freq = c.max_freq_mhz ? ` @ ${c.max_freq_mhz} MHz` : '';
+      let html = '';
+      html += card('Host', kv('Hostname', esc(info.hostname)) + kv('OS', esc(info.os)) +
+        kv('Platform', esc(info.platform)) + kv('Python', esc(info.python)));
+      html += card('CPU', kv('Model', esc(c.model)) + kv('Cores', cores + freq) + kv('Arch', esc(c.arch)));
+      html += card('Memory', kv('Total RAM', esc((info.memory || {}).total_human)));
+
+      let st = '<table><tr><th>Mount</th><th>Size</th><th>FS</th></tr>';
+      (info.storage || []).forEach((s) => {
+        st += `<tr><td>${esc(s.mountpoint)}</td><td>${esc(s.total_human)}</td><td>${esc(s.fstype)}</td></tr>`;
+      });
+      st += '</table>';
+      html += card('Storage', st);
+
+      let g = '';
+      if ((info.gpus || []).length) {
+        info.gpus.forEach((x) => {
+          const tag = x.compute_capable
+            ? '<span class="tag ok">compute</span>'
+            : '<span class="tag bad">integrated</span>';
+          g += `<div class="kv"><span>${esc(x.name)}</span>${tag}</div>`;
+        });
+      } else {
+        g = '<div class="muted">ไม่พบ GPU (best-effort)</div>';
+      }
+      g += `<div class="note">${esc(info.gpu_note || '')}</div>`;
+      html += card('GPU', g);
+
+      $('content').innerHTML = html;
+    }
+
+    async function load() {
+      $('error').textContent = '';
+      $('load').disabled = true;
+      try { sessionStorage.setItem('lca_dev_token', $('token').value.trim()); } catch (e) {}
+      try {
+        const res = await fetch('/api/sysinfo', { headers: authHeaders() });
+        if (res.status === 401) { $('error').textContent = 'unauthorized — ใส่ token/API key ให้ถูก'; return; }
+        if (res.status === 403) { $('error').textContent = 'forbidden — ต้องมีสิทธิ์ ADMIN ขึ้นไป'; return; }
+        if (!res.ok) { $('error').textContent = 'error ' + res.status; return; }
+        const info = await res.json();
+        $('who').textContent = 'เชื่อมต่อแล้ว';
+        render(info);
+        loadMetrics();   // โหลดทรัพยากรสดต่อเลยหลัง auth ผ่าน
+        loadSupport();   // + support dashboard (ใช้ token เดียวกัน, สิทธิ์ ADMIN)
+        loadUsage();     // + usage/API-key monitor (ต่อ key: units/cost)
+        loadCluster();   // + cluster monitor (health ของทุก node)
+        loadHwProfile(false); // + hardware profile (จัดระดับเครื่อง + แนะนำ config; ไม่วัด disk ตอนโหลด)
+        loadCfgVersions(); // + config versions (snapshot/rollback กัน incident)
+        loadFeatures();  // + server features (เปิด/ปิดฟีเจอร์ + มอนิเตอร์)
+        loadApprovals(); // + คำขออนุมัติจาก agent (P6)
+        loadEcoSettings(); // + ecosystem settings (ตัวตนเครื่องนี้ + hub)
+        loadBackendSettings(); // + model backend (เสียบ cloud GPU)
+      } catch (err) {
+        $('error').textContent = 'ต่อ server ไม่ได้: ' + err.message;
+      } finally {
+        $('load').disabled = false;
+      }
+    }
+
+    $('load').addEventListener('click', load);
+    $('refresh-metrics').addEventListener('click', loadMetrics);
+    $('refresh-support').addEventListener('click', loadSupport);
+    $('refresh-usage').addEventListener('click', loadUsage);
+    $('refresh-features').addEventListener('click', loadFeatures);
+    $('refresh-approvals').addEventListener('click', loadApprovals);
+    $('refresh-cluster').addEventListener('click', loadCluster);
+    $('refresh-hwprofile').addEventListener('click', () => loadHwProfile(true));
+    $('cfg-snapshot').addEventListener('click', snapshotConfig);
+    $('cluster-add').addEventListener('submit', (e) => {
+      e.preventDefault();
+      addNode($('cluster-name').value.trim(), $('cluster-url').value.trim());
+      $('cluster-name').value = ''; $('cluster-url').value = '';
+    });
+    $('eco-form').addEventListener('submit', (e) => { e.preventDefault(); saveEcoSettings(); });
+    $('eco-join').addEventListener('click', joinHub);
+    $('mb-form').addEventListener('submit', (e) => { e.preventDefault(); saveBackendSettings(); });
+    $('mb-test').addEventListener('click', testBackend);
+    $('support-filter').addEventListener('change', loadSupport);
+    // บันทึกสถานะ ticket — ใช้ event delegation (ปุ่มถูกสร้างใหม่ทุกครั้งที่ render)
+    $('support-table').addEventListener('click', async (e) => {
+      const btn = e.target.closest('.sup-save');
+      if (!btn) return;
+      const id = btn.dataset.id;
+      const sel = $('support-table').querySelector('.sup-row-status[data-id="' + id + '"]');
+      if (!sel) return;
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/admin/support/tickets/status', {
+          method: 'POST',
+          headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+          body: JSON.stringify({ id: Number(id), status: sel.value })
+        });
+        if (!res.ok) { const d = await res.json().catch(() => ({})); alert('บันทึกไม่สำเร็จ: ' + (d.error || res.status)); }
+        else { loadSupport(); }
+      } catch (err) { alert('ต่อ server ไม่ได้'); }
+      finally { btn.disabled = false; }
+    });
+    $('token').addEventListener('keydown', (e) => { if (e.key === 'Enter') load(); });
+    if ($('token').value || launchedSessionToken()) load();
+  </script>
+</body>
+</html>

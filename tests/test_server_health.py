@@ -1,0 +1,207 @@
+"""
+test_server_health.py — integration test ของ GET /api/health (สัญญาณชีพระบบ)
+
+สตาร์ท server จริงบนพอร์ตสุ่ม mock call_ollama ไว้ ไม่ต้องมี Ollama จริง
+(/api/health เป็น public ไม่ต้อง auth — เช็กว่าคืนโครงถูกต้อง)
+"""
+
+import http.client
+import json
+import sys
+import tempfile
+import threading
+import unittest
+from http.server import ThreadingHTTPServer
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+import server  # noqa: E402
+from app import model_backend  # noqa: E402
+
+
+class ServerHealthTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        # mock ที่ชั้น adapter (seam ใหม่) — สะท้อน model กลับมาเพื่อตรวจ auto-scale
+        model_backend.generate = (
+            lambda project_root, model, messages, num_ctx=8192, options=None: f"MODEL={model}"
+        )
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        root = Path(self._tmp.name)
+        handler = server.make_handler(root, None)
+        self.session_token = handler.session_token
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        self.port = self.httpd.server_address[1]
+        self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
+        self.thread.start()
+
+    def tearDown(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        self._tmp.cleanup()
+
+    def _get(self, path):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("GET", path)
+        resp = conn.getresponse()
+        raw = resp.read().decode("utf-8")
+        conn.close()
+        return resp.status, json.loads(raw) if raw else {}
+
+    def _post(self, path, payload):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        body = json.dumps(payload).encode("utf-8")
+        conn.request("POST", path, body=body, headers={
+            "Content-Type": "application/json",
+            "X-Auth-Token": self.session_token,
+        })
+        resp = conn.getresponse()
+        raw = resp.read().decode("utf-8")
+        conn.close()
+        return resp.status, json.loads(raw) if raw else {}
+
+    def test_health_ok_and_shape(self):
+        st, data = self._get("/api/health")
+        self.assertEqual(st, 200)
+        self.assertTrue(data["ok"])
+        self.assertIn(data["ollama"], ("up", "down"))
+        self.assertIsInstance(data["ram_pressure"], bool)
+        self.assertTrue(data["recommended_model"].startswith("qwen2.5-coder:"))
+        self.assertIn("backend", data)
+        # default backend = cpu (ยังไม่ได้ตั้ง config)
+        self.assertEqual(data["backend"]["backend"], "cpu")
+
+    def test_health_public_no_auth_needed(self):
+        # ไม่แนบ token ก็ต้องได้ 200 (เป็น liveness endpoint)
+        st, _ = self._get("/api/health")
+        self.assertEqual(st, 200)
+
+    def test_health_reports_network_mode(self):
+        # N4: /api/health ต้องบอกโหมดเครือข่าย — harness bind 127.0.0.1 => local
+        _, data = self._get("/api/health")
+        net = data["network"]
+        self.assertEqual(net["bind"], "127.0.0.1")
+        self.assertEqual(net["mode"], "local")
+        self.assertIsInstance(net["auth_required"], bool)
+
+    def test_version_endpoint_public(self):
+        # /api/version public ไม่ต้อง auth — ให้ QA/support/debug ดูได้
+        st, data = self._get("/api/version")
+        self.assertEqual(st, 200)
+        self.assertIn("version", data)
+        self.assertIn("python", data)
+        self.assertEqual(data["name"], "LCA (Local Code Assistant)")
+
+    def test_version_reads_version_file(self):
+        # เขียน VERSION file ลง project_root ชั่วคราว แล้วเช็กว่า endpoint อ่าน
+        (Path(self._tmp.name) / "VERSION").write_text("9.9.9\n", encoding="utf-8")
+        _, data = self._get("/api/version")
+        self.assertEqual(data["version"], "9.9.9")
+
+    def test_version_fallback_when_no_file(self):
+        # ไม่มี VERSION file → fallback "unknown" ไม่ raise
+        _, data = self._get("/api/version")
+        self.assertEqual(data["version"], "unknown")
+
+    def test_version_python_shape(self):
+        # python version ต้องเป็น "X.Y.Z"
+        _, data = self._get("/api/version")
+        parts = data["python"].split(".")
+        self.assertEqual(len(parts), 3)
+        self.assertTrue(all(p.isdigit() for p in parts))
+
+    def test_chat_auto_scales_model_when_omitted(self):
+        # ไม่ระบุ model -> server เลือกให้ตาม RAM (resource_budget) = โมเดล qwen ตัวใดตัวหนึ่ง
+        st, data = self._post("/api/chat", {"messages": [{"role": "user", "content": "hi"}]})
+        self.assertEqual(st, 200)
+        self.assertTrue(data["reply"].startswith("MODEL=qwen2.5-coder:"))
+
+    def test_chat_auto_keyword_picks_model(self):
+        st, data = self._post("/api/chat", {"model": "auto",
+                                            "messages": [{"role": "user", "content": "hi"}]})
+        self.assertEqual(st, 200)
+        self.assertTrue(data["reply"].startswith("MODEL=qwen2.5-coder:"))
+
+    def test_chat_explicit_model_honored(self):
+        st, data = self._post("/api/chat", {"model": "qwen2.5-coder:7b",
+                                            "messages": [{"role": "user", "content": "hi"}]})
+        self.assertEqual(st, 200)
+        self.assertEqual(data["reply"], "MODEL=qwen2.5-coder:7b")
+
+
+class HwProfileEndpointTest(unittest.TestCase):
+    """/api/admin/hw-profile — HTTP integration tests (local bind + session token = CEO auto)"""
+
+    @classmethod
+    def setUpClass(cls):
+        model_backend.generate = (
+            lambda project_root, model, messages, num_ctx=8192, options=None: f"MODEL={model}"
+        )
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        root = Path(self._tmp.name)
+        handler = server.make_handler(root, None)
+        self.session_token = handler.session_token
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        self.port = self.httpd.server_address[1]
+        self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
+        self.thread.start()
+
+    def tearDown(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        self._tmp.cleanup()
+
+    def _get(self, path):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        conn.request("GET", path, headers={"X-Auth-Token": self.session_token})
+        resp = conn.getresponse()
+        raw = resp.read().decode("utf-8")
+        conn.close()
+        return resp.status, json.loads(raw) if raw else {}
+
+    def test_hw_profile_returns_200(self):
+        # local bind + session token = CEO auto → 200
+        st, _ = self._get("/api/admin/hw-profile?disk=0")
+        self.assertEqual(st, 200)
+
+    def test_hw_profile_shape(self):
+        # โครงของ response ต้องมีทุก key
+        _, data = self._get("/api/admin/hw-profile?disk=0")
+        p = data["profile"]
+        for key in ("tier", "tier_reasons", "cpu_model", "physical_cores",
+                    "ram_gb", "is_hdd", "has_compute_gpu", "gpus",
+                    "recommended_config", "next_upgrade"):
+            self.assertIn(key, p, f"missing key: {key}")
+
+    def test_hw_profile_tier_valid(self):
+        # tier ต้องเป็น netbook / workstation / server
+        _, data = self._get("/api/admin/hw-profile?disk=0")
+        self.assertIn(data["profile"]["tier"], ("netbook", "workstation", "server"))
+
+    def test_hw_profile_recommended_config_shape(self):
+        # recommended_config ต้องมีคีย์ config จริง
+        _, data = self._get("/api/admin/hw-profile?disk=0")
+        rc = data["profile"]["recommended_config"]
+        self.assertIn("PREFERRED_MODEL", rc)
+        self.assertIn("COMPUTE_BACKEND", rc)
+        self.assertIn("MAX_CONCURRENT_GENERATIONS", rc)
+
+    def test_hw_profile_next_upgrade_is_string(self):
+        _, data = self._get("/api/admin/hw-profile?disk=0")
+        self.assertIsInstance(data["profile"]["next_upgrade"], str)
+        self.assertGreater(len(data["profile"]["next_upgrade"]), 0)
+
+    def test_hw_profile_no_disk_param_is_safe(self):
+        # ไม่ส่ง disk param ก็ต้องไม่พัง (default disk=0 ไม่วัด disk จริง)
+        st, data = self._get("/api/admin/hw-profile")
+        self.assertEqual(st, 200)
+        self.assertIn("profile", data)
+
+
+if __name__ == "__main__":
+    unittest.main()

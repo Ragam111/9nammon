@@ -1,0 +1,9 @@
+# Superseded by ci.yml — run manually only
+name: tests
+on:
+  workflow_dispatch:
+jobs:
+  unittest:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "tests.yml superseded by ci.yml"

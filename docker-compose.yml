@@ -1,0 +1,71 @@
+# LCA appliance: FastAPI + PostgreSQL (+ optional Ollama)
+# Tuned for a small PC (i5-7400, 8 GB RAM, HDD):
+#   - Ollama runs natively on the host by default (no VM memory overhead)
+#   - every service has a memory cap, 1 API worker
+# Start:   copy .env.example .env  (edit passwords), then  docker compose up -d --build
+# Ollama in compose (e.g. Linux server):  docker compose --profile ollama up -d --build
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: lca
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      LCA_APP_PASSWORD: ${LCA_APP_PASSWORD:?set LCA_APP_PASSWORD in .env}
+    command: >
+      postgres
+      -c shared_buffers=128MB
+      -c work_mem=4MB
+      -c max_connections=50
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/00-schema.sql:ro
+      - ./initdb/10-app-password.sh:/docker-entrypoint-initdb.d/10-app-password.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d lca"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    mem_limit: 512m
+    # no published port: only the api container talks to the database
+
+  api:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://lca_app:${LCA_APP_PASSWORD}@db:5432/lca
+      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+      LCA_MODEL: ${LCA_MODEL:-qwen2.5-coder:1.5b}
+      LCA_NUM_CTX: ${LCA_NUM_CTX:-4096}
+      RATE_LIMIT_STORAGE: memory://
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # needed on Linux, harmless on Docker Desktop
+    ports:
+      - "127.0.0.1:8001:8000"    # change to "8001:8000" to expose on the LAN
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/docs')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    mem_limit: 384m
+
+  ollama:
+    profiles: ["ollama"]
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    environment:
+      OLLAMA_MAX_LOADED_MODELS: "1"
+      OLLAMA_NUM_PARALLEL: "1"
+      OLLAMA_KEEP_ALIVE: "10m"
+    volumes:
+      - ollama:/root/.ollama
+    mem_limit: 5g
+
+volumes:
+  pgdata:
+  ollama:
