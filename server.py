@@ -114,6 +114,8 @@ STATIC_ROUTES = {
     "/chat":    ("chat.html",    "text/html; charset=utf-8",              False),
     "/chat.css": ("chat.css",    "text/css; charset=utf-8",               True),
     "/chat.js": ("chat.js",      "application/javascript; charset=utf-8", True),
+    "/rea":     ("rea.html",     "text/html; charset=utf-8",              False),
+    "/rea-data.js": ("rea-data.js", "application/javascript; charset=utf-8", False),
     "/fonts/IBMPlexSansThai-Regular.sub.woff2": ("fonts/IBMPlexSansThai-Regular.sub.woff2", "font/woff2", True),
     "/fonts/IBMPlexSansThai-SemiBold.sub.woff2": ("fonts/IBMPlexSansThai-SemiBold.sub.woff2", "font/woff2", True),
     "/fonts/IBMPlexMono-Regular.sub.woff2": ("fonts/IBMPlexMono-Regular.sub.woff2", "font/woff2", True),
