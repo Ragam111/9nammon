@@ -35,7 +35,9 @@
 
 ### 4. การห่อหุ้มด้วย Container (Dockerfile → Image → Container → Container Engine)
 - รีโปมี `Dockerfile` และ `docker-compose.yml` อยู่แล้ว ใช้เป็นจุดเริ่มสำหรับบิลด์และรัน server ในคอนเทนเนอร์
-- ยังไม่ได้ทดสอบว่าบิลด์ผ่านในงานนี้ ต้องรันจริงก่อนถึงจะยืนยันได้
+- ทดสอบแล้ว 2026-11-20 (Docker 29.9.3): `docker build` ผ่าน, คอนเทนเนอร์รันเป็น user `app`, `GET /docs` ตอบ 200, ใช้ RAM ราว 58 MiB จากเพดาน 384 MiB
+- แก้ healthcheck ใน `docker-compose.yml` จากพอร์ต 8001 เป็น 8000 (8001 คือพอร์ตฝั่ง host ข้างในคอนเทนเนอร์ไม่มีอะไรฟัง เดิมจึงขึ้น unhealthy ตลอด)
+- ยังไม่ได้ทดสอบ `docker compose up` เต็มชุดกับ Postgres: repo ไม่มี `initdb/10-app-password.sh` และ `.env.example` ที่ compose อ้างถึง
 
 ### 5. โปสเตอร์ "Software Engineer" (Frontend, Backend, Database, APIs, Services, Monitoring)
 - รูปถูกเก็บไว้ที่ `docs/assets/software-engineer-poster.jpg` (commit แล้ว)
@@ -43,7 +45,7 @@
 
 ### สิ่งที่ยังไม่มีและควรทำต่อ (เรียงตามความคุ้มค่า)
 1. เมตริก/monitoring ของ server (เช่น จำนวนงานในคิว อัตราผิดพลาด ความหน่วงของ `/api/chat`)
-2. ทดสอบบิลด์ `Dockerfile` ให้ผ่านจริงแล้วบันทึกผล
+2. เพิ่ม `initdb/10-app-password.sh` และ `.env.example` แล้วทดสอบ `docker compose up` เต็มชุด
 3. Caching และ load balancing: ทำเมื่อวัดแล้วพบคอขวดเท่านั้น
 
 แผนผังด้านล่างเป็นเอกสารเดิมสมัยที่หัวข้อยังเป็น v0.0.2. มันเป็นแผนที่โมดูลยุคนั้น ไม่ใช่แผนสามชั้นที่ใช้แทนโค้ดปัจจุบัน

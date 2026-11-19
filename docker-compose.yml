@@ -48,7 +48,7 @@ services:
     ports:
       - "127.0.0.1:8001:8000"    # change to "8001:8000" to expose on the LAN
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/docs')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/docs')"]   # container port, not the host port
       interval: 15s
       timeout: 5s
       retries: 5
