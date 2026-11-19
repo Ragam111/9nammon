@@ -81,6 +81,40 @@ def _is_local(provider, project_root=None) -> bool:
     return is_local_provider(provider, project_root)
 
 
+def is_local_provider(provider, project_root=None) -> bool:
+    """public: provider นี้รันในเครื่อง (ไม่เสียเงิน/ข้อมูลไม่ออก) ไหม — server ใช้กัน guest"""
+    try:
+        return _is_local(_canonical(provider), project_root)
+    except Exception:
+        return False
+
+
+class ChatAccessError(ChatStoreError):
+    """ผู้ใช้ไม่มีสิทธิ์ในการสนทนานี้ (→ 403) — แยกจาก ChatStoreError ทั่วไป (→ 400)"""
+
+
+def _can_see(conv_owner, ident) -> bool:
+    """กฎพื้นที่: owner=NULL = พื้นที่บริษัท (ทุกคนที่ล็อกอินเห็น), owner=ชื่อ = พื้นที่ส่วนตัว
+    (เจ้าของเท่านั้น), ADMIN/CEO เห็นทุกพื้นที่ (ดูแลระบบ)"""
+    from app import org_store
+    role = (ident or {}).get("role") or "USER"
+    if org_store.role_at_least(role, "ADMIN"):
+        return True
+    if conv_owner in (None, ""):
+        return True
+    return conv_owner == _owner(ident)
+
+
+def _assert_access(conv, ident) -> dict:
+    if not _can_see((conv or {}).get("owner"), ident):
+        raise ChatAccessError("ไม่มีสิทธิ์เข้าถึงการสนทนานี้")
+    return conv
+
+
+def _only_visible(rows, ident, owner_key="owner") -> list:
+    return [r for r in rows if _can_see(r.get(owner_key), ident)]
+
+
 def _providers():
     from app import providers
     return providers
@@ -409,15 +443,17 @@ def _run_assistant(handler, project_root, ident, *, conversation_id, parent_id, 
     }
 
 
-def _send_turn(handler, project_root, ident, model, messages, num_ctx, hub, gen_gate, *, stream):
+def _send_turn(handler, project_root, ident, model, messages, num_ctx, hub, gen_gate, *, stream, sink=None):
     provider = hub.get("provider")
     connection_id = hub.get("connection_id")
     lang = hub.get("lang") or "th"
     content = (hub.get("content") or "").strip() or _last_user(messages)
     cid = hub.get("conversation_id")
+    if stream and sink is None:
+        sink = _sse_sink(handler)
     if cid:
         with chat_store.read_txn(project_root) as conn:
-            conv = chat_store.get_conversation(conn, cid)
+            conv = _assert_access(chat_store.get_conversation(conn, cid), ident)
         if not content:
             raise ChatStoreError("ต้องมีข้อความ")
         parent = hub.get("parent_id")
@@ -427,7 +463,6 @@ def _send_turn(handler, project_root, ident, model, messages, num_ctx, hub, gen_
             project_root, conv["id"], content=content, parent_id=parent, origin=None,
             source_id=None, provider=None, model=None, connection_id=None, role="user",
         )
-        sink = _sse_sink(handler) if stream else None
         payload = _run_assistant(
             handler, project_root, ident,
             conversation_id=conv["id"], parent_id=user["id"], provider=provider, model=model,
@@ -442,7 +477,6 @@ def _send_turn(handler, project_root, ident, model, messages, num_ctx, hub, gen_
     transcript = list(messages or [])
     if not transcript:
         raise ChatStoreError("ต้องมี messages")
-    sink = _sse_sink(handler) if stream else None
     canonical = _canonical(provider)
 
     def on_open():
@@ -529,24 +563,81 @@ def _sse_sink(handler) -> dict:
 def serve_chat(handler, project_root, ident, model, messages, num_ctx, hub, gen_gate, *, stream: bool):
     """Entry from ``/api/chat`` and ``/api/chat/stream`` when a provider or conversation is set."""
     from app import admission
-    try:
-        _send_turn(handler, project_root, ident, model, messages, num_ctx, hub, gen_gate, stream=stream)
-    except admission.Busy as exc:
-        if not stream:
-            handler._send_json(503, {"error": str(exc)})
+    sink = _sse_sink(handler) if stream else None
+
+    def fail(status: int, message: str, kind: str = "error"):
+        # หลังส่ง 200 + header SSE ไปแล้ว จะส่ง JSON ซ้อนอีก response ไม่ได้ (client ได้ขยะ)
+        # → ปิดสตรีมด้วย event error เสมอ; ยังไม่เปิดสตรีม → ตอบ status JSON ปกติ
+        if sink is not None and sink["is_open"]():
+            try:
+                sink["send"]({"error": message, "status": kind, "partial": True})
+            except (BrokenPipeError, ConnectionResetError):
+                pass
             return
-        handler._send_json(503, {"error": str(exc)})
-    except ChatStoreError:
-        raise
-    except Exception as exc:
+        handler._send_json(status, {"error": message})
+
+    try:
+        _send_turn(handler, project_root, ident, model, messages, num_ctx, hub, gen_gate,
+                   stream=stream, sink=sink)
+    except admission.Busy as exc:
+        fail(503, str(exc), "busy")
+    except ChatAccessError as exc:
+        fail(403, str(exc))
+    except ChatStoreError as exc:
+        fail(400, str(exc))
+    except (BrokenPipeError, ConnectionResetError):
+        return
+    except Exception as exc:  # noqa: BLE001 — provider/DB พังกลางทาง: ต้องมีคำตอบเสมอ
         from app.providers.errors import ProviderError
         print(f"[chat][warn] {exc}")
         status = _http_status(exc) if isinstance(exc, ProviderError) else 502
-        handler._send_json(status, {"error": str(exc)})
+        fail(status, str(exc) or exc.__class__.__name__)
+
+
+def export_markdown(doc: dict) -> str:
+    """แปลง export document (lca-chat-export) เป็น Markdown อ่านง่าย — "Session Tape" สำหรับคน"""
+    conv = doc.get("conversation") or {}
+    lines = [f"# {conv.get('title') or 'บทสนทนา'}", ""]
+    meta = []
+    if conv.get("owner"):
+        meta.append(f"owner: {conv['owner']}")
+    if conv.get("created_at"):
+        meta.append(f"created_at: {conv['created_at']}")
+    if conv.get("updated_at"):
+        meta.append(f"updated_at: {conv['updated_at']}")
+    meta.append(f"uid: {conv.get('uid')}")
+    lines.append("> " + " · ".join(meta))
+    lines.append("")
+    if conv.get("system_prompt"):
+        lines += ["## System", "", str(conv["system_prompt"]).rstrip(), ""]
+    for message in conv.get("messages") or []:
+        role = str(message.get("role") or "")
+        label = {"user": "ผู้ใช้", "assistant": "ผู้ช่วย", "system": "System"}.get(role, role)
+        tag = ""
+        if message.get("model"):
+            tag = f" ({message.get('provider') or ''}{'/' if message.get('provider') else ''}{message['model']})"
+        if message.get("status") and message["status"] != "ok":
+            tag += f" [{message['status']}]"
+        lines.append(f"## {label}{tag}")
+        lines.append("")
+        lines.append(str(message.get("content") or "").rstrip())
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _send_markdown(handler, text: str, filename: str) -> None:
+    body = text.encode("utf-8")
+    handler.send_response(200)
+    handler.send_header("Content-Type", "text/markdown; charset=utf-8")
+    handler.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+    handler.send_header("Content-Length", str(len(body)))
+    handler.end_headers()
+    handler.wfile.write(body)
 
 
 def handle_get(handler, parsed, project_root) -> None:
-    if handler._require("USER") is None:
+    ident = handler._require("USER")
+    if ident is None:
         return
     path = parsed.path
     qs = parse_qs(parsed.query)
@@ -562,15 +653,24 @@ def handle_get(handler, parsed, project_root) -> None:
         elif path == "/api/chat/search":
             query = (qs.get("q") or [""])[0]
             with chat_store.read_txn(project_root) as conn:
-                handler._send_json(200, chat_store.search(conn, query))
+                found = chat_store.search(conn, query)
+            found["conversations"] = _only_visible(found.get("conversations") or [], ident)
+            found["messages"] = _only_visible(found.get("messages") or [], ident)
+            handler._send_json(200, found)
         elif path == "/api/chat/export":
             key = (qs.get("id") or [None])[0]
+            fmt = (qs.get("format") or ["json"])[0].lower()
             with chat_store.read_txn(project_root) as conn:
-                handler._send_json(200, chat_store.export_public(conn, key))
+                _assert_access(chat_store.get_conversation(conn, key), ident)
+                doc = chat_store.export_public(conn, key)
+            if fmt in ("md", "markdown"):
+                _send_markdown(handler, export_markdown(doc), f"lca-chat-{doc['conversation']['uid']}.md")
+            else:
+                handler._send_json(200, doc)
         elif path == "/api/chat/conversations":
             if qs.get("id"):
                 with chat_store.read_txn(project_root) as conn:
-                    conv = chat_store.get_conversation(conn, qs["id"][0])
+                    conv = _assert_access(chat_store.get_conversation(conn, qs["id"][0]), ident)
                     handler._send_json(200, {
                         "conversation": conv,
                         "messages": chat_store.active_path(conn, conv["id"]),
@@ -580,11 +680,12 @@ def handle_get(handler, parsed, project_root) -> None:
                 folder = "all" if "folder_id" not in qs else qs["folder_id"][0]
                 limit = (qs.get("limit") or ["50"])[0]
                 with chat_store.read_txn(project_root) as conn:
-                    handler._send_json(200, {
-                        "conversations": chat_store.list_conversations(conn, folder_id=folder, limit=limit),
-                    })
+                    rows = chat_store.list_conversations(conn, folder_id=folder, limit=limit)
+                handler._send_json(200, {"conversations": _only_visible(rows, ident)})
         else:
             handler._send_json(404, {"error": "not found"})
+    except ChatAccessError as exc:
+        handler._send_json(403, {"error": str(exc)})
     except ChatStoreError as exc:
         handler._send_json(400, {"error": str(exc)})
 
@@ -599,15 +700,15 @@ def handle_post(handler, parsed, project_root, gen_gate) -> None:
         if path == "/api/chat/conversations":
             _post_conversation(handler, project_root, ident, data)
         elif path == "/api/chat/conversations/update":
-            _post_update(handler, project_root, data)
+            _post_update(handler, project_root, ident, data)
         elif path == "/api/chat/conversations/delete":
-            _post_delete(handler, project_root, data)
+            _post_delete(handler, project_root, ident, data)
         elif path == "/api/chat/folders":
             _post_folder(handler, project_root, data)
         elif path == "/api/chat/personas":
             _post_persona(handler, project_root, data)
         elif path == "/api/chat/switch":
-            _post_switch(handler, project_root, data)
+            _post_switch(handler, project_root, ident, data)
         elif path == "/api/chat/branch":
             _post_branch(handler, project_root, ident, data, gen_gate)
         elif path == "/api/chat/regen":
@@ -617,11 +718,13 @@ def handle_post(handler, parsed, project_root, gen_gate) -> None:
         elif path == "/api/chat/compare":
             _post_compare(handler, project_root, ident, data, gen_gate)
         elif path == "/api/chat/import":
-            _post_import(handler, project_root, data)
+            _post_import(handler, project_root, ident, data)
         elif path == "/api/chat/save":
             _post_save(handler, project_root, ident, data)
         else:
             handler._send_json(404, {"error": "not found"})
+    except ChatAccessError as exc:
+        handler._send_json(403, {"error": str(exc)})
     except ChatStoreError as exc:
         handler._send_json(400, {"error": str(exc)})
     except Exception as exc:
@@ -665,8 +768,9 @@ def _post_conversation(handler, project_root, ident, data) -> None:
     handler._send_json(200, {"conversation": conv})
 
 
-def _post_update(handler, project_root, data) -> None:
+def _post_update(handler, project_root, ident, data) -> None:
     with chat_store.write_txn(project_root) as conn:
+        _assert_access(chat_store.get_conversation(conn, data.get("id")), ident)
         conv = chat_store.update_conversation(conn, data.get("id"), **{
             key: data.get(key) for key in ("title", "system_prompt", "folder_id", "persona_id", "pinned", "archived")
             if key in data
@@ -674,8 +778,9 @@ def _post_update(handler, project_root, data) -> None:
     handler._send_json(200, {"conversation": conv})
 
 
-def _post_delete(handler, project_root, data) -> None:
+def _post_delete(handler, project_root, ident, data) -> None:
     with chat_store.write_txn(project_root) as conn:
+        _assert_access(chat_store.get_conversation(conn, data.get("id")), ident)
         chat_store.delete_conversation(conn, data.get("id"))
     handler._send_json(200, {"deleted": True})
 
@@ -699,21 +804,22 @@ def _post_persona(handler, project_root, data) -> None:
     handler._send_json(200, {"persona": persona})
 
 
-def _post_switch(handler, project_root, data) -> None:
+def _post_switch(handler, project_root, ident, data) -> None:
     with chat_store.write_txn(project_root) as conn:
-        conv = chat_store.get_conversation(conn, data.get("conversation_id"))
+        conv = _assert_access(chat_store.get_conversation(conn, data.get("conversation_id")), ident)
         leaf = chat_store.switch_branch(conn, conv["id"], int(data.get("message_id")))
         path = chat_store.active_path(conn, conv["id"])
     handler._send_json(200, {"active_leaf_id": leaf, "conversation_id": conv["id"], "messages": path})
 
 
-def _need_conv(project_root, data):
+def _need_conv(project_root, data, ident=None):
     with chat_store.read_txn(project_root) as conn:
-        return chat_store.get_conversation(conn, data.get("conversation_id"))
+        conv = chat_store.get_conversation(conn, data.get("conversation_id"))
+    return _assert_access(conv, ident) if ident is not None else conv
 
 
 def _post_branch(handler, project_root, ident, data, gen_gate) -> None:
-    conv = _need_conv(project_root, data)
+    conv = _need_conv(project_root, data, ident)
     content = (data.get("content") or "").strip()
     if not content:
         raise ChatStoreError("ต้องมีข้อความสำหรับสาขาใหม่")
@@ -739,7 +845,7 @@ def _post_branch(handler, project_root, ident, data, gen_gate) -> None:
 
 
 def _post_regen(handler, project_root, ident, data, gen_gate) -> None:
-    conv = _need_conv(project_root, data)
+    conv = _need_conv(project_root, data, ident)
     with chat_store.read_txn(project_root) as conn:
         old = chat_store.get_message(conn, int(data.get("message_id")))
     if old["conversation_id"] != conv["id"]:
@@ -759,7 +865,7 @@ def _post_regen(handler, project_root, ident, data, gen_gate) -> None:
 
 
 def _post_edit(handler, project_root, ident, data, gen_gate) -> None:
-    conv = _need_conv(project_root, data)
+    conv = _need_conv(project_root, data, ident)
     content = (data.get("content") or "").strip()
     if not content:
         raise ChatStoreError("ต้องมีข้อความที่แก้")
@@ -798,7 +904,7 @@ def _post_compare(handler, project_root, ident, data, gen_gate) -> None:
         if not model:
             raise ChatStoreError("ทุกเป้าหมายต้องมี model")
         cleaned.append({"provider": provider, "model": model, "connection_id": target.get("connection_id")})
-    conv = _need_conv(project_root, data) if data.get("conversation_id") else None
+    conv = _need_conv(project_root, data, ident) if data.get("conversation_id") else None
     if conv is None:
         with chat_store.write_txn(project_root) as conn:
             conv = chat_store.create_conversation(conn, title="", owner=_owner(ident))
@@ -867,10 +973,15 @@ def _post_compare(handler, project_root, ident, data, gen_gate) -> None:
     })
 
 
-def _post_import(handler, project_root, data) -> None:
+def _post_import(handler, project_root, ident, data) -> None:
     doc = data.get("document") if isinstance(data.get("document"), dict) else data
     with chat_store.write_txn(project_root) as conn:
         conv = chat_store.import_document(conn, doc, as_copy=bool(data.get("as_copy")))
+        # ไฟล์นำเข้าอาจระบุ owner เป็นคนอื่น — บทสนทนาที่นำเข้าเป็นของคนที่นำเข้าเสมอ
+        mine = _owner(ident)
+        if conv and conv.get("owner") != mine:
+            conn.execute("UPDATE conversations SET owner=? WHERE id=?", (mine, conv["id"]))
+            conv = chat_store.get_conversation(conn, conv["id"])
     handler._send_json(200, {"conversation": conv})
 
 

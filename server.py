@@ -70,9 +70,9 @@ from app import conn_usage  # noqa: E402  (นับ token/ค่าใช้จ
 from app import skills_store  # noqa: E402  (Skills: prompt+สมองสำเร็จรูป ใช้ซ้ำได้)
 from app import bots  # noqa: E402  (Bot: skill + run endpoint ให้ automation เรียก)
 from app import cloud_tunnel  # noqa: E402  (Cloudflare Quick Tunnel — เปิด tunnel ชั่วคราวออก internet)
+from app import session_store  # noqa: E402  (session token หลัง login username/password — in-memory)
 from sysmanager.monitor import collect as _collect, Analyzer as _Analyzer  # noqa: E402
 from sysmanager.monitor import lca_context as _lca_context  # noqa: E402  (Phase 2: บริบท Ollama)
-from app import google_auth  # noqa: E402  (Google OAuth: exchange code -> profile)
 
 def _resource_root() -> Path:
     """โฟลเดอร์รากของไฟล์โปรแกรม — รองรับตอนถูกแพ็กเป็น .exe ด้วย pyinstaller
@@ -125,6 +125,47 @@ _LOOPBACK_NAMES = frozenset({"127.0.0.1", "localhost", "::1"})
 # bind ทุกอินเทอร์เฟซ: ไคลเอนต์ส่ง IP/ชื่อจริง ไม่ได้ส่ง 0.0.0.0
 _WILDCARD_BINDS = frozenset({"0.0.0.0", "::", "::0"})
 _STATE_CHANGING = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+# หน้าที่ต้องมีสิทธิ์ก่อนถึงจะได้ shell — USER/GUEST ไม่เห็นแม้แต่โครงหน้า (กันข้อมูล
+# dev/observability รั่ว). ไม่มีตัวตน → redirect /login, มีแต่สิทธิ์ไม่ถึง → 403
+PROTECTED_PAGES = {"/dev": "ADMIN", "/console": "ADMIN"}
+PAGE_COOKIE = "lca_key"
+
+# GUEST (เปิดด้วย feature flag guest_chat): แชทได้เฉพาะโมเดล local, ไม่บันทึก, โควตาต่อ IP ต่อวัน
+GUEST_DAILY_LIMIT = 20
+_guest_usage: dict = {}          # ip -> [YYYY-MM-DD, count]  (in-memory ต่อ process — guest ไม่มีอะไรลงดิสก์)
+_guest_lock = __import__("threading").Lock()
+
+
+def _guest_today() -> str:
+    from datetime import date
+    return date.today().isoformat()
+
+
+def _guest_quota_ok(client_ip: str) -> bool:
+    today = _guest_today()
+    with _guest_lock:
+        rec = _guest_usage.get(client_ip)
+        if rec is None or rec[0] != today:
+            return True
+        return rec[1] < GUEST_DAILY_LIMIT
+
+
+def _guest_quota_consume(client_ip: str) -> int:
+    """หัก 1 หน่วยหลังตอบสำเร็จ — คืนจำนวนที่ใช้ไปวันนี้"""
+    today = _guest_today()
+    with _guest_lock:
+        rec = _guest_usage.get(client_ip)
+        if rec is None or rec[0] != today:
+            rec = [today, 0]
+            _guest_usage[client_ip] = rec
+        rec[1] += 1
+        return rec[1]
+
+
+def _guest_quota_reset() -> None:
+    with _guest_lock:
+        _guest_usage.clear()
 
 
 def _normalize_bind_host(bind_host: str) -> str:
@@ -345,15 +386,105 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             """
             # เทียบ master token แบบ constant-time กัน timing attack (hmac.compare_digest)
             provided = self.headers.get("X-Auth-Token")
+            return self._identity_from(provided, self.headers.get("X-API-Key"))
+
+        def _identity_from(self, provided, raw_key) -> Optional[dict]:
+            """แปลง (X-Auth-Token, X-API-Key) → identity. ลำดับ: master/session-of-launch,
+            session หลัง login (session_store), API key (org_store)"""
             if auth_token and provided and hmac.compare_digest(provided, auth_token):
                 username = "__local__" if session_token_auto else "__master__"
-                return {"username": username, "role": "CEO", "tier": "paid", "key_id": None}
-            raw_key = self.headers.get("X-API-Key")
+                return {"username": username, "role": "CEO", "tier": "paid", "key_id": None,
+                        "source": "local" if session_token_auto else "master_token"}
+            if provided:
+                sess = session_store.verify(provided)
+                if sess:
+                    return sess
             if raw_key:
                 rec = org_store.verify_api_key(project_root, raw_key)
                 if rec:
+                    rec.setdefault("source", "api_key")
                     return rec
             return None
+
+        def _page_identity(self) -> Optional[dict]:
+            """ตัวตนสำหรับ "เสิร์ฟหน้าเว็บ" (GET shell เท่านั้น): header เหมือน API หรือ
+            cookie lca_key ที่ app.js ตั้งไว้ — browser เปิดหน้าด้วย navigation ส่ง header เองไม่ได้
+            cookie ไม่ถูกใช้กับ /api/* (กัน CSRF — API ยังเป็น header-only)"""
+            ident = self._identity()
+            if ident is not None:
+                return ident
+            cookie = self.headers.get("Cookie") or ""
+            for part in cookie.split(";"):
+                name, _sep, value = part.strip().partition("=")
+                if name == PAGE_COOKIE and value:
+                    return self._identity_from(value, value)
+            return None
+
+        def _page_allowed(self, route: str) -> bool:
+            """gate หน้าใน PROTECTED_PAGES — คืน False ถ้าตอบ redirect/403 ไปแล้ว"""
+            min_role = PROTECTED_PAGES.get(route)
+            if min_role is None:
+                return True
+            # โหมด local (ไม่ได้ตั้ง token) เปิดจาก loopback = เจ้าของเครื่อง (หน้าได้ session ฝังอยู่แล้ว)
+            hname, _hport = _split_host_header(self.headers.get("Host") or "")
+            if session_token_auto and hname in _LOOPBACK_NAMES:
+                return True
+            ident = self._page_identity()
+            if ident is None:
+                self.send_response(302)
+                self.send_header("Location", f"/login?next={route}")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return False
+            if not org_store.role_at_least(ident["role"], min_role):
+                self._send_json(403, {"error": f"forbidden — หน้า {route} สำหรับ {min_role} ขึ้นไป "
+                                               f"(คุณคือ {ident['role']})"})
+                return False
+            return True
+
+        # ---------- ตัวตนสำหรับแชท: USER+ หรือ GUEST (เมื่อเปิด feature guest_chat) ----------
+        def _chat_identity(self) -> Optional[dict]:
+            """คืน identity สำหรับ /api/chat*: USER ขึ้นไปตามปกติ; ถ้าไม่มี token และเปิด
+            guest_chat → GUEST (ไม่บันทึก, local เท่านั้น, โควตาต่อ IP). ตอบ error ให้แล้วถ้าคืน None"""
+            ident = self._identity()
+            if ident is not None:
+                if not org_store.role_at_least(ident["role"], "USER"):
+                    self._send_json(403, {"error": "forbidden — ต้องมีสิทธิ์ USER ขึ้นไป"})
+                    return None
+                return ident
+            if not feature_flags.is_on(project_root, "guest_chat"):
+                self._send_json(401, {"error": "unauthorized — ต้องมี X-Auth-Token หรือ X-API-Key ที่ถูกต้อง"})
+                return None
+            client = self.client_address[0] if self.client_address else "unknown"
+            if not _guest_quota_ok(client):
+                self._send_json(429, {"error": f"guest ใช้ได้ {GUEST_DAILY_LIMIT} ข้อความต่อวันต่อเครื่อง "
+                                               "— ล็อกอินเพื่อใช้ต่อ"})
+                return None
+            return {"username": None, "role": "GUEST", "tier": "guest", "key_id": None,
+                    "source": "guest", "client": client}
+
+        def send_response(self, code, message=None):
+            # จำว่าส่ง header ไปแล้วหรือยัง — handler ชั้นนอกจะได้รู้ว่ายังตอบ 500 JSON ได้ไหม
+            self._headers_sent = True
+            super().send_response(code, message)
+
+        def _fail_last_resort(self, exc: BaseException) -> None:
+            """ข้อผิดพลาดที่ไม่มีใครดัก: เดิม socket ถูกปิดเงียบ ๆ = curl error 52 "Empty reply".
+            ตอนนี้: ยังไม่ส่ง header → 500 JSON อ่านรู้เรื่อง; ส่งไปแล้ว (เช่นกลาง SSE) → เงียบ
+            (เปลี่ยน status ไม่ได้แล้ว) — ทั้งสองกรณีลง error_log ให้ /dev เห็น"""
+            msg = f"{exc.__class__.__name__}: {exc}"
+            print(f"[server][error] {self.command} {self.path} → {msg}")
+            try:
+                history_store.log_error(project_root, "error", f"{self.command} {self.path}", msg)
+            except Exception:
+                pass
+            if not getattr(self, "_headers_sent", False):
+                try:
+                    self._send_json(500, {"error": "internal error — ดู error log ที่ /dev",
+                                          "type": exc.__class__.__name__})
+                except (BrokenPipeError, ConnectionResetError, OSError):
+                    pass
 
         def _listen_port(self) -> int:
             return int(self.server.server_address[1])
@@ -449,7 +580,7 @@ def make_handler(project_root: Path, auth_token: Optional[str],
 
         def _schedule_gated(self, parsed) -> bool:
             """ถ้า schedule gate ปิดอยู่ (เลยเวลาทำการ) ตอบ 503 แล้วคืน True.
-            ยกเว้น: path ใน allowlist, CEO/ADMIN (ให้ดูแลระบบตอนปิดได้ตลอด)
+            ยกเว้น: path ใน allowlist, CEO/ADMIN (ให้ดูแลระบบตอนปิดได้).
             schedule gate ปิดเป็นค่าเริ่มต้น (SCHEDULE_ENABLED=False) → ฟังก์ชันนี้ no-op
             bug fix v0.1.1: normalize path (trailing slash) ก่อนเทียบ allowlist"""
             if self._norm_path(parsed.path) in self._SCHEDULE_ALLOWLIST:
@@ -498,7 +629,17 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 return
             if self._schedule_gated(parsed):
                 return
+            try:
+                self._route_get(parsed)
+            except (BrokenPipeError, ConnectionResetError):
+                return
+            except Exception as e:  # noqa: BLE001 — ด่านสุดท้าย กัน empty reply
+                self._fail_last_resort(e)
+
+        def _route_get(self, parsed):
             if parsed.path in STATIC_ROUTES:
+                if not self._page_allowed(parsed.path):
+                    return
                 self._serve_static(parsed.path)
             elif parsed.path == "/api/todos":
                 self._handle_todos_get()
@@ -615,7 +756,44 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 "username": ident.get("username"),
                 "role": ident.get("role"),
                 "tier": ident.get("tier"),
+                "source": ident.get("source"),
+                "expires_at": ident.get("expires_at"),
             })
+
+        # ---------- Auth: login ด้วย username/password → session token ----------
+        def _handle_auth_login(self):
+            """public: {username, password} → {token, role, ...}. token ใช้เป็น X-Auth-Token
+            brute-force guard ต่อ IP (session_store.login_allowed) — ล้มเหลวเกิน → 429"""
+            client = self.client_address[0] if self.client_address else "unknown"
+            if not session_store.login_allowed(client):
+                self._send_json(429, {"error": "ล็อกอินพลาดบ่อยเกินไป — รอ 1 นาทีแล้วลองใหม่"})
+                return
+            data = self._read_json_body()
+            username = str(data.get("username") or "").strip()
+            password = str(data.get("password") or "")
+            if not username or not password:
+                self._send_json(400, {"error": "ต้องระบุ username และ password"})
+                return
+            rec = org_store.verify_password(project_root, username, password)
+            if rec is None:
+                session_store.record_failure(client)
+                # ข้อความเดียวกันไม่ว่า user ไม่มีหรือรหัสผิด (ไม่บอกว่ามี user นี้ไหม)
+                self._send_json(401, {"error": "username หรือ password ไม่ถูกต้อง"})
+                return
+            session_store.reset_failures(client)
+            sess = session_store.create(username, rec["role"])
+            self._send_json(200, {
+                "token": sess["token"],
+                "username": username,
+                "role": rec["role"],
+                "tier": sess["tier"],
+                "expires_at": sess["expires_at"],
+            })
+
+        def _handle_auth_logout(self):
+            provided = self.headers.get("X-Auth-Token")
+            revoked = session_store.revoke(provided)
+            self._send_json(200, {"revoked": revoked})
 
         def _handle_users_list(self):
             if self._require("ADMIN") is None:
@@ -874,11 +1052,14 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             try:
                 for chunk in gen:
                     sse({"delta": chunk})
-            except (connections.ConnectionError, bots.BotError) as e:
-                sse({"error": str(e)})          # สมองพังกลางสตรีม — 200 ออกไปแล้ว ส่ง error event
-                return
             except (BrokenPipeError, ConnectionResetError):
                 return                          # client ปิดแท็บกลางคัน — เงียบไว้
+            except Exception as e:  # noqa: BLE001 — สมองพังกลางสตรีม: 200 ออกไปแล้ว ต้องปิดด้วย error event เสมอ
+                try:
+                    sse({"error": str(e) or e.__class__.__name__})
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+                return
             sse({"done": True})
 
         def _handle_connections_chat_stream(self):
@@ -1382,10 +1563,23 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             if self._schedule_gated(parsed):
                 return
             try:
+                self._route_post(parsed)
+            except (BrokenPipeError, ConnectionResetError):
+                return
+            except Exception as e:  # noqa: BLE001 — ด่านสุดท้าย กัน empty reply (curl 52)
+                self._fail_last_resort(e)
+
+        def _route_post(self, parsed):
+            try:
                 if parsed.path == "/api/chat":
                     self._handle_chat()
-                elif parsed.path == "/api/chat/stream":
+                elif parsed.path in ("/api/chat/stream", "/api/vscode/chat"):
+                    # /api/vscode/chat = สัญญาเดียวกับ /api/chat/stream (SSE delta/done) สำหรับ extension
                     self._handle_chat_stream()
+                elif parsed.path == "/api/auth/login":
+                    self._handle_auth_login()
+                elif parsed.path == "/api/auth/logout":
+                    self._handle_auth_logout()
                 elif chat_hub.wants_post(parsed.path):
                     chat_hub.handle_post(self, parsed, project_root, gen_gate)
                 elif parsed.path == "/api/todos":
@@ -1468,7 +1662,7 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                     self._handle_connections_chat()
                 elif parsed.path == "/api/connections/chat/stream":
                     self._handle_connections_chat_stream()
-                               elif parsed.path == "/api/skills":
+                elif parsed.path == "/api/skills":
                     self._handle_skills_create()
                 elif parsed.path == "/api/skills/update":
                     self._handle_skills_update()
@@ -1802,6 +1996,15 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                                                "(อัปเกรดเป็น tier paid เพื่อใช้ได้ไม่จำกัด)"})
                 return None
             data = self._read_json_body()
+            if ident.get("role") == "GUEST":
+                # guest: คำตอบอยู่แค่ในเบราว์เซอร์ — ห้ามแตะ DB และห้ามใช้ provider ที่เสียเงิน
+                if data.get("conversation_id"):
+                    self._send_json(403, {"error": "guest ไม่บันทึกบทสนทนา — ล็อกอินเพื่อใช้ประวัติ"})
+                    return None
+                prov = data.get("provider")
+                if isinstance(prov, str) and prov.strip() and not chat_hub.is_local_provider(prov, project_root):
+                    self._send_json(403, {"error": "guest ใช้ได้เฉพาะโมเดล local"})
+                    return None
             # Auto-scale compute: ถ้า client ไม่ระบุ model (หรือขอ "auto") ให้เลือก
             # โมเดลใหญ่สุดที่ RAM ว่างตอนนี้รับไหว (resource_budget) — เครื่องอ่อนได้ 0.5b,
             # เครื่องแรงได้ตัวใหญ่ขึ้นอัตโนมัติ; ถ้าระบุ model มาเองก็เคารพตามนั้น
@@ -1848,6 +2051,9 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             """หักโควตา + บันทึก usage + เก็บ dataset — หลังได้คำตอบเต็มแล้ว (blocking/stream ใช้ร่วม)"""
             # หักโควตาหลังได้คำตอบจริงเท่านั้น (master/local ไม่มี key_id = ไม่หัก)
             # แล้วบันทึก usage ลง SQLite ด้วย (metering ย้อนหลัง/คิดเงินต่อ tier)
+            if ident.get("role") == "GUEST":
+                _guest_quota_consume(ident.get("client") or "unknown")
+                return  # guest: ไม่ metering/ไม่ dataset — ไม่มีอะไรลงดิสก์
             if ident.get("key_id"):
                 org_store.consume_quota(project_root, ident["key_id"])
                 try:
@@ -1884,7 +2090,7 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             return res["node"]   # None = ไม่มี node พร้อม → local
 
         def _handle_chat(self):
-            ident = self._require("USER")
+            ident = self._chat_identity()
             if ident is None:
                 return
             prepared = self._chat_prepare(ident)
@@ -1931,7 +2137,7 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             ผู้ใช้เห็นคำตอบทยอยขึ้นทันที ไม่ต้องรอทั้งก้อน (สำคัญบนเครื่องช้า ~10 tok/s)
             รูปแบบ: `data: {"delta": "..."}` ต่อ chunk, จบด้วย `data: {"done": true}`,
             ถ้าพังกลางคัน `data: {"error": "..."}` (status เป็น 200 ไปแล้ว เปลี่ยนไม่ได้)"""
-            ident = self._require("USER")
+            ident = self._chat_identity()
             if ident is None:
                 return
             prepared = self._chat_prepare(ident)
@@ -1966,11 +2172,14 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                         for chunk in model_backend.generate_stream(project_root, model, messages, num_ctx):
                             parts.append(chunk)
                             sse({"delta": chunk})
-                    except model_backend.BackendError as e:
-                        sse({"error": str(e)})
-                        return
                     except (BrokenPipeError, ConnectionResetError):
                         # client ปิดแท็บกลางคัน — ไม่ใช่ error ของเรา เงียบไว้ (ไม่หักโควตา)
+                        return
+                    except Exception as e:  # noqa: BLE001 — BackendError หรืออะไรก็ตาม: สตรีมต้องจบด้วย event เสมอ
+                        try:
+                            sse({"error": str(e) or e.__class__.__name__, "status": "error", "partial": True})
+                        except (BrokenPipeError, ConnectionResetError):
+                            pass
                         return
                     # finalize หลังสตรีมจบครบ (หักโควตา/usage/dataset เหมือน blocking)
                     self._chat_finalize(ident, model, messages, "".join(parts))
@@ -2020,743 +2229,162 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             sse({"done": True, "served_by": node.get("name")})
             return True
 
-        def _handle_google_auth_callback(self, parsed):
-            """Handle Google OAuth callback, create or update the user, and emit a browser token.
-
-            This route intentionally returns a redirect to /#lca_token=... in order to
-            let the frontend store the token in localStorage without exposing it to the
-            server logs or to a redirect URL query string.
-            """
-            qs = parse_qs(parsed.query)
-            code = (qs.get("code") or [None])[0]
-            if not code:
-                self._send_json(400, {"error": "missing_google_code"})
-                return
-
-            client_id = os.environ.get("GOOGLE_CLIENT_ID") or config_manager.get_key(project_root, "GOOGLE_CLIENT_ID")
-            client_secret = os.environ.get("GOOGLE_CLIENT_SECRET") or config_manager.get_key(project_root, "GOOGLE_CLIENT_SECRET")
-            redirect_uri = os.environ.get("GOOGLE_REDIRECT_URI") or config_manager.get_key(project_root, "GOOGLE_REDIRECT_URI") or f"http://{bind_host}:{self._listen_port()}/google_auth_callback"
-
-            user_info = google_auth.exchange_code_for_google_user(
-                code,
-                client_id or "",
-                client_secret or "",
-                redirect_uri,
-            )
-            if not user_info:
-                self._send_json(401, {"error": "google_auth_failed"})
-                return
-
-            user = org_store.create_or_update_google_user(project_root, user_info["email"], user_info["name"])
-            token = org_store.issue_google_internal_token(project_root, user["username"], tier="free")
-            target = f"/#lca_token={token}"
-            self.send_response(302)
-            self.send_header("Location", target)
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-
-        # ---------- Console: Connections (ต่อสมอง AI ภายนอก) ----------
-        def _handle_connections_list(self):
-            # ดูทุก connection (redacted — ไม่เผย api_key เต็ม) — ADMIN+
-            if self._require("ADMIN") is None:
-                return
-            self._send_json(200, {"connections": connections.list_connections(project_root)})
-
-        def _handle_connections_usage(self):
-            # Observability: นับ requests/tokens/cost ต่อ connection (ประมาณการ) — ADMIN+
-            if self._require("ADMIN") is None:
-                return
-            self._send_json(200, {"usage": conn_usage.summary(project_root)})
-
-        def _handle_connections_create(self):
-            if self._require("ADMIN") is None:
-                return
-            data = self._read_json_body()
-            rec = connections.add(
-                project_root, data.get("name", ""), data.get("kind", ""),
-                base_url=data.get("base_url", ""), model=data.get("model", ""),
-                api_key=data.get("api_key", ""), enabled=bool(data.get("enabled", True)))
-            self._send_json(200, {"connection": rec})
-
-        def _handle_connections_update(self):
-            if self._require("ADMIN") is None:
-                return
-            data = self._read_json_body()
-            rec = connections.update(project_root, data.get("id", ""), data)
-            self._send_json(200, {"connection": rec})
-
-        def _handle_connections_delete(self):
-            if self._require("ADMIN") is None:
-                return
-            data = self._read_json_body()
-            ok = connections.remove(project_root, data.get("id", ""))
-            self._send_json(200 if ok else 404,
-                            {"removed": ok} if ok else {"error": "ไม่พบ connection นี้"})
-
-        def _handle_connections_test(self):
-            # กดทดสอบว่า "ต่อติดไหม" (ไม่ generate จริง ไม่กิน token) — ADMIN+
-            if self._require("ADMIN") is None:
-                return
-            data = self._read_json_body()
-            self._send_json(200, {"result": connections.test(project_root, data.get("id", ""))})
-
-        def _handle_connections_chat(self):
-            # Playground: ยิงข้อความไปสมองโดยตรง (ทดสอบ connection) — ADMIN+
-            if self._require("ADMIN") is None:
-                return
-            data = self._read_json_body()
-            messages = data.get("messages")
-            if not isinstance(messages, list) or not messages:
-                prompt = (data.get("prompt") or "").strip()
-                if not prompt:
-                    self._send_json(400, {"error": "ต้องมี messages[] หรือ prompt"})
-                    return
-                messages = [{"role": "user", "content": prompt}]
-            output = connections.chat(project_root, data.get("id", ""), messages,
-                                      model=data.get("model", ""))
-            self._send_json(200, {"output": output})
-
-        def _sse_open(self):
-            """เปิดสตรีม SSE (ส่ง 200 + header) แล้วคืนฟังก์ชัน sse(obj) ไว้เขียน event ทีละก้อน"""
-            self.send_response(200)
-            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
-            self.send_header("Cache-Control", "no-cache")
-            self.send_header("X-Accel-Buffering", "no")   # กัน reverse-proxy buffer สตรีม
-            self.end_headers()
-
-            def sse(obj):
-                self.wfile.write(f"data: {json.dumps(obj, ensure_ascii=False)}\n\n".encode("utf-8"))
-                self.wfile.flush()
-            return sse
-
-        def _sse_stream(self, gen):
-            """iterate generator ของ chunk → sse({delta}); จบด้วย {done}; พังกลางคัน → {error}.
-            validate ต้องทำ *ก่อน* เรียกตัวนี้ (หลังส่ง 200 แล้วเปลี่ยนเป็น 400 ไม่ได้)"""
-            sse = self._sse_open()
-            try:
-                for chunk in gen:
-                    sse({"delta": chunk})
-            except (connections.ConnectionError, bots.BotError) as e:
-                sse({"error": str(e)})          # สมองพังกลางสตรีม — 200 ออกไปแล้ว ส่ง error event
-                return
-            except (BrokenPipeError, ConnectionResetError):
-                return                          # client ปิดแท็บกลางคัน — เงียบไว้
-            sse({"done": True})
-
-        def _handle_connections_chat_stream(self):
-            # Playground stream: ยิงข้อความไปสมองแล้วเห็นคำตอบทยอยขึ้นทีละคำ — ADMIN+
-            if self._require("ADMIN") is None:
-                return
-            data = self._read_json_body()
-            messages = data.get("messages")
-            if not isinstance(messages, list) or not messages:
-                prompt = (data.get("prompt") or "").strip()
-                if not prompt:
-                    self._send_json(400, {"error": "ต้องมี messages[] หรือ prompt"})
-                    return
-                messages = [{"role": "user", "content": prompt}]
-            # chat_stream validate (ไม่พบ/ปิด/ไม่มี model) แบบ eager → ConnectionError → 400 ใน do_POST
-            gen = connections.chat_stream(project_root, data.get("id", ""), messages,
-                                          model=data.get("model", ""))
-            self._sse_stream(gen)
-
-        def _handle_bots_run_stream(self):
-            # stream คำตอบ bot โหมด chat — USER+ และฟีเจอร์ connections ต้องเปิด
-            ident = self._require("USER")
-            if ident is None:
-                return
-            if not feature_flags.is_on(project_root, "connections"):
-                self._send_json(403, {"error": "ฟีเจอร์ Connections ปิดอยู่ — เปิดที่ /dev (Server features) ก่อน"})
-                return
-            data = self._read_json_body()
-            # run_stream validate (ไม่พบ/ปิด/agent/ไม่มี connection) แบบ eager → BotError → 400 ใน do_POST
-            gen = bots.run_stream(project_root, data.get("id", ""), data.get("input", ""),
-                                  model=data.get("model", ""))
-            self._sse_stream(gen)
-
-        # ---------- Cloud Tunnel: Cloudflare Quick Tunnel (ADMIN) ----------
-        def _handle_tunnel_status(self):
-            if self._require("ADMIN") is None:
-                return
-            self._send_json(200, cloud_tunnel.status())
-
-        def _handle_tunnel_start(self):
-            if self._require("ADMIN") is None:
-                return
-            data = self._read_json_body()
-            port = data.get("port")
-            if port is None:
-                self._send_json(400, {"error": "ต้องระบุ port"})
-                return
-            try:
-                port = int(port)
-                if not (1 <= port <= 65535):
-                    raise ValueError
-            except (TypeError, ValueError):
-                self._send_json(400, {"error": "port ต้องเป็นตัวเลข 1–65535"})
-                return
-            result = cloud_tunnel.start(port)
-            if result.get("url"):
-                self._send_json(200, {"url": result["url"], "port": port})
-            else:
-                self._send_json(503, {"error": result.get("error", "tunnel failed")})
-
-        def _handle_tunnel_stop(self):
-            if self._require("ADMIN") is None:
-                return
-            cloud_tunnel.stop()
-            self._send_json(200, {"stopped": True})
-
-        # ---------- Console: Skills ----------
-        def _handle_skills_list(self):
-            if self._require("ADMIN") is None:
-                return
-            self._send_json(200, {"skills": skills_store.list_skills(project_root)})
-
-        def _handle_skills_create(self):
-            if self._require("ADMIN") is None:
-                return
-            data = self._read_json_body()
-            rec = skills_store.add(
-                project_root, data.get("name", ""), data.get("system_prompt", ""),
-                connection_id=data.get("connection_id", ""), model=data.get("model", ""),
-                description=data.get("description", ""), temperature=data.get("temperature"))
-            self._send_json(200, {"skill": rec})
-
-        def _handle_skills_update(self):
-            if self._require("ADMIN") is None:
-                return
-            data = self._read_json_body()
-            rec = skills_store.update(project_root, data.get("id", ""), data)
-            self._send_json(200, {"skill": rec})
-
-        def _handle_skills_delete(self):
-            if self._require("ADMIN") is None:
-                return
-            data = self._read_json_body()
-            ok = skills_store.remove(project_root, data.get("id", ""))
-            self._send_json(200 if ok else 404,
-                            {"removed": ok} if ok else {"error": "ไม่พบ skill นี้"})
-
-        # ---------- Console: Bots ----------
-        def _handle_bots_list(self):
-            if self._require("ADMIN") is None:
-                return
-            self._send_json(200, {"bots": bots.list_bots(project_root)})
-
-        def _handle_bots_create(self):
-            if self._require("ADMIN") is None:
-                return
-            data = self._read_json_body()
-            rec = bots.add(project_root, data.get("name", ""), data.get("skill_id", ""),
-                           description=data.get("description", ""),
-                           enabled=bool(data.get("enabled", True)))
-            self._send_json(200, {"bot": rec})
-
-        def _handle_bots_update(self):
-            if self._require("ADMIN") is None:
-                return
-            data = self._read_json_body()
-            rec = bots.update(project_root, data.get("id", ""), data)
-            self._send_json(200, {"bot": rec})
-
-        def _handle_bots_delete(self):
-            if self._require("ADMIN") is None:
-                return
-            data = self._read_json_body()
-            ok = bots.remove(project_root, data.get("id", ""))
-            self._send_json(200 if ok else 404,
-                            {"removed": ok} if ok else {"error": "ไม่พบ bot นี้"})
-
-        def _handle_bots_run(self):
-            # รัน bot กับข้อความเข้า (ให้ n8n/automation เรียกได้) — USER+ และฟีเจอร์ connections ต้องเปิด
-            ident = self._require("USER")
-            if ident is None:
-                return
-            if not feature_flags.is_on(project_root, "connections"):
-                self._send_json(403, {"error": "ฟีเจอร์ Connections ปิดอยู่ — เปิดที่ /dev (Server features) ก่อน"})
-                return
-            data = self._read_json_body()
-            res = bots.run(project_root, data.get("id", ""), data.get("input", ""),
-                           model=data.get("model", ""), workspace=data.get("workspace", "."))
-            self._send_json(200, {"result": res})
-
-        def _handle_cluster_route(self, parsed):
-            # preview: งานใหม่จะถูก route ไป node ไหน (ตาม health ปัจจุบัน) — ADMIN+
-            # ?strategy=prefer_free|round_robin (default prefer_free)
-            if self._require("ADMIN") is None:
-                return
-            strategy = (parse_qs(parsed.query).get("strategy", ["prefer_free"])[0]).strip()
-            health = cluster_store.cluster_health(project_root)
-            preview = cluster_router.route_preview(health, strategy=strategy, rr_index=_rr_state[0])
-            _rr_state[0] = preview["rr_index"]   # เลื่อน round-robin จริง
-            self._send_json(200, {"route": preview, "summary": health.get("summary"),
-                                  "forward_enabled": cluster_forward.is_enabled(project_root)})
-
-        def _handle_cluster_node_add(self):
-            if self._require("ADMIN") is None:
-                return
-            data = self._read_json_body()
-            node = cluster_store.add_node(project_root, data.get("name"), data.get("url"))
-            self._send_json(200, {"node": node})
-
-        def _handle_cluster_node_remove(self):
-            if self._require("ADMIN") is None:
-                return
-            data = self._read_json_body()
-            ok = cluster_store.remove_node(project_root, data.get("name"))
-            self._send_json(200 if ok else 404,
-                            {"removed": ok} if ok else {"error": "ไม่พบ node ชื่อนี้"})
-
-        def _handle_cluster_settings_get(self):
-            # ตัวตน node นี้ + hub ที่สังกัด (ไม่เผย HUB_TOKEN เต็ม)
-            if self._require("ADMIN") is None:
-                return
-            self._send_json(200, {"settings": cluster_store.get_settings(project_root)})
-
-        def _handle_cluster_settings_set(self):
-            if self._require("ADMIN") is None:
-                return
-            data = self._read_json_body()
-            settings = cluster_store.set_settings(project_root, data)
-            self._send_json(200, {"settings": settings})
-
-        def _handle_cluster_join(self):
-            # เครื่องนี้ register ตัวเองเข้า hub (ต้องตั้ง NODE_*/HUB_* ครบก่อน)
-            if self._require("ADMIN") is None:
-                return
-            result = cluster_store.register_with_hub(project_root)
-            self._send_json(200 if result.get("ok") else 400, result)
-
-        def _handle_model_backend_settings_get(self):
-            # ตั้งค่า model backend (เสียบ cloud GPU ผ่าน OpenAI-compatible) — ไม่เผย key เต็ม
-            if self._require("ADMIN") is None:
-                return
-            self._send_json(200, {"settings": model_backend.get_backend_settings(project_root)})
-
-        def _handle_hw_profile(self, parsed):
-            # โปรไฟล์ฮาร์ดแวร์ + คำแนะนำ config (ADMIN+) — ค่าเริ่มต้นไม่วัด disk (ตอบไว);
-            # ?disk=1 ให้วัด disk จริง (ช้าขึ้นแต่รู้ HDD/SSD)
-            if self._require("ADMIN") is None:
-                return
-            want_disk = parse_qs(parsed.query).get("disk", ["0"])[0] in ("1", "true", "yes")
-            try:
-                p = hw_profile.profile(project_root=project_root, measure_disk=want_disk)
-            except Exception as e:  # pragma: no cover - degrade แทนพังทั้งหน้า
-                self._send_json(500, {"error": f"อ่านโปรไฟล์เครื่องไม่สำเร็จ: {e.__class__.__name__}"})
-                return
-            self._send_json(200, {"profile": p})
-
-        def _handle_stats(self):
-            if self._require("ADMIN") is None:
-                return
-            self._send_json(200, stats_store.get_stats(project_root))
-
-        # ---------- Hardware Meter: CPU %, RAM, tier (USER ขึ้นไป) ----------
-        def _handle_hw_meter(self, parsed):
+        def _handle_todos_get(self):
+            # GET /api/todos ต้อง USER ขึ้นไป (สอดคล้องกับ POST/toggle/delete).
+            # โหมด local ส่ง session token ที่หน้าเว็บได้รับตอนโหลด จึงยังเป็น CEO ได้
             if self._require("USER") is None:
                 return
-            from urllib.parse import parse_qs
-            qs = parse_qs(parsed.query)
-            try:
-                interval = float(qs.get("interval", ["0.2"])[0])
-                interval = max(0.05, min(interval, 2.0))
-            except (TypeError, ValueError):
-                interval = 0.2
-            self._send_json(200, hw_meter.snapshot(project_root, interval=interval))
+            todos = load_todos(project_root)
+            self._send_json(200, todos)
 
-        # ---------- Multi-tier Ollama model selector (USER ขึ้นไป) ----------
-        def _handle_models_recommend(self):
+        def _handle_todos_post(self):
             if self._require("USER") is None:
                 return
-            self._send_json(200, router.recommend(project_root))
-
-        # ---------- LAN discovery: scan subnet หา LCA nodes (ADMIN) ----------
-        def _handle_nodes_discover(self, parsed):
-            if self._require("ADMIN") is None:
+            data = self._read_json_body()
+            text = data.get("text", "").strip()
+            if not text:
+                self._send_json(400, {"error": "ต้องระบุ text"})
                 return
-            from urllib.parse import parse_qs
-            qs = parse_qs(parsed.query)
-            try:
-                port = int(qs.get("port", ["8420"])[0])
-                port = max(1, min(port, 65535))
-            except (TypeError, ValueError):
-                port = 8420
-            try:
-                timeout = float(qs.get("timeout", ["0.5"])[0])
-                timeout = max(0.1, min(timeout, 5.0))
-            except (TypeError, ValueError):
-                timeout = 0.5
-            base_ip = (qs.get("base_ip") or [None])[0] or None
-            self._send_json(200, lan_discovery.discover(
-                base_ip=base_ip, port=port, timeout=timeout))
+            item = add_todo(project_root, text)
+            self._send_json(200, item)
 
-        # ---------- Cluster sync: discover → register nodes (ADMIN) ----------
-        def _handle_nodes_sync(self, parsed):
-            if self._require("ADMIN") is None:
-                return
-            from urllib.parse import parse_qs
-            qs = parse_qs(parsed.query)
-            try:
-                port = int(qs.get("port", ["8420"])[0])
-                port = max(1, min(port, 65535))
-            except (TypeError, ValueError):
-                port = 8420
-            try:
-                timeout = float(qs.get("timeout", ["0.5"])[0])
-                timeout = max(0.1, min(timeout, 5.0))
-            except (TypeError, ValueError):
-                timeout = 0.5
-            base_ip = (qs.get("base_ip") or [None])[0] or None
-            self._send_json(200, cluster_sync.sync_discovered(
-                project_root, base_ip=base_ip, port=port, timeout=timeout))
-
-        # ---------- DB status (ADMIN) ----------
-        def _handle_db_status(self):
-            if self._require("ADMIN") is None:
-                return
-            self._send_json(200, db_manager.get_db_status(project_root))
-
-        # ---------- News: RSS feed (USER ขึ้นไป) ----------
-        def _handle_news(self, parsed):
+        def _handle_todos_toggle(self):
             if self._require("USER") is None:
                 return
-            from urllib.parse import parse_qs
-            qs = parse_qs(parsed.query)
-            feeds = qs.get("feed") or None
-            self._send_json(200, news_store.get_news(feeds))
-
-        # ---------- Spaces: พื้นที่ส่วนตัว/บริษัท (USER ขึ้นไป) ----------
-        def _handle_spaces_list(self):
-            ident = self._require("USER")
-            if ident is None:
+            data = self._read_json_body()
+            todo_id = data.get("id")
+            if todo_id is None:
+                self._send_json(400, {"error": "ต้องระบุ id"})
                 return
-            spaces = space_store.list_spaces(project_root, ident["username"], ident["role"])
-            self._send_json(200, {"spaces": spaces})
+            ok = toggle_todo(project_root, int(todo_id))
+            self._send_json(200 if ok else 404, {"success": ok})
 
-        def _handle_space_create(self):
-            ident = self._require("USER")
-            if ident is None:
+        def _handle_todos_delete(self):
+            if self._require("USER") is None:
                 return
             data = self._read_json_body()
+            todo_id = data.get("id")
+            if todo_id is None:
+                self._send_json(400, {"error": "ต้องระบุ id"})
+                return
+            ok = delete_todo(project_root, int(todo_id))
+            self._send_json(200 if ok else 404, {"success": ok})
+
+    LocalAssistantHandler.session_token = auth_token
+    LocalAssistantHandler.session_token_auto = session_token_auto
+    return LocalAssistantHandler
+
+
+def find_free_port(preferred: int, host: str = "127.0.0.1", tries: int = 20) -> int:
+    """คืนพอร์ตที่ว่างจริง — ลอง preferred ก่อน ถ้าชนไล่ขึ้นทีละ 1 (preferred+1, +2, ...)
+    กันปัญหา 'พอร์ต 8420 ถูกใช้อยู่แล้ว server เปิดไม่ขึ้น' — หาที่ว่างให้อัตโนมัติ
+    หา tries พอร์ตไม่เจอ → สุดท้ายให้ OS เลือกพอร์ตว่างเอง (port 0)"""
+    for p in range(preferred, preferred + tries):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
-                space = space_store.create_space(
-                    project_root, data.get("name", ""), owner=ident["username"],
-                    visibility=data.get("visibility", "private"))
-            except ValueError as e:
-                self._send_json(400, {"error": str(e)})
-                return
-            self._send_json(200, {"space": space})
-
-        def _space_or_403(self, ident, space_id):
-            """คืน space ถ้าเข้าถึงได้, ไม่งั้นตอบ error แล้วคืน None"""
-            space = space_store.get_space(project_root, space_id)
-            if space is None:
-                self._send_json(404, {"error": "ไม่พบพื้นที่"})
-                return None
-            if not space_store.can_access(space, ident["username"], ident["role"]):
-                self._send_json(403, {"error": "ไม่มีสิทธิ์เข้าพื้นที่นี้"})
-                return None
-            return space
-
-        def _handle_space_items_list(self, parsed):
-            ident = self._require("USER")
-            if ident is None:
-                return
-            space_id = (parse_qs(parsed.query).get("space", [""])[0]).strip()
-            if self._space_or_403(ident, space_id) is None:
-                return
-            self._send_json(200, {"items": space_store.list_items(project_root, space_id)})
-
-        def _handle_space_item_add(self):
-            ident = self._require("USER")
-            if ident is None:
-                return
-            data = self._read_json_body()
-            space_id = (data.get("space") or "").strip()
-            if self._space_or_403(ident, space_id) is None:
-                return
-            try:
-                item = space_store.add_item(project_root, space_id, ident["username"],
-                                            data.get("text", ""))
-            except ValueError as e:
-                self._send_json(400, {"error": str(e)})
-                return
-            self._send_json(200, {"item": item})
-
-        def _handle_space_member_add(self):
-            ident = self._require("USER")
-            if ident is None:
-                return
-            data = self._read_json_body()
-            space_id = (data.get("space") or "").strip()
-            space = space_store.get_space(project_root, space_id)
-            if space is None:
-                self._send_json(404, {"error": "ไม่พบพื้นที่"})
-                return
-            # เชิญสมาชิกได้เฉพาะเจ้าของ หรือ ADMIN ขึ้นไป
-            if ident["username"] != space.get("owner") and not org_store.role_at_least(ident["role"], "ADMIN"):
-                self._send_json(403, {"error": "เฉพาะเจ้าของพื้นที่หรือแอดมินเชิญสมาชิกได้"})
-                return
-            try:
-                updated = space_store.add_member(project_root, space_id, (data.get("member") or "").strip())
-            except ValueError as e:
-                self._send_json(400, {"error": str(e)})
-                return
-            self._send_json(200, {"space": updated})
-
-        def _handle_config_versions_list(self):
-            # รายการเวอร์ชัน config (metadata เท่านั้น — ไม่เผย secret) — ADMIN+
-            if self._require("ADMIN") is None:
-                return
-            self._send_json(200, {"versions": config_versions.list_versions(project_root)})
-
-        def _handle_config_snapshot(self):
-            # เก็บ snapshot ของ config ปัจจุบัน (เช่น ก่อนปล่อยของ) — ADMIN+
-            if self._require("ADMIN") is None:
-                return
-            data = self._read_json_body()
-            meta = config_versions.snapshot(project_root, label=data.get("label", ""))
-            self._send_json(200, {"snapshot": meta})
-
-        def _handle_config_rollback(self):
-            # ย้อน config กลับเวอร์ชันก่อน (powerful: เปลี่ยน backend/key ได้) — CEO เท่านั้น
-            if self._require("CEO") is None:
-                return
-            data = self._read_json_body()
-            version_id = (data.get("id") or "").strip()
-            if not version_id:
-                self._send_json(400, {"error": "ต้องระบุ id ของเวอร์ชัน"})
-                return
-            try:
-                result = config_versions.rollback(project_root, version_id)
-            except ValueError as e:
-                self._send_json(404, {"error": str(e)})
-                return
-            self._send_json(200, {"rolledback": result})
-
-        def _handle_model_backend_settings_set(self):
-            if self._require("ADMIN") is None:
-                return
-            data = self._read_json_body()
-            settings = model_backend.set_backend_settings(project_root, data)
-            self._send_json(200, {"settings": settings})
-
-        def _handle_model_backend_test(self):
-            # กดทดสอบว่า backend ที่ตั้งไว้ "ต่อติดไหม" (ไม่ generate จริง ไม่กิน token)
-            if self._require("ADMIN") is None:
-                return
-            self._send_json(200, model_backend.probe_backend(project_root))
-
-        def _serve_static(self, route: str):
-            # เสิร์ฟหน้าเว็บ/asset ตาม STATIC_ROUTES ตัวเดียวจบ (html/css/js)
-            # อ่านเป็น bytes ตรงๆ — ไฟล์ทุกตัวเป็น utf-8 อยู่แล้ว ไม่ต้อง decode/encode วน
-            filename, content_type, cache = STATIC_ROUTES[route]
-            try:
-                body = (APP_DIR / filename).read_bytes()
-            except OSError as e:
-                self._send_json(500, {"error": f"อ่าน {filename} ไม่ได้: {e}"})
-                return
-            body = self._inject_session_token(body, content_type)
-            self.send_response(200)
-            self.send_header("Content-Type", content_type)
-            self.send_header("Content-Length", str(len(body)))
-            if "text/html" in content_type:
-                # หน้าที่มี session token ห้ามถูกฝังใน iframe ของเว็บอื่น (clickjacking)
-                self.send_header("X-Frame-Options", "DENY")
-                self.send_header("Content-Security-Policy", "frame-ancestors 'none'")
-            if cache:
-                # asset ที่ไม่ค่อยเปลี่ยน (css/js) — ให้ browser cache ลดภาระเครื่องอ่อน
-                self.send_header("Cache-Control", "public, max-age=3600")
-            self.end_headers()
-            self.wfile.write(body)
-
-        def _ollama_up(self, host="127.0.0.1", port=11434, timeout=0.3) -> bool:
-            """เช็กเบาๆ ว่า Ollama เปิด port อยู่ไหม (TCP connect สั้นๆ ไม่ยิง request)"""
-            try:
-                with socket.create_connection((host, port), timeout=timeout):
-                    return True
+                s.bind((host, p))
+                return p
             except OSError:
-                return False
+                continue   # พอร์ตนี้ถูกใช้อยู่ ลองตัวถัดไป
+    # หาไม่เจอในช่วงที่ลอง → ให้ OS เลือกพอร์ตว่างใด ๆ
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind((host, 0))
+        return s.getsockname()[1]
 
-        def _handle_health(self):
-            """สัญญาณชีพของระบบ (public, ไม่ auth) — ข้อมูลไม่ลับ:
-            Ollama เปิดไหม, RAM ตึงไหม, โมเดล/ backend ที่แนะนำสำหรับเครื่องนี้"""
-            rec = resource_budget.pick_model(project_root=project_root)
-            local = bind_host in ("127.0.0.1", "localhost", "::1")
-            self._send_json(200, {
-                "ok": True,
-                "ollama": "up" if self._ollama_up() else "down",
-                "ram_pressure": resource_budget.ram_pressure(),
-                "recommended_model": rec["model"],
-                "recommend_reason": rec["reason"],
-                "backend": resource_budget.pick_backend(project_root),
-                # โหมดเครือข่าย (N4) — บอกว่าตอนนี้เปิดแค่เครื่องนี้ หรือออก LAN แล้ว
-                "network": {
-                    "bind": bind_host,
-                    "mode": "local" if local else "lan",
-                    "auth_required": (not local) or bool(auth_token),
-                },
-            })
 
-        def _handle_sysinfo(self):
-            # spec เครื่อง (static) สำหรับ dev view / ระบบจัดการทรัพยากร — ADMIN ขึ้นไป
-            if self._require("ADMIN") is None:
-                return
-            self._send_json(200, get_system_info().to_dict())
+def resolve_server_config(args, env=None):
+    """รวม args + environment variable เป็น config สุดท้าย (host, port, token)
+    — แยกออกมาให้เทสได้ และให้ deploy บน cloud ได้โดยไม่ต้องแก้ไฟล์
 
-        def _handle_metrics(self, parsed):
-            # Phase 2: metrics สด (snapshot + วิเคราะห์คอขวด + บริบท LCA/Ollama) — ADMIN ขึ้นไป
-            # ไม่เก็บลง db (ใช้ /api/admin/history/snapshot ถ้าต้องการเก็บ)
-            if self._require("ADMIN") is None:
-                return
-            qs = parse_qs(parsed.query)
-            try:
-                interval = float(qs.get("interval", ["0.3"])[0])
-            except (TypeError, ValueError):
-                interval = 0.3
-            report = _Analyzer().analyze(_collect(interval=interval))
-            findings = [
-                {
-                    "resource": f.resource,
-                    "severity": f.severity.label,
-                    "value": round(f.value, 2),
-                    "message": f.message,
-                    "suggestion": f.suggestion,
-                }
-                for f in report.findings
-            ]
-            self._send_json(200, {
-                "snapshot": report.snapshot.to_dict(),
-                "verdict": report.verdict,
-                "worst_severity": report.worst.label,
-                "findings": findings,
-                "lca": _lca_context.correlate(report),
-            })
+    ลำดับความสำคัญ: args (--flag) > env > default
+      PORT        : cloud host (Render/Fly/HF/Cloud Run) ฉีด $PORT มาเอง ต้องอ่าน
+      LCA_HOST    : cloud ต้อง bind 0.0.0.0 (รับ traffic จากข้างนอก container)
+      LCA_TOKEN   : auth token — บังคับเมื่อ bind ออกนอก 127.0.0.1 (Rule 12)
 
-        # ---------- Controller: API routes ----------
-        def do_POST(self):
-            if not self._guard_request():
-                return
-            parsed = urlparse(self.path)
-            if self._rate_limited(parsed):
-                return
-            if self._schedule_gated(parsed):
-                return
-            try:
-                if parsed.path == "/api/chat":
-                    self._handle_chat()
-                elif parsed.path == "/api/chat/stream":
-                    self._handle_chat_stream()
-                elif chat_hub.wants_post(parsed.path):
-                    chat_hub.handle_post(self, parsed, project_root, gen_gate)
-                elif parsed.path == "/api/todos":
-                    self._handle_todos_post()
-                elif parsed.path == "/api/todos/toggle":
-                    self._handle_todos_toggle()
-                elif parsed.path == "/api/todos/delete":
-                    self._handle_todos_delete()
-                elif parsed.path == "/api/admin/users":
-                    self._handle_users_create()
-                elif parsed.path == "/api/admin/users/active":
-                    self._handle_users_set_active()
-                elif parsed.path == "/api/admin/apikeys":
-                    self._handle_apikeys_create()
-                elif parsed.path == "/api/admin/apikeys/revoke":
-                    self._handle_apikeys_revoke()
-                elif parsed.path == "/api/admin/jobs":
-                    self._handle_jobs_create()
-                elif parsed.path == "/api/admin/jobs/status":
-                    self._handle_jobs_set_status()
-                elif parsed.path == "/api/admin/jobs/delete":
-                    self._handle_jobs_delete()
-                elif parsed.path == "/api/admin/history/snapshot":
-                    self._handle_history_record_snapshot()
-                elif parsed.path == "/api/admin/history/errors":
-                    self._handle_history_log_error()
-                elif parsed.path == "/api/admin/finance":
-                    self._handle_finance_record()
-                elif parsed.path == "/api/admin/finance/status":
-                    self._handle_finance_set_status()
-                elif parsed.path == "/api/admin/finance/delete":
-                    self._handle_finance_delete()
-                elif parsed.path == "/api/admin/notify":
-                    self._handle_notify()
-                elif parsed.path == "/api/support/ticket":
-                    self._handle_support_create()
-                elif parsed.path == "/api/admin/support/tickets/status":
-                    self._handle_support_set_status()
-                elif parsed.path == "/api/admin/dataset":
-                    self._handle_dataset_add()
-                elif parsed.path == "/api/admin/dataset/delete":
-                    self._handle_dataset_delete()
-                elif parsed.path == "/api/admin/cluster/nodes":
-                    self._handle_cluster_node_add()
-                elif parsed.path == "/api/admin/cluster/nodes/remove":
-                    self._handle_cluster_node_remove()
-                elif parsed.path == "/api/admin/cluster/settings":
-                    self._handle_cluster_settings_set()
-                elif parsed.path == "/api/admin/cluster/join":
-                    self._handle_cluster_join()
-                elif parsed.path == "/api/admin/model-backend/settings":
-                    self._handle_model_backend_settings_set()
-                elif parsed.path == "/api/admin/model-backend/test":
-                    self._handle_model_backend_test()
-                elif parsed.path == "/api/admin/config/snapshot":
-                    self._handle_config_snapshot()
-                elif parsed.path == "/api/admin/config/rollback":
-                    self._handle_config_rollback()
-                elif parsed.path == "/api/spaces":
-                    self._handle_space_create()
-                elif parsed.path == "/api/spaces/items":
-                    self._handle_space_item_add()
-                elif parsed.path == "/api/spaces/members":
-                    self._handle_space_member_add()
-                elif parsed.path == "/api/admin/features":
-                    self._handle_features_set()
-                elif parsed.path == "/api/agent/jobs":
-                    self._handle_agent_jobs_post()
-                elif parsed.path == "/api/agent/approvals/decide":
-                    self._handle_agent_approvals_decide()
-                elif parsed.path == "/api/connections":
-                    self._handle_connections_create()
-                elif parsed.path == "/api/connections/update":
-                    self._handle_connections_update()
-                elif parsed.path == "/api/connections/delete":
-                    self._handle_connections_delete()
-                elif parsed.path == "/api/connections/test":
-                    self._handle_connections_test()
-                elif parsed.path == "/api/connections/chat":
-                    self._handle_connections_chat()
-                elif parsed.path == "/api/connections/chat/stream":
-                    self._handle_connections_chat_stream()
-                elif parsed.path == "/api/skills":
-                    self._handle_skills_create()
-                elif parsed.path == "/api/skills/update":
-                    self._handle_skills_update()
-                elif parsed.path == "/api/skills/delete":
-                    self._handle_skills_delete()
-                elif parsed.path == "/api/bots":
-                    self._handle_bots_create()
-                elif parsed.path == "/api/bots/update":
-                    self._handle_bots_update()
-                elif parsed.path == "/api/bots/delete":
-                    self._handle_bots_delete()
-                elif parsed.path == "/api/bots/run":
-                    self._handle_bots_run()
-                elif parsed.path == "/api/bots/run/stream":
-                    self._handle_bots_run_stream()
-                elif parsed.path == "/api/admin/tunnel/start":
-                    self._handle_tunnel_start()
-                elif parsed.path == "/api/admin/tunnel/stop":
-                    self._handle_tunnel_stop()
-                else:
-                    self._send_json(404, {"error": "not found"})
-            except (connections.ConnectionError, skills_store.SkillError, bots.BotError) as e:
-                # input ผิด/ไม่พบ/ต่อสมองไม่ได้ — ตอบ 400 (ข้อความอ่านรู้เรื่อง)
-                self._send_json(400, {"error": str(e)})
-            except (json.JSONDecodeError, KeyError) as e:
-                self._send_json(400, {"error": f"request ผิดรูปแบบ: {e}"})
-            except ValueError as e:
-                # org_store โยน ValueError เมื่อ input ผิด/สิทธิ์ไม่พอ/ชื่อซ้ำ
-                self._send_json(400, {"error": str(e)})
+    กฎความปลอดภัยเดิมคงอยู่: bind ออกนอก localhost โดยไม่มี token = ValueError
+    (cloud จึง *ต้อง* ตั้ง LCA_TOKEN — กันคนทั้งอินเทอร์เน็ตสั่งแก้ไฟล์)
+    คืน dict {host, port, token}
+    """
+    env = env if env is not None else os.environ
+    # host: --host ถ้าผู้ใช้ตั้ง (ไม่ใช่ default), ไม่งั้น env LCA_HOST, ไม่งั้น default
+    host = args.host
+    if host == "127.0.0.1" and env.get("LCA_HOST"):
+        host = env["LCA_HOST"].strip()
+    # port: --port ถ้าตั้ง (ไม่ใช่ default), ไม่งั้น $PORT (cloud), ไม่งั้น default
+    port = args.port
+    if port == 8420 and env.get("PORT"):
+        try:
+            port = int(env["PORT"])
+        except (TypeError, ValueError):
+            raise ValueError(f"$PORT ไม่ใช่ตัวเลข: {env['PORT']!r}")
+    token = args.token or env.get("LCA_TOKEN") or None
+    if host != "127.0.0.1" and not token:
+        raise ValueError(
+            "ห้าม bind ออกนอก 127.0.0.1 โดยไม่ตั้ง token (กันคนอื่นสั่งแก้ไฟล์เครื่องนี้ "
+            "โดยไม่ยืนยันตัวตน) — ตั้ง --token หรือ env LCA_TOKEN. ดู Rule ข้อ 12 ใน SKILL.md")
+    return {"host": host, "port": port, "token": token}
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Backend server สำหรับ Local Code Assistant web UI")
+    parser.add_argument(
+        "--version", action="version",
+        version=f"LCA {read_version()} (python {sys.version_info.major}."
+                f"{sys.version_info.minor}.{sys.version_info.micro})",
+        help="แสดงเวอร์ชันแล้วออก (ตรงกับ GET /api/version)")
+    parser.add_argument("project_dir", type=str, help="โฟลเดอร์โปรเจกต์ (ใช้กับ todo)")
+    parser.add_argument("--host", type=str, default="127.0.0.1",
+                         help="bind address — ใช้ 127.0.0.1 เท่านั้นถ้าไม่ต้องการเปิดให้เครื่องอื่นเข้าถึง "
+                              "(cloud: ตั้ง env LCA_HOST=0.0.0.0)")
+    parser.add_argument("--port", type=int, default=8420,
+                         help="พอร์ต (cloud: อ่าน $PORT ให้อัตโนมัติถ้าไม่ระบุ)")
+    parser.add_argument("--token", type=str, default=None,
+                         help="auth token — บังคับใส่ถ้า bind ไม่ใช่ 127.0.0.1 (ตาม Rule ข้อ 12); "
+                              "cloud ตั้ง env LCA_TOKEN ได้")
+    args = parser.parse_args()
+
+    project_root = Path(args.project_dir).resolve()
+    if not project_root.exists():
+        print(f"ไม่พบโฟลเดอร์: {project_root}")
+        sys.exit(1)
+
+    try:
+        cfg = resolve_server_config(args)
+    except ValueError as e:
+        print(f"[ปฏิเสธ] {e}")
+        sys.exit(1)
+
+    handler_cls = make_handler(project_root, cfg["token"], bind_host=cfg["host"])
+    try:
+        httpd = ThreadingHTTPServer((cfg["host"], cfg["port"]), handler_cls)
+    except OSError:
+        # พอร์ตถูกใช้อยู่ — ถ้าเป็นเครื่อง local (ไม่ใช่ cloud ที่ฉีด $PORT มา) หาพอร์ตว่างให้อัตโนมัติ
+        if os.environ.get("PORT"):
+            print(f"[ปฏิเสธ] พอร์ต {cfg['port']} ($PORT) ถูกใช้อยู่ — cloud ต้องปล่อยพอร์ตนี้ให้ว่าง")
+            sys.exit(1)
+        new_port = find_free_port(cfg["port"] + 1, cfg["host"])
+        print(f"[info] พอร์ต {cfg['port']} ถูกใช้อยู่ — เปลี่ยนไปใช้พอร์ตว่าง {new_port} แทน")
+        cfg["port"] = new_port
+        httpd = ThreadingHTTPServer((cfg["host"], cfg["port"]), handler_cls)
+    print(f"=== Local Assistant Server ===")
+    print(f"โปรเจกต์: {project_root}")
+    if handler_cls.session_token_auto:
+        # CLI ต้องเห็นค่านี้ครั้งเดียว — หน้าเว็บได้ค่าเดียวกันฝังใน HTML / fragment
+        shown_host = "127.0.0.1" if cfg["host"] in ("0.0.0.0", "::", "") else cfg["host"]
+        print(f"เปิดเบราว์เซอร์ที่: http://{shown_host}:{cfg['port']}/#lca_token={handler_cls.session_token}")
+        print("[auth] ไม่ได้ตั้ง token — สุ่ม session token สำหรับการเปิดครั้งนี้")
+        print("[auth] หน้าเว็บได้รับ token เอง; curl/CLI ส่ง header X-Auth-Token ตามค่านี้")
+        print(f"[auth] X-Auth-Token: {handler_cls.session_token}")
+    else:
+        print(f"เปิดเบราว์เซอร์ที่: http://{cfg['host']}:{cfg['port']}")
+        print("[auth] ต้องใส่ header X-Auth-Token เพื่อเรียก API")
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\nปิด server แล้ว")
+        httpd.shutdown()
+
+
+if __name__ == "__main__":
+    main()

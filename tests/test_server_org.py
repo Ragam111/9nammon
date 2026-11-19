@@ -211,8 +211,17 @@ class ServerOrgTest(unittest.TestCase):
         self.assertIn('id="todo-msg"', body)
 
     def test_dev_page_served(self):
+        # ตั้ง master token ไว้ (ไม่ใช่โหมด local) → /dev ต้องมีสิทธิ์ ADMIN ขึ้นไปถึงได้หน้า
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
         conn.request("GET", "/dev")
+        resp = conn.getresponse()
+        resp.read()
+        conn.close()
+        self.assertEqual(resp.status, 302)
+        self.assertEqual(resp.getheader("Location"), "/login?next=/dev")
+
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("GET", "/dev", headers={"X-Auth-Token": MASTER})
         resp = conn.getresponse()
         body = resp.read().decode("utf-8")
         conn.close()
