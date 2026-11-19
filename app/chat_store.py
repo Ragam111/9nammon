@@ -158,25 +158,28 @@ def _resolve_conversation(conn, key):
     raise ChatStoreError("ไม่พบการสนทนา")
 
 
-def list_conversations(conn, *, folder_id="all", limit: int = 50) -> list:
+def list_conversations(conn, *, folder_id="all", limit: int = 50,
+                       restrict_owner: bool = False, owner=None) -> list:
+    """List conversations. With ``restrict_owner`` the owner filter runs in SQL
+    before LIMIT, so other people's rooms cannot push the viewer's rooms out.
+    Visible rows: owner NULL/empty (shared) or owner == ``owner``."""
     limit = max(1, min(int(limit or 50), 50))
-    if folder_id == "all" or folder_id is None:
-        rows = conn.execute(
-            """SELECT id, uid, title, folder_id, pinned, archived, updated_at, active_leaf_id, owner
-               FROM conversations WHERE archived=0
-               ORDER BY pinned DESC, updated_at DESC LIMIT ?""",
-            (limit,),
-        )
-    else:
+    clauses = ["archived=0"]
+    params: list = []
+    if folder_id != "all" and folder_id is not None:
         fid = None if folder_id in ("", "root") else _as_int(folder_id, "folder_id")
-        rows = conn.execute(
-            """SELECT id, uid, title, folder_id, pinned, archived, updated_at, active_leaf_id, owner
-               FROM conversations
-               WHERE folder_id IS ? AND archived=0
-               ORDER BY pinned DESC, updated_at DESC LIMIT ?""",
-            (fid, limit),
-        )
-    return [_row(r) for r in rows]
+        clauses.append("folder_id IS ?")
+        params.append(fid)
+    if restrict_owner:
+        clauses.append("(owner IS NULL OR owner = '' OR owner = ?)")
+        params.append(owner)
+    params.append(limit)
+    sql = (
+        "SELECT id, uid, title, folder_id, pinned, archived, updated_at, active_leaf_id, owner "
+        "FROM conversations WHERE " + " AND ".join(clauses)
+        + " ORDER BY pinned DESC, updated_at DESC LIMIT ?"
+    )
+    return [_row(r) for r in conn.execute(sql, params)]
 
 
 def update_conversation(conn, key, **fields) -> dict:
