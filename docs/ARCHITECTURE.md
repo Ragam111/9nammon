@@ -10,6 +10,42 @@
 - dependency ที่ปักใน `requirements.txt` มี `psutil` อย่างเดียว
 - ไฟล์ `.exe` ไม่ได้ถูก commit. `.github/workflows/build-exe.yml` บิลด์ `LCA-Desktop.exe` (จาก `lca_app.py`) และ `TokenLCAlimit.exe` (จาก `installer_gui.py`) เมื่อ `workflow_dispatch` หรือแท็ก `v*` บน `windows-latest` / Python 3.12 / PyInstaller `--onefile`
 
+## ภาพรวมจากแผนภาพอ้างอิง (สรุป + เทียบกับ LCA จริง)
+
+ส่วนนี้สรุปแผนภาพอ้างอิง 7 รูปที่ใช้ศึกษา และบอกว่าแต่ละหัวข้อเกี่ยวกับ LCA อย่างไร
+(ไม่ได้เปลี่ยนโค้ด ไม่ได้อ้างว่ามีระบบที่ยังไม่ได้สร้าง)
+
+### 1. สถาปัตยกรรมระบบแบบกระจาย (Clients → CDN → Load Balancer → Web/App → Cache → Queue → DB → Monitoring)
+| องค์ประกอบ | LCA ตอนนี้ | ความจำเป็น |
+|---|---|---|
+| Clients / Web/App Server | `server.py` (ThreadingHTTPServer) | มีแล้ว |
+| Message Queue | `job_queue` (SQLite, claim แบบ atomic) | มีแล้ว ใช้เป็นคิวงาน |
+| Database | SQLite (`chat_store`, `org_store`) ใช้ WAL | มีแล้ว เครื่องเดียว |
+| Caching Layer | ยังไม่มี | ยังไม่จำเป็น จนกว่าจะวัดแล้วพบคอขวด |
+| CDN / Load Balancer | ยังไม่มี | ไม่จำเป็นกับโหมดเครื่องเดียว |
+| DB Primary-Replica | ยังไม่มี | ไม่จำเป็นตอนนี้ (ต้องมีหลายเครื่อง) |
+| Monitoring | ยังไม่มีเมตริกรวมศูนย์ | **ควรทำถัดไป** |
+
+### 2. Transformer และขั้นตอนการสร้างข้อความ (Tokenizer → Embedding + Position → Attention → Transformer Blocks → Decoder)
+- ความเข้าใจนี้ใช้กับ `context_manager.py` (จัดงบ token ของ context) และคอลัมน์ `tokens_in` / `tokens_out` ใน `chat_store.py`
+- LCA ไม่ได้ฝึกโมเดลเอง โมเดลถูกเรียกผ่าน Ollama (local) หรือ provider ภายนอกผ่าน `model_backend`
+
+### 3. AI ⊃ Machine Learning ⊃ Deep Learning ⊃ Generative AI
+เป็นภาพรวมคำศัพท์ ใช้อธิบายในเอกสาร ไม่กระทบโค้ด
+
+### 4. การห่อหุ้มด้วย Container (Dockerfile → Image → Container → Container Engine)
+- รีโปมี `Dockerfile` และ `docker-compose.yml` อยู่แล้ว ใช้เป็นจุดเริ่มสำหรับบิลด์และรัน server ในคอนเทนเนอร์
+- ยังไม่ได้ทดสอบว่าบิลด์ผ่านในงานนี้ ต้องรันจริงก่อนถึงจะยืนยันได้
+
+### 5. โปสเตอร์ "Software Engineer" (Frontend, Backend, Database, APIs, Services, Monitoring)
+- รูปถูกเก็บไว้ที่ `docs/assets/software-engineer-poster.jpg` (commit แล้ว)
+- ใช้ประกอบภาพรวมของแอป ไม่ใช่สเปกของระบบ
+
+### สิ่งที่ยังไม่มีและควรทำต่อ (เรียงตามความคุ้มค่า)
+1. เมตริก/monitoring ของ server (เช่น จำนวนงานในคิว อัตราผิดพลาด ความหน่วงของ `/api/chat`)
+2. ทดสอบบิลด์ `Dockerfile` ให้ผ่านจริงแล้วบันทึกผล
+3. Caching และ load balancing: ทำเมื่อวัดแล้วพบคอขวดเท่านั้น
+
 แผนผังด้านล่างเป็นเอกสารเดิมสมัยที่หัวข้อยังเป็น v0.0.2. มันเป็นแผนที่โมดูลยุคนั้น ไม่ใช่แผนสามชั้นที่ใช้แทนโค้ดปัจจุบัน
 
 ## Module Map (เอกสารเดิม v0.0.2)
