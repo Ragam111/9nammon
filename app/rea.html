@@ -4,52 +4,25 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>REA Analysis Report</title>
+<link rel="stylesheet" href="app.css">
 <style>
+/* โทเคนสีและฟอนต์มาจาก app.css (ไม่คัดลอกซ้ำ) — เพิ่มเฉพาะสีตัวอักษรของ pill/tag ที่ต้องผ่าน 4.5:1 */
 :root {
-  --lca-bg: #f5f6f4;
-  --lca-surface: #ffffff;
-  --lca-surface-2: #eceee9;
-  --lca-line: #d9ddd4;
-  --lca-fg: #1b201a;
-  --lca-muted: #5e665b;
-  --lca-accent: #1f8a4c;
-  --lca-accent-weak: #e3f0e7;
-  --lca-ok: #1f8a4c;
-  --lca-warn: #b7791f;
-  --lca-bad: #c23b34;
-  --lca-sans: "LCA Sans", "Leelawadee UI", "Segoe UI", "Noto Sans Thai", Tahoma, system-ui, sans-serif;
-  --lca-mono: "LCA Mono", "Cascadia Mono", Consolas, ui-monospace, monospace;
-  --lca-r: 10px;
-  --lca-r-lg: 14px;
-  --lca-gutter: 16px;
+  --rea-ok-text: #166b3c;
+  --rea-warn-text: #8a5a12;
+  --rea-bad-text: #a8322b;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --lca-bg: #0e120f;
-    --lca-surface: #161b16;
-    --lca-surface-2: #1d241d;
-    --lca-line: #2a332a;
-    --lca-fg: #e7ece4;
-    --lca-muted: #94a08e;
-    --lca-accent: #4cc27a;
-    --lca-accent-weak: #1c3325;
-    --lca-ok: #4cc27a;
-    --lca-warn: #e0a64a;
-    --lca-bad: #ef6f67;
+    --rea-ok-text: var(--lca-ok);
+    --rea-warn-text: var(--lca-warn);
+    --rea-bad-text: var(--lca-bad);
   }
 }
 :root[data-theme="dark"] {
-  --lca-bg: #0e120f;
-  --lca-surface: #161b16;
-  --lca-surface-2: #1d241d;
-  --lca-line: #2a332a;
-  --lca-fg: #e7ece4;
-  --lca-muted: #94a08e;
-  --lca-accent: #4cc27a;
-  --lca-accent-weak: #1c3325;
-  --lca-ok: #4cc27a;
-  --lca-warn: #e0a64a;
-  --lca-bad: #ef6f67;
+  --rea-ok-text: var(--lca-ok);
+  --rea-warn-text: var(--lca-warn);
+  --rea-bad-text: var(--lca-bad);
 }
 * { box-sizing: border-box; }
 body {
@@ -67,7 +40,7 @@ header.top {
 header.top h1 { margin: 0; font-size: 20px; }
 .tag {
   font-size: 12px; padding: 2px 8px; border-radius: 999px;
-  background: var(--lca-accent-weak); color: var(--lca-accent);
+  background: var(--lca-accent-weak); color: var(--rea-ok-text);
 }
 .muted { color: var(--lca-muted); font-size: 13px; }
 main { max-width: 1040px; margin: 0 auto; padding: 20px var(--lca-gutter) 48px; }
@@ -86,9 +59,9 @@ dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 10px
 dt { color: var(--lca-muted); }
 dd { margin: 0; font-variant-numeric: tabular-nums; }
 .pill { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 999px; }
-.pill.ok { background: var(--lca-accent-weak); color: var(--lca-ok); }
-.pill.warn { background: #f6ecd8; color: var(--lca-warn); }
-.pill.bad { background: #f7e0de; color: var(--lca-bad); }
+.pill.ok { background: var(--lca-accent-weak); color: var(--rea-ok-text); }
+.pill.warn { background: #f6ecd8; color: var(--rea-warn-text); }
+.pill.bad { background: #f7e0de; color: var(--rea-bad-text); }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .pill.warn { background: #3a2f18; }
   :root:not([data-theme="light"]) .pill.bad { background: #3d211f; }

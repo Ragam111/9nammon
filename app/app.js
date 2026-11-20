@@ -48,11 +48,17 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ username: username, password: password })
         });
-        var data = await res.json();
+        // เซิร์ฟเวอร์ตอบไม่ใช่ JSON (เช่น หน้า HTML 502 จาก proxy) — ไม่ให้ SyntaxError หลุดไปถึงผู้ใช้
+        var data = await res.json().catch(function () { return {}; });
         if (!res.ok || !data.token) { this.lastError = data.error || ("HTTP " + res.status); return null; }
         this.setKey(data.token);
         return data;
-      } catch (e) { this.lastError = String(e); return null; }
+      } catch (e) {
+        // ต่อ server ไม่ได้ (network/เครื่องปิด) — ใช้ข้อความไทยแทน TypeError ดิบ
+        console.error("login ไม่สำเร็จ:", e);
+        this.lastError = "ต่อเซิร์ฟเวอร์ไม่ได้ — ตรวจว่า LCA เปิดอยู่";
+        return null;
+      }
     },
 
     // ออกจากระบบ: เพิกถอน session ฝั่ง server (ถ้าเป็น session) แล้วล้าง key ฝั่ง browser

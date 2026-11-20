@@ -4,44 +4,45 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ติดตั้ง LCA — ผู้ช่วยเขียนโค้ด AI ฟรี</title>
+<link rel="stylesheet" href="/app.css">
 <style>
-  :root { color-scheme: dark; --bg:#0f1115; --card:#171a21; --line:#2a2e37; --fg:#e8eaed;
-          --muted:#9aa0ac; --accent:#2563eb; --ok:#4ade80; }
+  /* สี ฟอนต์ และรัศมีมาจากโทเคน --lca-* ใน app.css (ธีมสว่าง/มืดตามระบบ) */
   * { box-sizing: border-box; }
-  body { margin:0; background:var(--bg); color:var(--fg); line-height:1.6;
-         font-family: system-ui,-apple-system,"Segoe UI",sans-serif; }
+  body { margin:0; line-height:1.6; font-size:16px; }
   .wrap { max-width: 860px; margin: 0 auto; padding: 16px; }
   header { text-align:center; padding: 48px 0 24px; }
   header h1 { font-size: 2rem; margin: 0 0 8px; }
-  header p { color: var(--muted); margin: 0; font-size: 1.05rem; }
-  .badge { display:inline-block; background:#1e2430; border:1px solid var(--line);
-           color:var(--muted); font-size:12px; padding:4px 10px; border-radius:999px; margin-top:12px; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:14px;
+  header p { color: var(--lca-muted); margin: 0; font-size: 1.05rem; }
+  .badge { display:inline-block; background:var(--lca-surface-2); border:1px solid var(--lca-line);
+           color:var(--lca-muted); font-size:12px; padding:4px 10px; border-radius:999px; margin-top:12px; }
+  .card { background:var(--lca-surface); border:1px solid var(--lca-line); border-radius:var(--lca-r-lg);
           padding:20px; margin:14px 0; }
   .card h2 { margin:0 0 12px; font-size:1.15rem; }
-  .step { color:var(--accent); font-weight:700; margin-right:6px; }
-  code, pre { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; }
-  .cmd { position:relative; background:#0b0d12; border:1px solid var(--line); border-radius:10px;
-         padding:14px 48px 14px 14px; overflow-x:auto; font-size:13px; white-space:pre; }
-  .copy { position:absolute; top:8px; right:8px; background:#222836; border:1px solid var(--line);
-          color:var(--fg); border-radius:8px; padding:5px 10px; font-size:12px; cursor:pointer; }
-  .copy:hover { background:#2b3242; }
-  .btn { display:inline-block; background:var(--accent); color:#fff; text-decoration:none;
-         font-weight:700; padding:12px 20px; border-radius:10px; }
-  .btn.ghost { background:transparent; border:1px solid var(--line); color:var(--fg); }
+  .step { color:var(--lca-accent); font-weight:700; margin-right:6px; }
+  code, pre { font-family: var(--lca-mono); }
+  /* คำสั่งเลื่อนแนวนอนได้เฉพาะใน <code> ส่วนปุ่มคัดลอกอยู่นอกพื้นที่เลื่อน จึงไม่หลุดจอบนมือถือ */
+  .cmd { display:flex; align-items:flex-start; gap:8px; background:var(--lca-surface-2);
+         border:1px solid var(--lca-line); border-radius:var(--lca-r); padding:14px; font-size:13px; }
+  .cmd code { flex:1; min-width:0; overflow-x:auto; white-space:pre; }
+  .copy { flex:none; white-space:nowrap; background:var(--lca-surface); border:1px solid var(--lca-line);
+          color:var(--lca-fg); border-radius:8px; padding:5px 10px; font-size:12px; cursor:pointer; }
+  .copy:hover { border-color:var(--lca-accent); }
+  .btn { display:inline-block; background:var(--lca-accent); color:var(--lca-accent-fg); text-decoration:none;
+         font-weight:700; padding:12px 20px; border-radius:var(--lca-r); }
+  .btn.ghost { background:transparent; border:1px solid var(--lca-line); color:var(--lca-fg); }
   .row { display:flex; flex-wrap:wrap; gap:10px; }
   ul.feat { list-style:none; padding:0; margin:0; display:grid; gap:10px;
             grid-template-columns: repeat(auto-fit, minmax(240px,1fr)); }
-  ul.feat li { background:#0b0d12; border:1px solid var(--line); border-radius:10px; padding:12px 14px; }
+  ul.feat li { background:var(--lca-surface-2); border:1px solid var(--lca-line); border-radius:var(--lca-r); padding:12px 14px; }
   ul.feat b { display:block; margin-bottom:2px; }
-  .muted { color:var(--muted); }
+  .muted { color:var(--lca-muted); }
   .tab-row { display:flex; gap:6px; margin-bottom:10px; flex-wrap:wrap; }
-  .tab { font:inherit; background:#0b0d12; border:1px solid var(--line); color:var(--muted);
+  .tab { font:inherit; background:var(--lca-surface-2); border:1px solid var(--lca-line); color:var(--lca-muted);
          border-radius:8px; padding:6px 12px; cursor:pointer; font-size:13px; }
-  .tab.active { color:var(--fg); border-color:var(--accent); }
-  .tab:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
-  footer { text-align:center; color:var(--muted); padding:28px 0; font-size:13px; }
-  a { color:#7aa2ff; }
+  .tab.active { color:var(--lca-fg); border-color:var(--lca-accent); }
+  .tab:focus-visible { outline:2px solid var(--lca-accent); outline-offset:1px; }
+  footer { text-align:center; color:var(--lca-muted); padding:28px 0; font-size:13px; }
+  a { color:var(--lca-accent); }
 </style>
 </head>
 <body>
@@ -52,7 +53,7 @@
     <div class="badge">Python stdlib ล้วน · ไม่มี dependency นอก (ยกเว้น psutil) · Windows / Linux / WSL / macOS</div>
   </header>
 
-  <div class="card" style="border-color:var(--accent);">
+  <div class="card" style="border-color:var(--lca-accent);">
     <h2><span class="step">⭐</span>แนะนำที่สุด: LCA-Desktop.exe — ก้อนเดียวจริง (ไม่ต้องลง Python)</h2>
     <p>ดับเบิลคลิกไฟล์เดียว → หน้าต่างแชตเปิดเลย เหมือน ChatGPT/Claude Desktop</p>
     <div class="row">
@@ -62,7 +63,7 @@
     <ul class="muted" style="margin-top:10px; padding-left:18px; font-size:13px;">
       <li>✅ <b>ฝัง Python runtime + server มาด้วย</b> (ผ่าน <code>pyinstaller --onefile --add-data</code>) → ไม่กระจายไฟล์ ไม่พึ่ง Python ภายนอก</li>
       <li>✅ ต้องมีแค่ <b>Ollama</b> (local mode) หรือตั้ง <b>API key</b> ที่ <code>/console</code> (cloud mode — ไม่ต้องลง Ollama)</li>
-      <li>ข้อมูลเก็บที่ <code>%LOCALAPPDATA%\\LocalCodeAssistant\\data</code> (bind 127.0.0.1 ไม่หลุดออกเครื่อง)</li>
+      <li>ข้อมูลเก็บที่ <code>%LOCALAPPDATA%\LocalCodeAssistant\data</code> (bind 127.0.0.1 ไม่หลุดออกเครื่อง)</li>
     </ul>
   </div>
 
@@ -73,7 +74,7 @@
       <a class="btn ghost" href="https://github.com/Ragam111/9nammon/releases/latest">⬇ โหลด TokenLCAlimit.exe (~12 MB)</a>
     </div>
     <ul class="muted" style="margin-top:10px; padding-left:18px; font-size:13px;">
-      <li>ดับเบิลคลิก → GUI → เลือกโฟลเดอร์ → ติดตั้งลง <code>%LOCALAPPDATA%\\LocalCodeAssistant\\</code></li>
+      <li>ดับเบิลคลิก → GUI → เลือกโฟลเดอร์ → ติดตั้งลง <code>%LOCALAPPDATA%\LocalCodeAssistant\</code></li>
       <li>ตรวจพื้นที่ดิสก์อัตโนมัติ (≥ 300 MB รวม TEMP) — fail-fast ถ้า Downloads/Desktop เต็ม</li>
       <li>⚠️ <b>ต้องมี Python 3.10+ บนเครื่องปลายทาง</b> (ตัวติดตั้งไม่ได้ฝัง Python)</li>
     </ul>
@@ -88,11 +89,11 @@
               aria-selected="false" aria-controls="cmd-nix" tabindex="-1">Linux / macOS / WSL</button>
     </div>
     <div id="cmd-win" role="tabpanel" aria-labelledby="tab-win">
-      <div class="cmd" id="c1">powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercontent.com/Ragam111/9nammon/main/install.ps1 | iex"<button class="copy" data-target="c1">คัดลอก</button></div>
+      <div class="cmd" id="c1"><code>powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercontent.com/Ragam111/9nammon/main/install.ps1 | iex"</code><button class="copy" data-target="c1">คัดลอก</button></div>
       <p class="muted">แปะบรรทัดเดียวใน PowerShell — ดาวน์โหลด + แตกไฟล์ + ติดตั้งให้อัตโนมัติ</p>
     </div>
     <div id="cmd-nix" role="tabpanel" aria-labelledby="tab-nix" hidden>
-      <div class="cmd" id="c2">git clone https://github.com/Ragam111/9nammon.git && cd 9nammon && pip install -r requirements.txt && python server.py . --port 8420<button class="copy" data-target="c2">คัดลอก</button></div>
+      <div class="cmd" id="c2"><code>git clone https://github.com/Ragam111/9nammon.git && cd 9nammon && pip install -r requirements.txt && python server.py . --port 8420</code><button class="copy" data-target="c2">คัดลอก</button></div>
       <p class="muted">สำหรับ Linux/macOS/WSL — รัน server ตรง (ไม่มี .exe path)</p>
     </div>
     <div class="row" style="margin-top:8px">
@@ -105,14 +106,14 @@
 
   <div class="card">
     <h2><span class="step">2</span>ดึงโมเดล (ครั้งเดียว)</h2>
-    <div class="cmd" id="c3">ollama pull qwen2.5-coder:1.5b<button class="copy" data-target="c3">คัดลอก</button></div>
+    <div class="cmd" id="c3"><code>ollama pull qwen2.5-coder:1.5b</code><button class="copy" data-target="c3">คัดลอก</button></div>
     <p class="muted">ยังไม่มี Ollama? โหลดที่ <a href="https://ollama.com/download" target="_blank" rel="noopener">ollama.com/download</a>
       · ตัวติดตั้งจะแนะนำขนาดโมเดลที่เหมาะกับ RAM เครื่องคุณอัตโนมัติ</p>
   </div>
 
   <div class="card">
     <h2><span class="step">3</span>เปิดใช้งาน</h2>
-    <div class="cmd" id="c4">start-lca.bat     # หรือ:  python server.py . --port 8420<button class="copy" data-target="c4">คัดลอก</button></div>
+    <div class="cmd" id="c4"><code>start-lca.bat     # หรือ:  python server.py . --port 8420</code><button class="copy" data-target="c4">คัดลอก</button></div>
     <p class="muted">แล้วเปิดเบราว์เซอร์ที่ <code>http://127.0.0.1:8420</code> — เริ่มแชทได้เลย</p>
   </div>
 
@@ -174,15 +175,31 @@
       selectTab(tabs[j], true);
     });
   });
-  // ปุ่มคัดลอกคำสั่ง
+  // ปุ่มคัดลอกคำสั่ง — navigator.clipboard มีเฉพาะ secure context (https / localhost)
+  // เปิดผ่าน http บน IP ของ LAN จะไม่มี → เลือกคำสั่งไว้ให้กด Ctrl+C เอง
   document.querySelectorAll('.copy').forEach(function (b) {
+    var label = b.textContent;
+    var timer = null;
+    function show(msg) {
+      b.textContent = msg;
+      clearTimeout(timer);
+      timer = setTimeout(function () { b.textContent = label; }, 1500);
+    }
+    function selectCode(codeEl) {
+      var range = document.createRange();
+      range.selectNodeContents(codeEl);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      show('กด Ctrl+C เพื่อคัดลอก');
+    }
     b.addEventListener('click', function () {
-      var el = document.getElementById(b.dataset.target);
-      var text = el.childNodes[0].nodeValue.trim();   // เอาเฉพาะคำสั่ง ไม่รวมปุ่ม
+      var codeEl = document.getElementById(b.dataset.target).querySelector('code');
+      var text = codeEl.textContent.trim();   // เอาเฉพาะคำสั่ง ไม่รวมปุ่ม
+      if (!window.isSecureContext || !navigator.clipboard) { selectCode(codeEl); return; }
       navigator.clipboard.writeText(text).then(function () {
-        var old = b.textContent; b.textContent = 'คัดลอกแล้ว ✓';
-        setTimeout(function () { b.textContent = old; }, 1500);
-      }).catch(function () { b.textContent = 'คัดลอกไม่ได้'; });
+        show('คัดลอกแล้ว ✓');
+      }).catch(function () { selectCode(codeEl); });
     });
   });
 </script>

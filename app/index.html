@@ -10,7 +10,7 @@
 
 <div id="sidebar">
   <h2>โมเดล</h2>
-  <select id="model-select">
+  <select id="model-select" aria-label="โมเดล">
     <option value="qwen2.5-coder:0.5b">qwen2.5-coder:0.5b</option>
     <option value="qwen2.5-coder:1.5b">qwen2.5-coder:1.5b</option>
     <option value="qwen2.5-coder:7b">qwen2.5-coder:7b</option>
@@ -18,13 +18,13 @@
   </select>
 
   <h2>ภาษา</h2>
-  <select id="lang-select">
+  <select id="lang-select" aria-label="ภาษา">
     <option value="th">ไทย</option>
     <option value="en">English</option>
   </select>
 
   <h2>Todo</h2>
-  <input id="todo-input" placeholder="เพิ่ม todo แล้วกด Enter">
+  <input id="todo-input" placeholder="เพิ่ม todo แล้วกด Enter" aria-label="เพิ่ม todo">
   <p id="todo-msg"></p>
   <ul id="todo-list"></ul>
 </div>
@@ -34,8 +34,9 @@
     <button id="sidebar-toggle" aria-label="สลับเมนู">☰ เมนู</button>
     <span class="main-title">Local Code Assistant</span>
     <a href="/chat" style="margin-left:auto;color:inherit">Chat Hub</a>
+    <a href="/login" style="color:inherit">เข้าสู่ระบบ</a>
   </div>
-  <div id="chat"></div>
+  <div id="chat" role="log" aria-live="polite" aria-label="บทสนทนา"></div>
   <div id="status-bar">โมเดลไม่ได้ต่อเน็ตเอง — ระบบรันผ่าน Ollama ในเครื่องเท่านั้น</div>
   <div id="input-bar">
     <textarea id="user-input" rows="2" placeholder="พิมพ์ข้อความ... (Shift+Enter ขึ้นบรรทัดใหม่)"></textarea>
@@ -73,6 +74,16 @@ function addMessage(role, text) {
   return div;
 }
 
+// ลิงก์ไปหน้าเข้าสู่ระบบ (หลังล็อกอินจะกลับมาหน้าแชทเดิม)
+function addLoginLink(parent) {
+  const a = document.createElement('a');
+  a.href = '/login?next=/';
+  a.textContent = 'เข้าสู่ระบบ';
+  a.style.color = 'inherit';
+  a.style.textDecoration = 'underline';
+  parent.append(' ', a);
+}
+
 async function sendMessage() {
   if (busy) return; // กำลังสตรีมคำตอบอยู่ — ไม่ส่งซ้อน (ข้อความในช่องพิมพ์ยังอยู่)
   const text = inputEl.value.trim();
@@ -85,6 +96,8 @@ async function sendMessage() {
   history.push({ role: 'user', content: text });
   const thinking = addMessage('system-note', '(กำลังคิด...)');
   thinking.classList.add('thinking');
+  // กำลังสตรีม: ให้โปรแกรมอ่านจอรอจนจบ แล้วประกาศคำตอบครั้งเดียว (ไม่อ่านทุก token)
+  chatEl.setAttribute('aria-busy', 'true');
 
   try {
     const res = await fetch('/api/chat/stream', {
@@ -101,7 +114,8 @@ async function sendMessage() {
       // สตรีมเปิดไม่ได้ (เช่น 401/429/502) — body เป็น JSON error ก้อนเดียว
       const data = await res.json().catch(() => ({ error: 'HTTP ' + res.status }));
       thinking.remove();
-      addMessage('system-note', '[error] ' + (data.error || res.status));
+      const note = addMessage('system-note', '[error] ' + (data.error || res.status));
+      if (res.status === 401) addLoginLink(note); // session หมดอายุ/ยังไม่ล็อกอิน — มีทางไปเข้าสู่ระบบ
       return;
     }
     // อ่านสตรีม SSE: แต่ละ event ขึ้นต้น "data: " ตามด้วย JSON, คั่น event ด้วย \n\n
@@ -142,6 +156,7 @@ async function sendMessage() {
   } finally {
     busy = false;
     sendBtn.disabled = false;
+    chatEl.removeAttribute('aria-busy');
     inputEl.focus();
   }
 }

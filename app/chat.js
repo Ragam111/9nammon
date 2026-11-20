@@ -22,6 +22,9 @@
   const thread = $("thread");
   const input = $("input");
   const sendBtn = $("send");
+  const DEFAULT_PH = "พิมพ์ข้อความ… (Enter ส่ง, Shift+Enter ขึ้นบรรทัด)";
+  let modeChip = null;     // ป้ายโหมดแก้ไข/แตกสาขา เหนือช่องพิมพ์ (สร้างตอนใช้ครั้งแรก)
+  let editPrefill = null;  // ข้อความที่ ArrowUp ใส่ให้ตอนเข้าโหมดแก้ไข
 
   function esc(s) {
     return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({
@@ -126,6 +129,45 @@
     const el = $("notice");
     el.hidden = !text;
     el.textContent = text || "";
+  }
+  // ป้ายโหมดแก้ไข/แตกสาขา: บอกว่าส่งแล้วจะเกิดอะไร และมีปุ่มยกเลิก
+  function renderMode() {
+    if (!modeChip) {
+      modeChip = document.createElement("div");
+      modeChip.className = "mode-chip";
+      modeChip.setAttribute("role", "status");
+      modeChip.hidden = true;
+      const label = document.createElement("span");
+      label.className = "mode-label";
+      const cancel = document.createElement("button");
+      cancel.type = "button";
+      cancel.className = "mode-cancel";
+      cancel.textContent = "✕ ยกเลิก";
+      cancel.addEventListener("click", cancelMode);
+      modeChip.append(label, cancel);
+      $("composer").parentNode.insertBefore(modeChip, $("composer"));
+    }
+    const text = S.editId
+      ? "กำลังแก้ข้อความเดิม — ส่งเพื่อสร้างเวอร์ชันใหม่"
+      : S.branchFrom
+        ? "กำลังแตกสาขาจากข้อความนี้ — ส่งเพื่อเริ่มสาขาใหม่"
+        : "";
+    modeChip.hidden = !text;
+    modeChip.querySelector(".mode-label").textContent = text;
+  }
+  // ออกจากโหมดแก้ไข/แตกสาขา (ไม่แตะข้อความในช่องพิมพ์)
+  function exitMode() {
+    S.editId = null;
+    S.branchFrom = null;
+    editPrefill = null;
+    input.placeholder = DEFAULT_PH;
+    renderMode();
+  }
+  // ยกเลิกโดยผู้ใช้: ถ้าช่องยังเป็นข้อความที่ ArrowUp ใส่ให้ ก็ล้างทิ้ง ข้อความที่พิมพ์เองจะคงไว้
+  function cancelMode() {
+    if (S.editId && editPrefill !== null && input.value === editPrefill) input.value = "";
+    exitMode();
+    input.focus();
   }
   // Wrap an async handler so a failed api() call shows in #notice instead of only the console.
   function safe(fn) {
@@ -330,7 +372,9 @@
       branch.addEventListener("click", () => {
         S.branchFrom = m.id;
         S.editId = null;
+        editPrefill = null;
         input.placeholder = "ข้อความสาขาใหม่จากข้อความนี้";
+        renderMode();
         input.focus();
       });
       const copy = document.createElement("button");
@@ -360,8 +404,7 @@
     S.conv = data.conversation;
     S.messages = data.messages || [];
     S.start = Math.max(0, S.messages.length - PAGE);
-    S.editId = null;
-    S.branchFrom = null;
+    exitMode();
     $("title").textContent = clip(S.conv.title, 48) || "แชท";
     if (S.conv.persona_id) $("persona").value = String(S.conv.persona_id);
     renderThread();
@@ -515,7 +558,7 @@
     }
     S.streaming = false;
     sendBtn.textContent = "ส่ง";
-    input.placeholder = "พิมพ์ข้อความ… (Enter ส่ง, Shift+Enter ขึ้นบรรทัด)";
+    input.placeholder = DEFAULT_PH;
   }
   async function onSubmit(ev) {
     ev.preventDefault();
@@ -537,7 +580,7 @@
             provider: picked.provider, model: picked.model,
           }),
         });
-        S.editId = null;
+        exitMode();
         if (data.status && data.status !== "ok") setNotice(data.error || "แก้แล้วแต่คำตอบขาดตอน");
         await openConv(S.conv.id);
         return;
@@ -551,7 +594,7 @@
             provider: picked.provider, model: picked.model,
           }),
         });
-        S.branchFrom = null;
+        exitMode();
         if (data.status && data.status !== "ok") setNotice(data.error || "สาขาใหม่ตอบไม่จบ");
         await openConv(S.conv.id);
         return;
@@ -659,12 +702,15 @@
         if (last) {
           S.editId = last.id;
           S.branchFrom = null;
-          input.value = last.content || "";
+          editPrefill = last.content || "";
+          input.value = editPrefill;
+          renderMode();
         }
       }
     });
     document.addEventListener("keydown", (ev) => {
       if (ev.key === "Escape" && S.streaming && S.abort) S.abort.abort();
+      else if (ev.key === "Escape" && (S.editId || S.branchFrom)) cancelMode();
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "k") {
         ev.preventDefault();
         $("search").focus();
@@ -682,8 +728,7 @@
       S.conv = null;
       S.messages = [];
       S.ephemeralLog = [];
-      S.editId = null;
-      S.branchFrom = null;
+      exitMode();
       $("title").textContent = "แชทใหม่";
       setNotice("");
       renderThread();

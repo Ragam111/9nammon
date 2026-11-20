@@ -25,7 +25,7 @@ export function mountNodePanel(root, deps) {
       const card = el("article", { class: "node", "data-port": String(row.port) });
       card.append(
         el("h3", null, "พอร์ต " + row.port + " · " + roleLabel(row.role)),
-        el("span", { class: "chip " + (row.state === "up" ? "ok" : row.state === "checking" ? "warn" : "bad") }, nodeStateLabel(row.state)),
+        el("span", { class: "chip " + (row.state === "up" ? "ok" : row.state === "checking" || row.state === "unknown" ? "warn" : "bad") }, nodeStateLabel(row.state)),
         el("span", { class: "latency" }, latencyText(row)),
       );
       list.append(card);
@@ -53,14 +53,14 @@ export function mountNodePanel(root, deps) {
         status.textContent = "ตรวจแล้ว";
       } else if (plan === "missing") {
         rows = rowsForTransport("missing");
-        status.textContent = "not implemented";
+        status.textContent = "ยังไม่รองรับ";
       } else {
         rows = rowsForTransport("offline");
-        status.textContent = "offline";
+        status.textContent = "ตรวจสถานะไม่ได้";
       }
     } catch (err) {
       rows = rowsForTransport("offline");
-      if (!disposed) status.textContent = "offline";
+      if (!disposed) status.textContent = "ตรวจสถานะไม่ได้";
     }
     if (!disposed) paint();
   }
