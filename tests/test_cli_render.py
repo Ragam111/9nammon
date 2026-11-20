@@ -1,7 +1,7 @@
 """
 test_cli_render.py — CLI แชทต้อง "ไม่ดึงจอ" ตอนผู้ใช้เลื่อนขึ้นอ่านระหว่างโมเดลตอบ (fix/cli-scroll-stable)
 
-ตรวจ: ไม่มี redraw (\\r วนซ้ำ/ANSI cursor/clear screen/alt-screen), flush ถูก throttle,
+ตรวจ: ไม่มี redraw (\r วนซ้ำ/ANSI cursor/clear screen/alt-screen), flush ถูก throttle,
 โหมด quiet ไม่เขียนอะไรระหว่างตอบ, Ctrl+C หยุดคำตอบแต่ไม่ปิดแชท, Ollama ล่มไม่ sys.exit,
 และประวัติแชทบันทึก/โหลดกลับได้
 """
@@ -233,6 +233,42 @@ class SessionLogTest(unittest.TestCase):
         log.enabled = False
         log.append("user", "x")
         self.assertFalse(log.path.exists())
+
+
+class CliRenderExtraTest(unittest.TestCase):
+    def test_resolve_mode_returns_string(self):
+        result = cli_render.resolve_mode(None, env={}, os_name="posix")
+        self.assertIsInstance(result, str)
+
+    def test_resolve_mode_live_on_posix(self):
+        self.assertEqual(cli_render.resolve_mode(None, env={}, os_name="posix"), "live")
+
+    def test_resolve_mode_explicit_quiet(self):
+        self.assertEqual(cli_render.resolve_mode("quiet", env={}, os_name="posix"), "quiet")
+
+    def test_stream_renderer_finish_returns_string(self):
+        out = TTYOut()
+        r = cli_render.StreamRenderer("quiet", out=out, title=lambda t: None)
+        r.start()
+        r.feed("hello world")
+        text = r.finish()
+        self.assertIsInstance(text, str)
+
+    def test_stream_renderer_finish_contains_fed_text(self):
+        out = TTYOut()
+        r = cli_render.StreamRenderer("quiet", out=out, title=lambda t: None)
+        r.start()
+        r.feed("test-token")
+        text = r.finish()
+        self.assertEqual(text, "test-token")
+
+    def test_stream_renderer_interrupted_returns_partial(self):
+        out = TTYOut()
+        r = cli_render.StreamRenderer("live", out=out, title=lambda t: None)
+        r.start()
+        r.feed("partial-answer")
+        text = r.finish(interrupted=True)
+        self.assertEqual(text, "partial-answer")
 
 
 if __name__ == "__main__":

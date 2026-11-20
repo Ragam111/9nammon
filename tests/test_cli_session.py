@@ -274,5 +274,39 @@ class TestLatestSession(_TmpDir):
         self.assertEqual(result, p2)
 
 
+class CliSessionExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_session_log_path_ends_with_jsonl(self):
+        log = cs.SessionLog(self.root)
+        self.assertTrue(str(log.path).endswith(".jsonl"))
+
+    def test_session_log_enabled_by_default(self):
+        log = cs.SessionLog(self.root)
+        self.assertTrue(log.enabled)
+
+    def test_load_messages_returns_list(self):
+        p = self.root / "empty.jsonl"
+        p.touch()
+        self.assertIsInstance(cs.load_messages(p), list)
+
+    def test_session_log_append_creates_file(self):
+        log = cs.SessionLog(self.root, path=self.root / "s.jsonl")
+        log.append("user", "hello")
+        self.assertTrue(log.path.exists())
+
+    def test_load_messages_nonexistent_returns_empty(self):
+        self.assertEqual(cs.load_messages(self.root / "nope.jsonl"), [])
+
+    def test_latest_session_none_when_missing(self):
+        with patch.dict(os.environ, {"LCA_DATA_DIR": str(self.root / "nodata")}, clear=False):
+            self.assertIsNone(cs.latest_session(self.root / "proj"))
+
+
 if __name__ == "__main__":
     unittest.main()
