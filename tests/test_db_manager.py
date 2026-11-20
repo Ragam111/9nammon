@@ -111,5 +111,40 @@ class DbManagerUnitTest(unittest.TestCase):
         self.assertIn("server_events", data["tables"])
 
 
+class DbManagerExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_get_db_status_has_status_key(self):
+        data = db_manager.get_db_status(self.root)
+        self.assertIn("status", data)
+
+    def test_get_db_status_tables_is_list(self):
+        data = db_manager.get_db_status(self.root)
+        self.assertIsInstance(data["tables"], list)
+
+    def test_get_db_status_db_version_is_int(self):
+        data = db_manager.get_db_status(self.root)
+        self.assertIsInstance(data["db_version"], int)
+
+    def test_get_db_status_code_version_is_int(self):
+        data = db_manager.get_db_status(self.root)
+        self.assertIsInstance(data["code_version"], int)
+
+    def test_log_event_no_error_twice(self):
+        db_manager.get_db_status(self.root)
+        db_manager.log_event(self.root, "ev", "first")
+        db_manager.log_event(self.root, "ev", "second")
+
+    def test_get_db_status_called_twice_no_error(self):
+        db_manager.get_db_status(self.root)
+        data2 = db_manager.get_db_status(self.root)
+        self.assertIn("status", data2)
+
+
 if __name__ == "__main__":
     unittest.main()
