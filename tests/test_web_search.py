@@ -81,5 +81,42 @@ class FormatResultsTest(unittest.TestCase):
         self.assertIn("2.", out)
 
 
+class WebSearchExtraTest(unittest.TestCase):
+    def test_max_results_is_int(self):
+        self.assertIsInstance(web_search.MAX_RESULTS, int)
+
+    def test_max_results_positive(self):
+        self.assertGreater(web_search.MAX_RESULTS, 0)
+
+    def test_format_returns_string(self):
+        out = web_search.format_results_for_context([])
+        self.assertIsInstance(out, str)
+
+    @patch("urllib.request.urlopen")
+    @patch("app.web_search.get_key", return_value="brave-key")
+    def test_malformed_json_raises(self, _mock_key, mock_urlopen):
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = b"NOT JSON"
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_resp
+        with self.assertRaises(RuntimeError):
+            web_search.search_web("query", Path("/tmp"))
+
+    def test_format_multiple_results_numbered(self):
+        results = [
+            {"title": "X", "url": "u1", "snippet": "s1"},
+            {"title": "Y", "url": "u2", "snippet": "s2"},
+            {"title": "Z", "url": "u3", "snippet": "s3"},
+        ]
+        out = web_search.format_results_for_context(results)
+        self.assertIn("3.", out)
+
+    def test_format_result_includes_snippet(self):
+        results = [{"title": "T", "url": "u", "snippet": "unique-snip-xyz"}]
+        out = web_search.format_results_for_context(results)
+        self.assertIn("unique-snip-xyz", out)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -66,5 +66,34 @@ class SystemInfoTest(unittest.TestCase):
             self.assertIn("best-effort", info.gpu_note)
 
 
+class SysinfoExtraTest(unittest.TestCase):
+    def test_human_bytes_tib_scale(self):
+        out = sysinfo._human_bytes(1024 ** 4)
+        self.assertIn("TiB", out)
+
+    def test_system_info_to_dict_has_memory_key(self):
+        info = get_system_info()
+        d = info.to_dict()
+        self.assertIn("memory", d)
+
+    def test_system_info_cpu_logical_cores_int(self):
+        info = get_system_info()
+        self.assertIsInstance(info.cpu.logical_cores, int)
+
+    def test_system_info_memory_total_positive(self):
+        info = get_system_info()
+        self.assertGreater(info.memory.total, 0)
+
+    def test_gpu_note_is_string(self):
+        info = get_system_info()
+        self.assertIsInstance(info.gpu_note, str)
+
+    def test_system_info_to_dict_json_serializable(self):
+        import json
+        info = get_system_info()
+        d = info.to_dict()
+        json.dumps(d)  # must not raise
+
+
 if __name__ == "__main__":
     unittest.main()

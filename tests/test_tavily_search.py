@@ -89,5 +89,32 @@ class FormatResultsTest(unittest.TestCase):
         self.assertIn("Tavily", out)
 
 
+class TavilySearchExtraTest(unittest.TestCase):
+    def test_max_results_is_int(self):
+        self.assertIsInstance(tavily_search.MAX_RESULTS, int)
+
+    def test_max_results_positive(self):
+        self.assertGreater(tavily_search.MAX_RESULTS, 0)
+
+    def test_format_returns_string(self):
+        out = tavily_search.format_results_for_context([])
+        self.assertIsInstance(out, str)
+
+    def test_format_numbered(self):
+        results = [{"title": "A", "url": "u", "snippet": "s"}]
+        out = tavily_search.format_results_for_context(results)
+        self.assertIn("1.", out)
+
+    def test_format_multiple_results_all_numbered(self):
+        results = [{"title": f"T{i}", "url": f"u{i}", "snippet": f"s{i}"} for i in range(3)]
+        out = tavily_search.format_results_for_context(results)
+        self.assertIn("3.", out)
+
+    def test_format_empty_returns_string_instance(self):
+        out = tavily_search.format_results_for_context([])
+        self.assertIsInstance(out, str)
+        self.assertGreater(len(out), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
