@@ -1,0 +1,82 @@
+{
+  "title": "ห้องอัดเว็บสดที่ 20 พ.ย. 2026",
+  "source": "studio",
+  "space": "studio",
+  "skill": "rapid-iteration-ecosystem",
+  "version": "0.1.0",
+  "company": "Token LCA",
+  "token": "T-LCA",
+  "repo": "Ragam111/9nammon",
+  "brief": "สตูดิโอเว็บห้าห้อง เดินทีละไฟล์ก่อนแชทจะเป็นแอป แขกใช้ฟรีบนหน้า บัญชีแยกคลัง",
+  "charged": false,
+  "rooms": ["สตูดิโอ", "แชท", "ไฟล์", "ติดตั้ง", "คอนโซล"],
+  "notConnected": [
+    "กุญแจของ Ollama",
+    "รหัสไททันของแอดมิน",
+    "โทเคนเข้าเครื่องใน Dockerfile"
+  ],
+  "ledger": {
+    "name": "T-LCA",
+    "initial": 8000,
+    "deduction": "หัก 1 เมื่อเก็บบทแชทหรือมติสภา",
+    "free": "ม้วนสตูดิโอและคำตอบของแขกไม่หัก"
+  },
+  "steps": [
+    {
+      "n": 1,
+      "layer": "คน",
+      "file": "—",
+      "action": "รับโจทย์จากคน",
+      "detail": "ยังไม่มีไฟล์ โจทย์อยู่กับคน"
+    },
+    {
+      "n": 2,
+      "layer": "ม้วน",
+      "file": "sessions/tape.json",
+      "action": "เปิดม้วนเทป",
+      "detail": "การอัดคือไฟล์จังหวะ ไม่ใช่คลิป"
+    },
+    {
+      "n": 3,
+      "layer": "ฟรอนต์เอนด์",
+      "file": "app/chat.js",
+      "action": "เขียนหน้าที่คนเห็น",
+      "detail": "ห้าห้อง สตูดิโอ แชท ไฟล์ ติดตั้ง คอนโซล คำตอบของแขกอยู่แค่หน้า"
+    },
+    {
+      "n": 4,
+      "layer": "แบ็กเอนด์",
+      "file": "server.py",
+      "action": "ต่อสายตอบทีละคำ",
+      "detail": "chat.js → server.py → auth_backend → space_store → admission → context_manager → model_backend → history_store สตูดิโอเว็บไม่แทน server.py"
+    },
+    {
+      "n": 5,
+      "layer": "คอร์",
+      "file": "skills/rapid-iteration-ecosystem/SKILL.md",
+      "action": "แช่แข็งสกิล",
+      "detail": "Read → Re-check → Fix → Report รอบหน้าเดินตามม้วน ไม่เรียกสมองใหม่"
+    },
+    {
+      "n": 6,
+      "layer": "บัญชี",
+      "file": "app/space_store.py",
+      "action": "แยกพื้นที่",
+      "detail": "ถังส่วนตัวกับถังบริษัท ผูกตัวตนที่ตรวจแล้ว ของแขกไม่ถูกยกเข้าบัญชีทีหลัง"
+    },
+    {
+      "n": 7,
+      "layer": "เหรียญ",
+      "file": "app/usage_store.py",
+      "action": "หักเหรียญ",
+      "detail": "เริ่ม 8000 หัก 1 เมื่อเก็บแชทหรือมติ ม้วนสตูดิโอไม่หัก หมดแล้วไม่เก็บต่อ"
+    },
+    {
+      "n": 8,
+      "layer": "ติดตั้ง",
+      "file": "install/pack.json",
+      "action": "แพ็กเปิดตัว",
+      "detail": "ใบแพ็กไม่ใช่เหรียญและไม่ใช่กุญแจเครื่อง เว็บไม่ย้ายตัวติดตั้ง Windows"
+    }
+  ]
+}
