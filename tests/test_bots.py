@@ -187,5 +187,36 @@ class RunStreamValidationTest(unittest.TestCase):
             bots.run_stream(self.tmp, self.bot["id"], "hello")
 
 
+class BotsExtraTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.skill = skills_store.add(self.tmp, "ExtraSkill", "Be helpful",
+                                      connection_id="conn-x", model="gpt-4")
+
+    def test_bot_id_starts_with_prefix(self):
+        rec = bots.add(self.tmp, "PrefixBot", self.skill["id"])
+        self.assertTrue(rec["id"].startswith("bot-"))
+
+    def test_bot_enabled_true_by_default(self):
+        rec = bots.add(self.tmp, "EnabledBot", self.skill["id"])
+        self.assertTrue(rec["enabled"])
+
+    def test_bot_run_count_zero_on_create(self):
+        rec = bots.add(self.tmp, "CountBot", self.skill["id"])
+        self.assertEqual(rec["run_count"], 0)
+
+    def test_remove_returns_true_for_existing(self):
+        rec = bots.add(self.tmp, "DelBot", self.skill["id"])
+        self.assertTrue(bots.remove(self.tmp, rec["id"]))
+
+    def test_list_bots_returns_list(self):
+        self.assertIsInstance(bots.list_bots(self.tmp), list)
+
+    def test_update_returns_record_with_new_name(self):
+        rec = bots.add(self.tmp, "OldName", self.skill["id"])
+        updated = bots.update(self.tmp, rec["id"], {"name": "NewName"})
+        self.assertEqual(updated["name"], "NewName")
+
+
 if __name__ == "__main__":
     unittest.main()

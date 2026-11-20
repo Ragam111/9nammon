@@ -147,5 +147,34 @@ class ThresholdValidationTest(unittest.TestCase):
             Analyzer(Thresholds(cpu_warn=96.0, cpu_crit=95.0))
 
 
+class AnalyzerExtraTest(unittest.TestCase):
+    def test_findings_is_list(self):
+        report = Analyzer().analyze(make_snapshot())
+        self.assertIsInstance(report.findings, list)
+
+    def test_ok_no_primary_bottleneck(self):
+        report = Analyzer().analyze(make_snapshot())
+        self.assertIsNone(report.primary_bottleneck)
+
+    def test_verdict_is_string(self):
+        report = Analyzer().analyze(make_snapshot())
+        self.assertIsInstance(report.verdict, str)
+
+    def test_cpu_critical_primary_resource(self):
+        snap = make_snapshot(cpu_percent=98.0, per_core=[99.0, 97.0])
+        report = Analyzer().analyze(snap)
+        self.assertEqual(report.primary_bottleneck.resource, "CPU")
+
+    def test_memory_critical_primary_resource(self):
+        snap = make_snapshot(mem_percent=97.0, mem_available=200 * 1024 * 1024)
+        report = Analyzer().analyze(snap)
+        self.assertEqual(report.primary_bottleneck.resource, "MEMORY")
+
+    def test_valid_thresholds_accepted(self):
+        analyzer = Analyzer(Thresholds(cpu_warn=70.0, cpu_crit=90.0))
+        report = analyzer.analyze(make_snapshot())
+        self.assertEqual(report.worst, Severity.OK)
+
+
 if __name__ == "__main__":
     unittest.main()

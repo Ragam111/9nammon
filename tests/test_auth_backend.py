@@ -135,5 +135,38 @@ class AuthenticateConvenienceTest(unittest.TestCase):
             self.assertIsNone(r)
 
 
+class AuthBackendExtraTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+
+    def test_static_role_uppercased(self):
+        b = auth_backend.StaticTokenBackend({"tok": "admin"})
+        r = b.authenticate("tok")
+        self.assertEqual(r["role"], "ADMIN")
+
+    def test_static_multiple_tokens(self):
+        b = auth_backend.StaticTokenBackend({"t1": "CEO", "t2": "USER"})
+        self.assertEqual(b.authenticate("t1")["role"], "CEO")
+        self.assertEqual(b.authenticate("t2")["role"], "USER")
+
+    def test_local_loopback_role_is_ceo(self):
+        b = auth_backend.LocalAuthBackend(self.tmp, master_token=None)
+        r = b.authenticate(None, client_ip="127.0.0.1")
+        self.assertEqual(r["role"], "CEO")
+
+    def test_local_master_token_source(self):
+        b = auth_backend.LocalAuthBackend(self.tmp, master_token="secret")
+        r = b.authenticate("secret")
+        self.assertEqual(r["source"], "master_token")
+
+    def test_convenience_function_loopback(self):
+        r = auth_backend.authenticate(self.tmp, None, client_ip="127.0.0.1")
+        self.assertEqual(r["role"], "CEO")
+
+    def test_get_auth_backend_default_is_local(self):
+        b = auth_backend.get_auth_backend(self.tmp)
+        self.assertIsInstance(b, auth_backend.LocalAuthBackend)
+
+
 if __name__ == "__main__":
     unittest.main()

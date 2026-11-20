@@ -311,3 +311,30 @@ class TestLikePattern:
     def test_escape_order_backslash_first(self):
         result = like_pattern("\\%")
         assert result == "%\\\\\\%%"
+
+
+# ---------------------------------------------------------------------------
+# ChatSearchExtraTest
+# ---------------------------------------------------------------------------
+
+class ChatSearchExtraTest:
+    def test_fold_mixed_case(self):
+        assert _fold("HeLLo") == "hello"
+
+    def test_seg_single_latin_word(self):
+        assert seg("hello") == "hello"
+
+    def test_fts_query_ascii_returns_string(self):
+        result = fts_query("hello")
+        assert isinstance(result, str)
+
+    def test_like_pattern_plain_text(self):
+        assert like_pattern("test") == "%test%"
+
+    def test_snippet_match_wrapped_in_brackets(self):
+        result = snippet("hello world", "hello")
+        assert "[hello]" in result
+
+    def test_seg_pure_digits_kept(self):
+        result = seg("12345")
+        assert "12345" in result
