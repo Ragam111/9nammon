@@ -34,6 +34,31 @@ class EvaluateTest(unittest.TestCase):
         keys = {x["key"] for x in f}
         self.assertEqual(keys, {"ollama", "ram", "cluster"})
 
+    def test_evaluate_returns_list(self):
+        result = wd.evaluate(ollama_up=True, ram_pressure=False)
+        self.assertIsInstance(result, list)
+
+    def test_cluster_down_zero_no_cluster_finding(self):
+        f = wd.evaluate(ollama_up=True, ram_pressure=False, cluster_down=0)
+        keys = [x["key"] for x in f]
+        self.assertNotIn("cluster", keys)
+
+    def test_critical_and_warning_are_strings(self):
+        self.assertIsInstance(wd.CRITICAL, str)
+        self.assertIsInstance(wd.WARNING, str)
+
+    def test_finding_has_required_keys(self):
+        findings = wd.evaluate(ollama_up=False, ram_pressure=True, cluster_down=1)
+        for f in findings:
+            self.assertIn("key", f)
+            self.assertIn("level", f)
+            self.assertIn("msg", f)
+
+    def test_ollama_msg_is_string(self):
+        f = wd.evaluate(ollama_up=False, ram_pressure=False)
+        self.assertIsInstance(f[0]["msg"], str)
+        self.assertGreater(len(f[0]["msg"]), 0)
+
 
 class _FakeClock:
     def __init__(self): self.t = 0.0
@@ -83,6 +108,36 @@ class WatchdogTickTest(unittest.TestCase):
         w = self._wd([{"key": "ram", "level": "warning", "msg": "ตึง"}])
         w.tick()
         self.assertEqual(w.last_findings[0]["key"], "ram")
+
+    def test_tick_returns_list(self):
+        w = self._wd([])
+        result = w.tick()
+        self.assertIsInstance(result, list)
+
+    def test_last_findings_starts_empty(self):
+        w = self._wd([{"key": "x", "level": "warning", "msg": "y"}])
+        self.assertIsInstance(w.last_findings, list)
+
+    def test_last_findings_updated_to_empty_when_recovered(self):
+        findings = [{"key": "ollama", "level": "critical", "msg": "ล่ม"}]
+        w = wd.Watchdog(check_fn=lambda: list(findings),
+                        notify_fn=lambda lvl, msg: None,
+                        clock=self.clock)
+        w.tick()
+        self.assertEqual(len(w.last_findings), 1)
+        findings.clear()
+        self.clock.t = 400.0
+        w.tick()
+        self.assertEqual(w.last_findings, [])
+
+    def test_multiple_distinct_keys_all_notified(self):
+        findings = [
+            {"key": "ollama", "level": "critical", "msg": "ล่ม"},
+            {"key": "ram", "level": "warning", "msg": "ตึง"},
+        ]
+        w = self._wd(findings)
+        w.tick()
+        self.assertEqual(len(self.sent), 2)
 
 
 if __name__ == "__main__":
