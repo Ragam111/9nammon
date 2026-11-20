@@ -158,3 +158,63 @@ class LanDiscoveryUnitTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LanDiscoveryApiExtraTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        model_backend.generate = (
+            lambda project_root, model, messages, num_ctx=8192, options=None: f"MODEL={model}"
+        )
+        cls._orig_discover = lan_discovery.discover
+        lan_discovery.discover = _mock_discover
+
+    @classmethod
+    def tearDownClass(cls):
+        model_backend.generate = _ORIG_GENERATE
+        lan_discovery.discover = cls._orig_discover
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.httpd, self.port, self.session_token = _make_server(self.root)
+
+    def tearDown(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        self._tmp.cleanup()
+
+    def _get(self, path, token=None):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        hdrs = {}
+        if token:
+            hdrs["X-Auth-Token"] = token
+        conn.request("GET", path, headers=hdrs)
+        resp = conn.getresponse()
+        body = resp.read().decode("utf-8")
+        conn.close()
+        return resp.status, json.loads(body) if body else {}
+
+    def test_discover_200_with_token(self):
+        st, _ = self._get("/api/nodes/discover", token=self.session_token)
+        self.assertEqual(st, 200)
+
+    def test_discover_response_is_dict(self):
+        _, data = self._get("/api/nodes/discover", token=self.session_token)
+        self.assertIsInstance(data, dict)
+
+    def test_discover_nodes_is_list(self):
+        _, data = self._get("/api/nodes/discover", token=self.session_token)
+        self.assertIsInstance(data["nodes"], list)
+
+    def test_discover_scanned_matches_fake(self):
+        _, data = self._get("/api/nodes/discover", token=self.session_token)
+        self.assertEqual(data["scanned"], 255)
+
+    def test_discover_no_token_401(self):
+        st, _ = self._get("/api/nodes/discover")
+        self.assertIn(st, (401, 403))
+
+    def test_discover_base_ip_is_string(self):
+        _, data = self._get("/api/nodes/discover", token=self.session_token)
+        self.assertIsInstance(data["base_ip"], str)
