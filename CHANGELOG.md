@@ -4,6 +4,15 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [0.3.6] — 2026-11-05
+
+### Tests
+- test_support_store: 6 → 15 tests (ticket fields, get-nonexistent, list-empty, VALID_* constants)
+- test_usage_store: 6 → 14 tests (required fields, used_at, multi-record, tier filter, cost type)
+- test_folder_trust: 7 → 14 tests (bool return, idempotent, EOF handling, uppercase Y accepted)
+- test_agent_jobs: 7 → 15 tests (required fields, whitespace rejection, list_jobs, stats keys)
+- test_cluster_forward: 7 → 12 tests (bool return, enable/disable cycle, ForwardError, dict keys)
+
 ## [0.3.4] — 2026-11-05 (Test Coverage — router unit tests)
 
 ### Added

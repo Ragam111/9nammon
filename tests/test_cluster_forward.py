@@ -1,6 +1,15 @@
 """test_cluster_forward.py — forward งาน chat ไปทำที่ node อื่นจริง + fallback local เมื่อพลาด
 
 มีทั้ง unit (is_enabled/pick_target/forward_chat) และ integration (hub → node สองเซิร์ฟเวอร์จริง)
+
+Covers:
+  ForwardUnitTest       — disabled_by_default, enabled_when_config_set,
+                          pick_target_none_when_no_nodes, forward_chat_http_error_raises
+  ForwardIntegrationTest — hub_forwards_chat_to_node, hub_streams_from_node,
+                           fallback_local_when_node_unreachable
+  ForwardMetaTest       — is_enabled returns bool, is_disabled after set false,
+                          ForwardError is Exception, pick_target returns dict with node key,
+                          forward_error has message, is_enabled after enable and disable
 """
 
 import http.client
@@ -17,11 +26,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import server  # noqa: E402
 from app import cluster_forward, cluster_store, config_manager  # noqa: E402
-
-
-class _StubNode(unittest.TestCase):
-    """node ปลายทางจิ๋ว: /api/chat คืน reply, /api/chat/stream คืน SSE"""
-    pass
 
 
 class ForwardUnitTest(unittest.TestCase):
@@ -41,10 +45,9 @@ class ForwardUnitTest(unittest.TestCase):
 
     def test_pick_target_none_when_no_nodes(self):
         res = cluster_forward.pick_target(self.root, rr_index=0)
-        self.assertIsNone(res["node"])   # ไม่มี node → local
+        self.assertIsNone(res["node"])
 
     def test_forward_chat_http_error_raises(self):
-        # node ปลายทางที่ต่อไม่ติดจริง → ForwardError (ผู้เรียก fallback ได้)
         with self.assertRaises(cluster_forward.ForwardError):
             cluster_forward.forward_chat("http://127.0.0.1:9", "tok",
                                          {"messages": []}, timeout=0.5)
@@ -54,8 +57,6 @@ class ForwardIntegrationTest(unittest.TestCase):
     """hub รับ /api/chat → forward ไป node จริง → เอา reply กลับมา"""
 
     def setUp(self):
-        # node คำนวณ: mock model_backend ให้คืนคำตอบแน่นอน (ไม่ต้องมี Ollama)
-        # เก็บ patcher ไว้ stop เฉพาะตัวที่ start (ไม่ใช้ stopall กันรั่วไปไฟล์อื่น)
         self._patchers = [
             mock.patch.object(server.model_backend, "generate",
                               lambda root, model, messages, num_ctx=8192: "ตอบจาก-NODE"),
@@ -66,14 +67,12 @@ class ForwardIntegrationTest(unittest.TestCase):
         ]
         for p in self._patchers:
             p.start()
-        # node ใช้ token เดียวกับที่ hub ส่งตอน forward; hub ใช้ token คนละตัวให้ผู้เรียก
         self._n = tempfile.TemporaryDirectory(); self._h = tempfile.TemporaryDirectory()
         self.node_root = Path(self._n.name); self.hub_root = Path(self._h.name)
         self.node = ThreadingHTTPServer(("127.0.0.1", 0), server.make_handler(self.node_root, "huptok"))
         self.node_port = self.node.server_address[1]
         threading.Thread(target=self.node.serve_forever, daemon=True).start()
         self.node_url = f"http://127.0.0.1:{self.node_port}"
-        # ตั้ง hub: เปิด forward + token + ลงทะเบียน node
         config_manager.set_key(self.hub_root, "CLUSTER_FORWARD_ENABLED", "true")
         config_manager.set_key(self.hub_root, "CLUSTER_FORWARD_TOKEN", "huptok")
         cluster_store.add_node(self.hub_root, "node1", self.node_url)
@@ -105,7 +104,7 @@ class ForwardIntegrationTest(unittest.TestCase):
                              {"messages": [{"role": "user", "content": "hi"}]})
         self.assertEqual(st, 200)
         data = json.loads(raw)
-        self.assertEqual(data["reply"], "ตอบจาก-NODE")   # คำตอบมาจาก node ปลายทาง
+        self.assertEqual(data["reply"], "ตอบจาก-NODE")
         self.assertEqual(data.get("served_by"), "node1")
 
     def test_hub_streams_from_node(self):
@@ -125,18 +124,53 @@ class ForwardIntegrationTest(unittest.TestCase):
                 evt = json.loads(block[5:].strip())
                 if "delta" in evt:
                     deltas.append(evt["delta"])
-        self.assertEqual("".join(deltas), "ตอบ-สตรีม")   # relay มาจาก node
+        self.assertEqual("".join(deltas), "ตอบ-สตรีม")
         self.assertIn('"done": true', body)
 
     def test_fallback_local_when_node_unreachable(self):
-        # node ถูกลงทะเบียนแต่ "ล่ม" (ต่อไม่ติด) → hub ต้องทำ local ไม่ใช่โยน error ให้ผู้ใช้
         self.node.shutdown(); self.node.server_close()
         st, raw = self._post(self.hub_port, "/api/chat",
                              {"messages": [{"role": "user", "content": "hi"}]})
         self.assertEqual(st, 200)
         data = json.loads(raw)
-        self.assertEqual(data["reply"], "ตอบจาก-NODE")   # local ก็ใช้ mock ตัวเดียวกัน
-        self.assertIsNone(data.get("served_by"))          # ไม่มี served_by = ทำที่ hub เอง
+        self.assertEqual(data["reply"], "ตอบจาก-NODE")
+        self.assertIsNone(data.get("served_by"))
+
+
+class ForwardMetaTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_is_enabled_returns_bool(self):
+        result = cluster_forward.is_enabled(self.root)
+        self.assertIsInstance(result, bool)
+
+    def test_is_disabled_after_enable_then_disable(self):
+        config_manager.set_key(self.root, "CLUSTER_FORWARD_ENABLED", "true")
+        self.assertTrue(cluster_forward.is_enabled(self.root))
+        config_manager.set_key(self.root, "CLUSTER_FORWARD_ENABLED", "")
+        self.assertFalse(cluster_forward.is_enabled(self.root))
+
+    def test_forward_error_is_exception(self):
+        self.assertTrue(issubclass(cluster_forward.ForwardError, Exception))
+
+    def test_forward_error_carries_message(self):
+        try:
+            cluster_forward.forward_chat("http://127.0.0.1:9", "tok",
+                                         {"messages": []}, timeout=0.5)
+        except cluster_forward.ForwardError as e:
+            self.assertGreater(len(str(e)), 0)
+        else:
+            self.fail("ต้อง raise ForwardError")
+
+    def test_pick_target_returns_dict_with_node_key(self):
+        result = cluster_forward.pick_target(self.root, rr_index=0)
+        self.assertIsInstance(result, dict)
+        self.assertIn("node", result)
 
 
 if __name__ == "__main__":
