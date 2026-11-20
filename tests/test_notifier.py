@@ -101,5 +101,44 @@ class NotifierTest(unittest.TestCase):
         self.assertEqual(res["carrier-pigeon"], "error: unknown channel")
 
 
+class NotifierExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_notify_returns_dict(self):
+        result = notifier.notify(self.root, "event", "some text")
+        self.assertIsInstance(result, dict)
+
+    def test_notify_no_config_has_discord_key(self):
+        result = notifier.notify(self.root, "event", "text")
+        self.assertIn("discord", result)
+
+    def test_notify_no_config_has_email_key(self):
+        result = notifier.notify(self.root, "event", "text")
+        self.assertIn("email", result)
+
+    def test_notify_channels_single_discord_no_email_key(self):
+        # when only discord requested, email key should not appear
+        result = notifier.notify(self.root, "e", "t", channels=("discord",))
+        self.assertNotIn("email", result)
+
+    def test_discord_sent_calls_urlopen_once(self):
+        config_manager.set_key(self.root, "DISCORD_WEBHOOK_URL",
+                               "https://discord.test/webhooks/xxx")
+        import urllib.error
+        with mock.patch("urllib.request.urlopen",
+                        return_value=_FakeResp(204)) as m:
+            notifier.notify(self.root, "deploy", "shipped", channels=("discord",))
+        m.assert_called_once()
+
+    def test_notify_empty_text_raises_value_error(self):
+        with self.assertRaises(ValueError):
+            notifier.notify(self.root, "evt", "  ")
+
+
 if __name__ == "__main__":
     unittest.main()

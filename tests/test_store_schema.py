@@ -108,5 +108,46 @@ class LoadDumpTest(unittest.TestCase):
         self.assertEqual(recs, [])
 
 
+class StoreSchemaExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.path = Path(self._tmp.name) / "extra.json"
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_baseline_version_is_positive_int(self):
+        self.assertIsInstance(store_schema.BASELINE_VERSION, int)
+        self.assertGreaterEqual(store_schema.BASELINE_VERSION, 1)
+
+    def test_dumps_is_valid_json_string(self):
+        result = store_schema.dumps([{"x": 1}], 1)
+        self.assertIsInstance(result, str)
+        parsed = json.loads(result)
+        self.assertIsInstance(parsed, dict)
+
+    def test_dumps_records_roundtrip(self):
+        records = [{"key": "value", "num": 42}]
+        dumped = store_schema.dumps(records, 2)
+        obj = json.loads(dumped)
+        self.assertEqual(obj["records"], records)
+
+    def test_migrate_returns_tuple_of_two(self):
+        result = store_schema.migrate([], 1, 1, [])
+        self.assertIsInstance(result, tuple)
+        self.assertEqual(len(result), 2)
+
+    def test_detect_empty_list_returns_empty_records(self):
+        v, recs = store_schema.detect([])
+        self.assertEqual(recs, [])
+        self.assertIsInstance(v, int)
+
+    def test_load_missing_path_returns_empty_list(self):
+        missing = Path(self._tmp.name) / "nonexistent.json"
+        recs, upgraded = store_schema.load(missing, 1, [])
+        self.assertEqual(recs, [])
+        self.assertFalse(upgraded)
+
+
 if __name__ == "__main__":
     unittest.main()

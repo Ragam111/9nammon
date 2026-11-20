@@ -105,5 +105,35 @@ class MessagesTest(unittest.TestCase):
         self.assertEqual(len(msgs), 2)
 
 
+class AgentHarnessExtraTest(unittest.TestCase):
+    def test_max_task_chars_is_positive_int(self):
+        self.assertIsInstance(harness.MAX_TASK_CHARS, int)
+        self.assertGreater(harness.MAX_TASK_CHARS, 0)
+
+    def test_default_model_is_string(self):
+        self.assertIsInstance(harness.DEFAULT_MODEL, str)
+        self.assertTrue(len(harness.DEFAULT_MODEL) > 0)
+
+    def test_messages_returns_list_len_2_no_extra(self):
+        msgs = harness._messages("ceo", "some task")
+        self.assertIsInstance(msgs, list)
+        self.assertEqual(len(msgs), 2)
+
+    def test_messages_system_role_first(self):
+        msgs = harness._messages("elon", "build a rocket")
+        self.assertEqual(msgs[0]["role"], "system")
+
+    @patch("app.model_backend.generate", return_value="test-reply")
+    def test_ask_reply_is_string(self, mock_gen):
+        result = harness.ask("/tmp", "ceo", "some task")
+        self.assertIsInstance(result["reply"], str)
+
+    @patch("app.model_backend.generate", return_value="opinion")
+    def test_council_opinions_is_list(self, mock_gen):
+        result = harness.council("/tmp", "strategy", personas_ids=["elon", "jobs"])
+        self.assertIsInstance(result["opinions"], list)
+        self.assertEqual(len(result["opinions"]), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

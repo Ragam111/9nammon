@@ -101,5 +101,33 @@ class WorkerTest(unittest.TestCase):
         self.assertTrue(rec["ok"])
 
 
+class AgentWorkerExtraTest(unittest.TestCase):
+    def test_max_recent_is_positive_int(self):
+        self.assertIsInstance(stats_mod.MAX_RECENT, int)
+        self.assertGreater(stats_mod.MAX_RECENT, 0)
+
+    def test_stats_summary_returns_dict(self):
+        s = stats_mod.Stats()
+        self.assertIsInstance(s.summary(), dict)
+
+    def test_stats_summary_has_count_key(self):
+        s = stats_mod.Stats()
+        self.assertIn("count", s.summary())
+
+    def test_stats_recent_returns_list(self):
+        s = stats_mod.Stats()
+        self.assertIsInstance(s.recent(10), list)
+
+    def test_worker_tick_returns_none_no_jobs(self):
+        w = worker.Worker(claim_fn=lambda: None, clock=_Clock())
+        result = w.tick()
+        self.assertIsNone(result)
+
+    def test_worker_has_stats_attribute(self):
+        w = worker.Worker(claim_fn=lambda: None, clock=_Clock())
+        self.assertTrue(hasattr(w, "stats"))
+        self.assertIsInstance(w.stats.summary(), dict)
+
+
 if __name__ == "__main__":
     unittest.main()
