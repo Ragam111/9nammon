@@ -108,5 +108,25 @@ class FilePersistenceTest(unittest.TestCase):
         self.assertIsNone(s.path)
 
 
+class AgentStatsExtraTest(unittest.TestCase):
+    def test_max_recent_is_positive(self):
+        self.assertGreater(MAX_RECENT, 0)
+
+    def test_max_recent_is_int(self):
+        self.assertIsInstance(MAX_RECENT, int)
+
+    def test_stats_instance_created(self):
+        self.assertIsInstance(Stats(), Stats)
+
+    def test_summary_has_count_key(self):
+        self.assertIn("count", Stats().summary())
+
+    def test_summary_has_success_rate(self):
+        self.assertIn("success_rate", Stats().summary())
+
+    def test_recent_returns_list_type(self):
+        self.assertIsInstance(Stats().recent(), list)
+
+
 if __name__ == "__main__":
     unittest.main()
