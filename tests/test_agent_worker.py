@@ -101,5 +101,39 @@ class WorkerTest(unittest.TestCase):
         self.assertTrue(rec["ok"])
 
 
+class AgentWorkerExtraTest(unittest.TestCase):
+    def test_run_one_returns_dict(self):
+        with mock.patch.object(core, "run",
+                               lambda *a, **k: {"final": "ok", "steps": [{}, {}], "stopped_reason": "final"}):
+            rec = worker.run_one(".", "task", ".", clock=_Clock())
+        self.assertIsInstance(rec, dict)
+
+    def test_run_one_has_ok_key(self):
+        with mock.patch.object(core, "run",
+                               lambda *a, **k: {"final": "done", "steps": [], "stopped_reason": "final"}):
+            rec = worker.run_one(".", "task", ".", clock=_Clock())
+        self.assertIn("ok", rec)
+
+    def test_run_one_duration_non_negative(self):
+        with mock.patch.object(core, "run",
+                               lambda *a, **k: {"final": "ok", "steps": [], "stopped_reason": "final"}):
+            rec = worker.run_one(".", "task", ".", clock=_Clock())
+        self.assertGreaterEqual(rec["duration_s"], 0)
+
+    def test_worker_has_stats_attribute(self):
+        w = worker.Worker(claim_fn=lambda: None, clock=_Clock())
+        self.assertTrue(hasattr(w, "stats"))
+
+    def test_worker_initial_count_zero(self):
+        w = worker.Worker(claim_fn=lambda: None, clock=_Clock())
+        self.assertEqual(w.stats.summary()["count"], 0)
+
+    def test_run_one_steps_non_negative(self):
+        with mock.patch.object(core, "run",
+                               lambda *a, **k: {"final": "ok", "steps": [{}, {}], "stopped_reason": "final"}):
+            rec = worker.run_one(".", "task", ".", clock=_Clock())
+        self.assertGreaterEqual(rec["steps"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()

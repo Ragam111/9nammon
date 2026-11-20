@@ -187,5 +187,36 @@ class BuildRegistryTest(unittest.TestCase):
         self.assertNotIn("call_connection", reg)
 
 
+class AgentToolsExtraTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.sb = Sandbox(self.tmp)
+
+    def test_tool_error_is_exception(self):
+        self.assertTrue(issubclass(ToolError, Exception))
+
+    def test_max_output_chars_is_positive(self):
+        self.assertGreater(MAX_OUTPUT_CHARS, 0)
+
+    def test_max_output_chars_is_int(self):
+        self.assertIsInstance(MAX_OUTPUT_CHARS, int)
+
+    def test_ssrf_allows_public_https(self):
+        try:
+            _assert_public_url("https://example.com/data")
+        except ToolError:
+            self.fail("example.com should be allowed by SSRF guard")
+
+    def test_registry_values_are_callable(self):
+        reg = build_registry(self.sb)
+        for name, fn in reg.items():
+            self.assertTrue(callable(fn), f"{name} should be callable")
+
+    def test_sandbox_read_returns_string(self):
+        Path(self.tmp, "s.txt").write_text("hello", encoding="utf-8")
+        result = self.sb.read_file("s.txt")
+        self.assertIsInstance(result, str)
+
+
 if __name__ == "__main__":
     unittest.main()

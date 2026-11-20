@@ -135,5 +135,36 @@ class AuthenticateConvenienceTest(unittest.TestCase):
             self.assertIsNone(r)
 
 
+class AuthBackendExtraTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.backend = auth_backend.LocalAuthBackend(self.tmp, master_token="master-extra")
+
+    def test_local_auth_backend_instantiation(self):
+        self.assertIsInstance(self.backend, auth_backend.LocalAuthBackend)
+
+    def test_local_auth_result_is_dict(self):
+        result = self.backend.authenticate("master-extra")
+        self.assertIsInstance(result, dict)
+
+    def test_local_auth_result_has_role_key(self):
+        result = self.backend.authenticate("master-extra")
+        self.assertIn("role", result)
+
+    def test_local_auth_result_has_source_key(self):
+        result = self.backend.authenticate("master-extra")
+        self.assertIn("source", result)
+
+    def test_static_backend_result_has_role_key(self):
+        b = auth_backend.StaticTokenBackend({"t": "CEO"})
+        result = b.authenticate("t")
+        self.assertIn("role", result)
+
+    def test_static_backend_result_has_source_key(self):
+        b = auth_backend.StaticTokenBackend({"t": "CEO"})
+        result = b.authenticate("t")
+        self.assertIn("source", result)
+
+
 if __name__ == "__main__":
     unittest.main()
