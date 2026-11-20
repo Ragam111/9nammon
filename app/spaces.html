@@ -7,18 +7,18 @@
 <link rel="stylesheet" href="/app.css">
 <style>
   .layout { display:flex; gap:12px; height:calc(100vh - 80px); }
-  .sidebar { width:260px; flex:none; overflow-y:auto; border-right:1px solid #2a2e37; padding-right:10px; }
+  .sidebar { width:260px; flex:none; overflow-y:auto; border-right:1px solid var(--lca-line); padding-right:10px; }
   .main { flex:1; display:flex; flex-direction:column; min-width:0; }
   .space-item { padding:8px 10px; border-radius:8px; cursor:pointer; margin-bottom:4px; }
-  .space-item:hover { background:#22262f; }
-  .space-item.active { background:#2563eb; color:#fff; }
+  .space-item:hover { background:var(--lca-surface-2); }
+  .space-item.active { background:var(--lca-accent); color:var(--lca-accent-fg); }
   .badge { font-size:11px; opacity:.7; margin-left:6px; }
   #items { flex:1; overflow-y:auto; padding:10px 0; display:flex; flex-direction:column; gap:8px; }
-  .item { max-width:80%; padding:8px 12px; border-radius:10px; background:#22262f; border:1px solid #2a2e37; }
+  .item { max-width:80%; padding:8px 12px; border-radius:var(--lca-r); background:var(--lca-surface-2); border:1px solid var(--lca-line); }
   .item .who { font-size:11px; opacity:.6; margin-bottom:2px; }
-  .composer { display:flex; gap:8px; padding-top:8px; border-top:1px solid #2a2e37; }
+  .composer { display:flex; gap:8px; padding-top:8px; border-top:1px solid var(--lca-line); }
   .composer input { flex:1; }
-  .err { color:#e5534b; margin:6px 0; display:none; }
+  .err { color:var(--lca-bad); margin:6px 0; display:none; }
   .newspace { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
   .newspace input { flex:1; min-width:100px; }
 </style>

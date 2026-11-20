@@ -4,15 +4,24 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>LCA — Console</title>
+  <link rel="stylesheet" href="/app.css" />
   <style>
+    /* Local names map onto the shared --lca-* palette (app.css), so the console
+       follows the same accent and light/dark scheme as the other pages. */
     :root{
-      --bg:#0a0a0b; --panel:#131316; --panel2:#1a1a1f; --line:#26262c;
-      --text:#e7e7ea; --muted:#9aa0ac; --accent:#d8e24a; --accent2:#2563eb;
-      --ok:#22c55e; --bad:#e5534b; --radius:12px;
+      --bg:var(--lca-bg); --panel:var(--lca-surface); --panel2:var(--lca-surface-2); --line:var(--lca-line);
+      --text:var(--lca-fg); --muted:var(--lca-muted); --accent:var(--lca-accent); --accent-fg:var(--lca-accent-fg);
+      --ok:var(--lca-ok); --bad:var(--lca-bad); --radius:12px;
+      /* kind pills (openai / ollama) have no shared token: light values here, dark below */
+      --kind-openai:#1f6391; --kind-ollama:#7444b0;
     }
+    @media (prefers-color-scheme: dark){
+      :root:not([data-theme="light"]){ --kind-openai:#7dd3fc; --kind-ollama:#d8b4fe; }
+    }
+    :root[data-theme="dark"]{ --kind-openai:#7dd3fc; --kind-ollama:#d8b4fe; }
     *{box-sizing:border-box}
     body{margin:0;background:var(--bg);color:var(--text);
-      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans Thai",sans-serif;
+      font-family:var(--lca-sans);
       font-size:14px;line-height:1.5}
     a{color:var(--accent);text-decoration:none}
     .app{display:flex;min-height:100vh}
@@ -21,7 +30,7 @@
       padding:18px 12px;position:sticky;top:0;height:100vh;overflow:auto}
     .brand{display:flex;align-items:center;gap:8px;font-weight:700;padding:4px 8px 16px}
     .brand .dot{width:16px;height:16px;border-radius:50%;
-      background:conic-gradient(from 0deg,var(--accent),#7dd3fc,var(--accent))}
+      background:conic-gradient(from 0deg,var(--accent),var(--kind-openai),var(--accent))}
     .brand small{color:var(--muted);font-weight:500}
     .navlbl{color:var(--muted);font-size:11px;letter-spacing:.08em;
       text-transform:uppercase;padding:14px 10px 6px}
@@ -31,7 +40,7 @@
     .nav button:hover{background:var(--panel2)}
     .nav button.active{background:var(--panel2);color:var(--accent)}
     .nav button .ic{width:18px;text-align:center;opacity:.8}
-    .nav .count{margin-left:auto;background:#000;border:1px solid var(--line);
+    .nav .count{margin-left:auto;background:var(--bg);border:1px solid var(--line);
       border-radius:20px;padding:0 8px;font-size:11px;color:var(--muted)}
     /* content */
     .main{flex:1;min-width:0;padding:22px 26px;max-width:1100px}
@@ -42,11 +51,14 @@
       border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px;
       font-family:inherit;width:100%}
     textarea{min-height:90px;resize:vertical}
-    input::placeholder,textarea::placeholder{color:#6b6b74}
+    input::placeholder,textarea::placeholder{color:var(--muted)}
     button.btn{all:unset;cursor:pointer;background:var(--panel2);border:1px solid var(--line);
       border-radius:8px;padding:8px 14px;font-size:13px;color:var(--text);text-align:center}
-    button.btn:hover{border-color:#3a3a44}
-    button.btn.primary{background:var(--accent);color:#1a1a0a;border-color:var(--accent);font-weight:600}
+    button.btn:hover{border-color:var(--accent)}
+    button.btn.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent);font-weight:600}
+    /* all:unset on .nav button / button.btn also wipes the focus ring (and beats the
+       shared app.css :focus-visible rule on specificity) -> restore it for keyboard users */
+    .nav button:focus-visible,button.btn:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
     button.btn.sm{padding:5px 10px;font-size:12px}
     button.btn.danger{color:var(--bad)}
     .muted{color:var(--muted)}
@@ -66,15 +78,15 @@
     th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line);vertical-align:top}
     th{color:var(--muted);font-weight:500;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em}
     .pill{display:inline-block;padding:1px 8px;border-radius:20px;font-size:11px;border:1px solid var(--line)}
-    .pill.on{color:var(--ok);border-color:#1f3d2a}
+    .pill.on{color:var(--ok);border-color:var(--ok)}
     .pill.off{color:var(--muted)}
-    .pill.openai{color:#7dd3fc;border-color:#1e3a44}
-    .pill.ollama{color:#d8b4fe;border-color:#3a2a44}
+    .pill.openai{color:var(--kind-openai);border-color:currentColor}
+    .pill.ollama{color:var(--kind-ollama);border-color:currentColor}
     .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
     .tile{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:14px}
     .tile .n{font-size:26px;font-weight:700}
     .tile .l{color:var(--muted);font-size:12px}
-    .out{background:#000;border:1px solid var(--line);border-radius:8px;padding:12px;
+    .out{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px;
       white-space:pre-wrap;font-size:13px;min-height:40px;margin-top:10px}
     code{background:var(--panel2);padding:1px 6px;border-radius:5px;font-size:12px}
     @media(max-width:720px){
@@ -595,7 +607,7 @@
         if(s.error) return "<div class='muted'>["+(i+1)+"] parse error — ลองใหม่</div>";
         return "<div style='margin-bottom:6px'><b>["+(i+1)+"]</b> "+esc(s.thought||"")+
           "<br><span class='muted'>→ "+esc(s.tool||"")+"("+esc(JSON.stringify(s.args||{}))+")</span>"+
-          "<br><span style='color:#9aa0ac'>"+esc((s.observation||"").slice(0,300))+"</span></div>";
+          "<br><span style='color:var(--muted)'>"+esc((s.observation||"").slice(0,300))+"</span></div>";
       }).join("");
       html += "<div style='border-top:1px solid var(--line);margin-top:8px;padding-top:8px'><b>ผลสรุป:</b><br>"+esc(out)+"</div>";
       $("run-out").innerHTML = html;

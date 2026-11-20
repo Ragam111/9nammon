@@ -84,6 +84,7 @@
       <p style="color:#9aa0ac;font-size:13px;margin:0 0 8px">
         agent เสนอเขียนไฟล์/รันคำสั่งที่ย้อนไม่ได้ — จะไม่ลงมือจนกว่าจะกดอนุมัติที่นี่</p>
       <p id="approvals-err" class="err" style="display:none"></p>
+      <p id="approvals-msg" class="muted" role="status" style="display:none"></p>
       <div id="approvals-list"></div>
     </section>
     <section id="cluster-wrap" class="card" style="margin-bottom:12px" hidden>
@@ -399,13 +400,20 @@
       $('features-wrap').hidden = false;
     }
     // ---------- Agent approvals (P6) ----------
+    let approvalsById = {};
+    // Plain-text summary of what the agent will do (used in the list and in the confirm dialog).
+    function describeApproval(a) {
+      const d = a.detail || {};
+      return a.kind === 'run_command'
+        ? ('รันคำสั่ง: ' + (d.command || ''))
+        : ('เขียนไฟล์: ' + (d.path || '') + ' (' + ((d.content || '').length) + ' ตัวอักษร)');
+    }
     function renderApprovals(pending) {
+      approvalsById = {};
+      (pending || []).forEach(a => { approvalsById[a.id] = a; });
       if (!pending || !pending.length) { $('approvals-list').innerHTML = '<p style="color:#9aa0ac">ไม่มีคำขอรออนุมัติ</p>'; return; }
       $('approvals-list').innerHTML = pending.map(a => {
-        const d = a.detail || {};
-        const what = a.kind === 'run_command'
-          ? ('รันคำสั่ง: ' + escapeHtml(d.command || ''))
-          : ('เขียนไฟล์: ' + escapeHtml(d.path || '') + ' (' + ((d.content || '').length) + ' ตัวอักษร)');
+        const what = escapeHtml(describeApproval(a));
         return `<div style="border:1px solid #2a2e37;border-radius:10px;padding:10px 12px;margin-bottom:8px">
           <div style="font-size:13px;color:#9aa0ac">id: ${escapeHtml(a.id)} · workspace: ${escapeHtml(a.workspace || '')}</div>
           <div style="margin:4px 0"><strong>${what}</strong></div>
@@ -427,15 +435,34 @@
       $('approvals-wrap').hidden = false;
     }
     async function decideApproval(id, decision) {
+      // Both buttons of this item; skip if a decision for it is already in flight.
+      const btns = [...$('approvals-list').querySelectorAll('button[data-apr]')].filter(b => b.dataset.apr === String(id));
+      if (btns.some(b => b.disabled)) return;
+      if (decision === 'approve') {
+        const a = approvalsById[id];
+        const what = a ? describeApproval(a) : ('id: ' + id);
+        if (!confirm('อนุมัติให้ agent ลงมือจริง?\n\n' + what + '\n\nทำแล้วย้อนกลับไม่ได้')) return;
+      }
+      btns.forEach(b => { b.disabled = true; });
       $('approvals-err').style.display = 'none';
+      $('approvals-msg').style.display = 'none';
       try {
         const res = await fetch('/api/agent/approvals/decide', {
           method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
           body: JSON.stringify({ id, decision }),
         });
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) { $('approvals-err').textContent = data.error || ('error ' + res.status); $('approvals-err').style.display = ''; }
-      } catch (err) { $('approvals-err').textContent = 'ต่อ server ไม่ได้'; $('approvals-err').style.display = ''; }
+        if (!res.ok) {
+          $('approvals-err').textContent = data.error || ('error ' + res.status); $('approvals-err').style.display = '';
+          btns.forEach(b => { b.disabled = false; });
+        } else {
+          $('approvals-msg').textContent = decision === 'approve' ? 'อนุมัติแล้ว' : 'ปฏิเสธแล้ว';
+          $('approvals-msg').style.display = '';
+        }
+      } catch (err) {
+        $('approvals-err').textContent = 'ต่อ server ไม่ได้'; $('approvals-err').style.display = '';
+        btns.forEach(b => { b.disabled = false; });
+      }
       loadApprovals();
     }
     async function toggleFeature(key, enabled) {

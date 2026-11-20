@@ -56,6 +56,7 @@ const todoMsg = document.getElementById('todo-msg');
 const sidebarToggle = document.getElementById('sidebar-toggle');
 
 let history = [];
+let busy = false; // true while a reply streams — blocks a second send from Enter or the button
 
 // จอเล็ก: เริ่มด้วยเมนูพับไว้ ให้เห็นแชทเต็มจอก่อน
 if (window.matchMedia && window.matchMedia('(max-width: 720px)').matches) {
@@ -73,8 +74,10 @@ function addMessage(role, text) {
 }
 
 async function sendMessage() {
+  if (busy) return; // กำลังสตรีมคำตอบอยู่ — ไม่ส่งซ้อน (ข้อความในช่องพิมพ์ยังอยู่)
   const text = inputEl.value.trim();
   if (!text) return;
+  busy = true;
   inputEl.value = '';
   sendBtn.disabled = true;
 
@@ -137,6 +140,7 @@ async function sendMessage() {
     thinking.remove();
     addMessage('system-note', '[error] ต่อ server ไม่ได้: ' + err.message);
   } finally {
+    busy = false;
     sendBtn.disabled = false;
     inputEl.focus();
   }
@@ -169,72 +173,99 @@ async function loadTodos() {
       return;
     }
     const todos = await res.json();
+    const focus = todoFocusState();
     setTodoMsg('');
     todoList.innerHTML = '';
-    todos.forEach((t) => {
-      const li = document.createElement('li');
-      li.className = t.done ? 'done' : '';
-      const label = document.createElement('span');
-      label.textContent = '#' + t.id + ' ' + t.text;
-      label.style.cursor = 'pointer';
-      label.addEventListener('click', () => toggleTodo(t.id));
-      const del = document.createElement('button');
-      del.textContent = '🗑';
-      del.title = 'ลบ';
-      del.className = 'todo-del';
-      del.addEventListener('click', (e) => { e.stopPropagation(); deleteTodo(t.id); });
-      li.appendChild(label);
-      li.appendChild(del);
-      todoList.appendChild(li);
-    });
+    todos.forEach((t) => todoList.appendChild(renderTodo(t)));
+    restoreTodoFocus(focus);
   } catch (err) {
     setTodoMsg('ต่อ server ไม่ได้', true);
     console.error('โหลด todo ไม่สำเร็จ:', err);
   }
 }
 
-async function toggleTodo(id) {
+// One todo row: a real checkbox (keyboard + screen reader) and a named delete button
+function renderTodo(t) {
+  const li = document.createElement('li');
+  li.className = t.done ? 'done' : '';
+  const label = document.createElement('label');
+  label.className = 'todo-item';
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.checked = !!t.done;
+  cb.dataset.focusKey = 'cb-' + t.id;
+  cb.addEventListener('change', async () => {
+    if (!(await toggleTodo(t.id))) cb.checked = !cb.checked; // ไม่สำเร็จ — คืนสถานะเดิม
+  });
+  const text = document.createElement('span');
+  text.textContent = '#' + t.id + ' ' + t.text;
+  label.append(cb, text);
+  const del = document.createElement('button');
+  del.type = 'button';
+  del.textContent = '🗑';
+  del.className = 'todo-del';
+  del.title = 'ลบ todo #' + t.id;
+  del.setAttribute('aria-label', 'ลบ todo #' + t.id);
+  del.dataset.focusKey = 'del-' + t.id;
+  del.addEventListener('click', () => deleteTodo(t.id));
+  li.append(label, del);
+  return li;
+}
+
+// Keep keyboard focus across a list re-render (the old nodes are replaced)
+function todoFocusState() {
+  const el = document.activeElement;
+  if (!el || !todoList.contains(el)) return null;
+  return { key: el.dataset.focusKey, index: [...todoList.children].indexOf(el.closest('li')) };
+}
+
+function restoreTodoFocus(state) {
+  if (!state) return;
+  const same = state.key && todoList.querySelector('[data-focus-key="' + CSS.escape(state.key) + '"]');
+  const near = todoList.children[Math.min(state.index, todoList.children.length - 1)];
+  (same || (near && near.querySelector('input')) || todoInput).focus();
+}
+
+// POST a todo action. Returns true on success; otherwise shows the error in #todo-msg.
+async function todoPost(url, body, failText) {
   try {
-    await fetch('/api/todos/toggle', {
+    const res = await fetch(url, {
       method: 'POST',
       headers: window.lca.headers({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ id }),
+      body: JSON.stringify(body),
     });
-    loadTodos();
+    if (res.ok) return true;
+    if (res.status === 401) setTodoMsg(failText + ' — ต้องล็อกอิน/ตั้ง token ก่อน', true);
+    else setTodoMsg(failText + ' (error ' + res.status + ')', true);
   } catch (err) {
-    console.error('toggle todo ไม่สำเร็จ:', err);
+    setTodoMsg(failText + ' — ต่อ server ไม่ได้', true);
+    console.error(failText + ':', err);
   }
+  return false;
+}
+
+async function toggleTodo(id) {
+  const ok = await todoPost('/api/todos/toggle', { id }, 'อัปเดต todo ไม่สำเร็จ');
+  if (ok) loadTodos();
+  return ok;
 }
 
 async function deleteTodo(id) {
-  try {
-    await fetch('/api/todos/delete', {
-      method: 'POST',
-      headers: window.lca.headers({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ id }),
-    });
-    loadTodos();
-  } catch (err) {
-    console.error('ลบ todo ไม่สำเร็จ:', err);
-  }
+  const ok = await todoPost('/api/todos/delete', { id }, 'ลบ todo ไม่สำเร็จ');
+  if (ok) loadTodos();
+  return ok;
 }
 
 todoInput.addEventListener('keydown', async (e) => {
-  if (e.key === 'Enter') {
-    const text = todoInput.value.trim();
-    if (!text) return;
-    todoInput.value = '';
-    try {
-      await fetch('/api/todos', {
-        method: 'POST',
-        headers: window.lca.headers({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ text }),
-      });
-      loadTodos();
-    } catch (err) {
-      console.error('เพิ่ม todo ไม่สำเร็จ:', err);
-    }
-  }
+  if (e.key !== 'Enter' || todoInput.readOnly) return; // readOnly = กำลังส่งอยู่ กัน Enter ซ้ำ
+  const text = todoInput.value.trim();
+  if (!text) return;
+  todoInput.readOnly = true;
+  const ok = await todoPost('/api/todos', { text }, 'เพิ่ม todo ไม่สำเร็จ');
+  todoInput.readOnly = false;
+  if (!ok) return; // เก็บข้อความไว้ให้ลองใหม่ได้
+  todoInput.value = '';
+  loadTodos();
 });
 
 loadTodos();

@@ -127,6 +127,16 @@
     el.hidden = !text;
     el.textContent = text || "";
   }
+  // Wrap an async handler so a failed api() call shows in #notice instead of only the console.
+  function safe(fn) {
+    return async function (...args) {
+      try {
+        return await fn.apply(this, args);
+      } catch (err) {
+        setNotice((err && err.message) || "เกิดข้อผิดพลาด ลองใหม่อีกครั้ง");
+      }
+    };
+  }
   async function refreshLists() {
     const [convs, folders, personas] = await Promise.all([
       api("/api/chat/conversations"),
@@ -175,7 +185,7 @@
       btn.type = "button";
       btn.textContent = (c.pinned ? "● " : "") + (clip(c.title, 42) || "ไม่มีชื่อ");
       btn.setAttribute("aria-current", S.conv && S.conv.id === c.id ? "true" : "false");
-      btn.addEventListener("click", () => openConv(c.id));
+      btn.addEventListener("click", safe(() => openConv(c.id)));
       list.append(btn);
     });
   }
@@ -299,7 +309,7 @@
           const pick = document.createElement("button");
           pick.type = "button";
           pick.textContent = "เลือกอันนี้ต่อ";
-          pick.addEventListener("click", () => switchTo(c.id));
+          pick.addEventListener("click", safe(() => switchTo(c.id)));
           col.append(h, b, pick);
           grid.append(col);
         });
@@ -355,7 +365,7 @@
     $("title").textContent = clip(S.conv.title, 48) || "แชท";
     if (S.conv.persona_id) $("persona").value = String(S.conv.persona_id);
     renderThread();
-    refreshLists();
+    refreshLists().catch((err) => setNotice(err.message));
   }
   async function ensureConv() {
     if (S.ephemeral) return null;
@@ -453,7 +463,15 @@
       renderThread();
       return;
     }
-    const conv = await ensureConv();
+    let conv;
+    try {
+      conv = await ensureConv();
+    } catch (err) {
+      // Reset the send button so the composer is not stuck on "หยุด"; onSubmit shows the error.
+      S.streaming = false;
+      sendBtn.textContent = "ส่ง";
+      throw err;
+    }
     const user = { role: "user", content: text, id: "pending-user" };
     const draft = { role: "assistant", content: "", provider: picked.provider, model: picked.model, status: "streaming", id: "draft" };
     S.messages.push(user, draft);
@@ -574,7 +592,7 @@
     const sibs = m.siblings || [];
     const idx = sibs.findIndex((s) => s.id === m.id);
     const next = sibs[idx + dir];
-    if (next) switchTo(next.id);
+    if (next) safe(switchTo)(next.id);
   }
   async function runCompare() {
     const targets = selectedTargets();
@@ -618,14 +636,14 @@
       const b = document.createElement("button");
       b.type = "button";
       b.textContent = "ชื่อ: " + clip(c.title, 40);
-      b.addEventListener("click", () => openConv(c.id));
+      b.addEventListener("click", safe(() => openConv(c.id)));
       box.append(b);
     });
     (data.messages || []).forEach((m) => {
       const b = document.createElement("button");
       b.type = "button";
       b.textContent = clip(m.snippet || m.content, 48);
-      b.addEventListener("click", () => openConv(m.conversation_id));
+      b.addEventListener("click", safe(() => openConv(m.conversation_id)));
       box.append(b);
     });
     if (!box.childElementCount) box.textContent = "ไม่พบ";
@@ -670,30 +688,39 @@
       setNotice("");
       renderThread();
     });
-    $("ephemeral").addEventListener("change", async () => {
+    $("ephemeral").addEventListener("change", safe(async () => {
       S.ephemeral = $("ephemeral").checked;
       if (!S.ephemeral && S.ephemeralLog.length) {
-        const data = await api("/api/chat/save", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages: S.ephemeralLog, title: clip(S.ephemeralLog[0].content, 40) }),
-        });
+        let data;
+        try {
+          data = await api("/api/chat/save", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ messages: S.ephemeralLog, title: clip(S.ephemeralLog[0].content, 40) }),
+          });
+        } catch (err) {
+          // Stay in ephemeral mode so the temporary chat is not lost.
+          S.ephemeral = true;
+          $("ephemeral").checked = true;
+          setNotice("บันทึกแชทชั่วคราวไม่สำเร็จ — ยังอยู่ในโหมดชั่วคราว: " + err.message);
+          return;
+        }
         S.ephemeralLog = [];
         await openConv(data.conversation.id);
       }
-    });
+    }));
     $("model").addEventListener("change", () => {
       $("custom-model").hidden = $("model").value !== "custom";
     });
     $("compare-btn").addEventListener("click", () => {
       $("compare-box").hidden = !$("compare-box").hidden;
     });
-    $("compare-go").addEventListener("click", runCompare);
+    $("compare-go").addEventListener("click", safe(runCompare));
     $("search").addEventListener("input", () => {
       clearTimeout(S._searchT);
-      S._searchT = setTimeout(doSearch, 200);
+      S._searchT = setTimeout(safe(doSearch), 200);
     });
-    $("add-folder").addEventListener("click", async () => {
+    $("add-folder").addEventListener("click", safe(async () => {
       const name = window.prompt("ชื่อโปรเจกต์");
       if (!name) return;
       await api("/api/chat/folders", {
@@ -701,17 +728,17 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, kind: "project" }),
       });
-      refreshLists();
-    });
-    $("persona").addEventListener("change", async () => {
+      await refreshLists();
+    }));
+    $("persona").addEventListener("change", safe(async () => {
       if (!S.conv) return;
       await api("/api/chat/conversations/update", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: S.conv.id, persona_id: $("persona").value || null }),
       });
-    });
-    $("export-btn").addEventListener("click", async () => {
+    }));
+    $("export-btn").addEventListener("click", safe(async () => {
       if (!S.conv) return;
       const data = await api("/api/chat/export?id=" + S.conv.id);
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
@@ -719,20 +746,32 @@
       a.href = URL.createObjectURL(blob);
       a.download = "lca-chat-" + S.conv.uid + ".json";
       a.click();
-    });
+    }));
     $("import-btn").addEventListener("click", () => $("import-file").click());
-    $("import-file").addEventListener("change", async () => {
-      const file = $("import-file").files[0];
+    $("import-file").addEventListener("change", safe(async () => {
+      const picker = $("import-file");
+      const file = picker.files[0];
       if (!file) return;
-      const doc = JSON.parse(await file.text());
-      const data = await api("/api/chat/import", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ document: doc }),
-      });
-      await openConv(data.conversation.id);
-    });
-    $("folder").addEventListener("change", async () => {
+      try {
+        let doc;
+        try {
+          doc = JSON.parse(await file.text());
+        } catch (err) {
+          setNotice("ไฟล์ไม่ใช่ JSON ที่ถูกต้อง");
+          return;
+        }
+        const data = await api("/api/chat/import", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ document: doc }),
+        });
+        await openConv(data.conversation.id);
+      } finally {
+        // Reset so choosing the same file again still fires "change".
+        picker.value = "";
+      }
+    }));
+    $("folder").addEventListener("change", safe(async () => {
       const value = $("folder").value;
       const data = await api("/api/chat/conversations?folder_id=" + encodeURIComponent(value));
       S.conversations = data.conversations || [];
@@ -743,10 +782,10 @@
         const btn = document.createElement("button");
         btn.type = "button";
         btn.textContent = clip(c.title, 42) || "ไม่มีชื่อ";
-        btn.addEventListener("click", () => openConv(c.id));
+        btn.addEventListener("click", safe(() => openConv(c.id)));
         list.append(btn);
       });
-    });
+    }));
     window.addEventListener("online", () => { S.online = true; $("offline").hidden = true; fillModels(); });
     window.addEventListener("offline", () => { S.online = false; $("offline").hidden = false; fillModels(); });
   }

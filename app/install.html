@@ -36,9 +36,10 @@
   ul.feat b { display:block; margin-bottom:2px; }
   .muted { color:var(--muted); }
   .tab-row { display:flex; gap:6px; margin-bottom:10px; flex-wrap:wrap; }
-  .tab { background:#0b0d12; border:1px solid var(--line); color:var(--muted);
+  .tab { font:inherit; background:#0b0d12; border:1px solid var(--line); color:var(--muted);
          border-radius:8px; padding:6px 12px; cursor:pointer; font-size:13px; }
   .tab.active { color:var(--fg); border-color:var(--accent); }
+  .tab:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
   footer { text-align:center; color:var(--muted); padding:28px 0; font-size:13px; }
   a { color:#7aa2ff; }
 </style>
@@ -80,15 +81,17 @@
 
   <div class="card">
     <h2><span class="step">1</span>หรือติดตั้งแบบดั้งเดิม (เลือกระบบของคุณ)</h2>
-    <div class="tab-row">
-      <div class="tab active" data-os="win">Windows (PowerShell)</div>
-      <div class="tab" data-os="nix">Linux / macOS / WSL</div>
+    <div class="tab-row" role="tablist" aria-label="เลือกระบบปฏิบัติการ">
+      <button type="button" class="tab active" role="tab" id="tab-win" data-os="win"
+              aria-selected="true" aria-controls="cmd-win">Windows (PowerShell)</button>
+      <button type="button" class="tab" role="tab" id="tab-nix" data-os="nix"
+              aria-selected="false" aria-controls="cmd-nix" tabindex="-1">Linux / macOS / WSL</button>
     </div>
-    <div id="cmd-win">
+    <div id="cmd-win" role="tabpanel" aria-labelledby="tab-win">
       <div class="cmd" id="c1">powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercontent.com/Ragam111/9nammon/main/install.ps1 | iex"<button class="copy" data-target="c1">คัดลอก</button></div>
       <p class="muted">แปะบรรทัดเดียวใน PowerShell — ดาวน์โหลด + แตกไฟล์ + ติดตั้งให้อัตโนมัติ</p>
     </div>
-    <div id="cmd-nix" hidden>
+    <div id="cmd-nix" role="tabpanel" aria-labelledby="tab-nix" hidden>
       <div class="cmd" id="c2">git clone https://github.com/Ragam111/9nammon.git && cd 9nammon && pip install -r requirements.txt && python server.py . --port 8420<button class="copy" data-target="c2">คัดลอก</button></div>
       <p class="muted">สำหรับ Linux/macOS/WSL — รัน server ตรง (ไม่มี .exe path)</p>
     </div>
@@ -144,14 +147,31 @@
 </div>
 
 <script>
-  // สลับคำสั่งตามระบบปฏิบัติการ
-  document.querySelectorAll('.tab').forEach(function (t) {
-    t.addEventListener('click', function () {
-      document.querySelectorAll('.tab').forEach(function (x) { x.classList.remove('active'); });
-      t.classList.add('active');
-      var win = t.dataset.os === 'win';
-      document.getElementById('cmd-win').hidden = !win;
-      document.getElementById('cmd-nix').hidden = win;
+  // สลับคำสั่งตามระบบปฏิบัติการ (แท็บแบบ ARIA: คลิก หรือใช้ลูกศร/Home/End)
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('.tab'));
+  function selectTab(t, focus) {
+    tabs.forEach(function (x) {
+      var on = x === t;
+      x.classList.toggle('active', on);
+      x.setAttribute('aria-selected', on ? 'true' : 'false');
+      x.tabIndex = on ? 0 : -1;
+    });
+    var win = t.dataset.os === 'win';
+    document.getElementById('cmd-win').hidden = !win;
+    document.getElementById('cmd-nix').hidden = win;
+    if (focus) t.focus();
+  }
+  tabs.forEach(function (t, i) {
+    t.addEventListener('click', function () { selectTab(t, false); });
+    t.addEventListener('keydown', function (e) {
+      var j = null;
+      if (e.key === 'ArrowRight') j = (i + 1) % tabs.length;
+      else if (e.key === 'ArrowLeft') j = (i - 1 + tabs.length) % tabs.length;
+      else if (e.key === 'Home') j = 0;
+      else if (e.key === 'End') j = tabs.length - 1;
+      if (j === null) return;
+      e.preventDefault();
+      selectTab(tabs[j], true);
     });
   });
   // ปุ่มคัดลอกคำสั่ง
