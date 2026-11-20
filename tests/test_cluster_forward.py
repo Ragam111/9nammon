@@ -141,3 +141,37 @@ class ForwardIntegrationTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ForwardUnitExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_forward_error_is_exception(self):
+        self.assertTrue(issubclass(cluster_forward.ForwardError, Exception))
+
+    def test_pick_target_returns_dict(self):
+        result = cluster_forward.pick_target(self.root, rr_index=0)
+        self.assertIsInstance(result, dict)
+
+    def test_pick_target_has_node_key(self):
+        result = cluster_forward.pick_target(self.root, rr_index=0)
+        self.assertIn("node", result)
+
+    def test_is_enabled_returns_bool(self):
+        result = cluster_forward.is_enabled(self.root)
+        self.assertIsInstance(result, bool)
+
+    def test_disabled_after_config_set_false(self):
+        config_manager.set_key(self.root, "CLUSTER_FORWARD_ENABLED", "true")
+        self.assertTrue(cluster_forward.is_enabled(self.root))
+        config_manager.set_key(self.root, "CLUSTER_FORWARD_ENABLED", "false")
+        self.assertFalse(cluster_forward.is_enabled(self.root))
+
+    def test_pick_target_node_none_when_no_nodes_registered(self):
+        result = cluster_forward.pick_target(self.root, rr_index=0)
+        self.assertIsNone(result["node"])
