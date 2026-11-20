@@ -72,3 +72,38 @@ class ConnUsageTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ConnUsageExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_estimate_tokens_proportional(self):
+        self.assertEqual(conn_usage.estimate_tokens("a" * 80), 20)
+
+    def test_price_per_1k_is_positive(self):
+        self.assertGreater(conn_usage.PRICE_PER_1K_TOKENS, 0)
+
+    def test_summary_has_totals(self):
+        s = conn_usage.summary(self.root)
+        self.assertIn("totals", s)
+
+    def test_summary_has_connections(self):
+        s = conn_usage.summary(self.root)
+        self.assertIn("connections", s)
+
+    def test_total_tokens_equals_input_plus_output(self):
+        conn_usage.record_usage(self.root, "con-x", "BrainX", 30, 15)
+        s = conn_usage.summary(self.root)
+        t = s["totals"]
+        self.assertEqual(t["total_tokens"], t["input_tokens"] + t["output_tokens"])
+
+    def test_summary_requests_count_correct(self):
+        conn_usage.record_usage(self.root, "con-y", "BrainY", 10, 5)
+        conn_usage.record_usage(self.root, "con-y", "BrainY", 10, 5)
+        s = conn_usage.summary(self.root)
+        self.assertEqual(s["totals"]["requests"], 2)
