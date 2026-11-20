@@ -111,5 +111,60 @@ class DbManagerUnitTest(unittest.TestCase):
         self.assertIn("server_events", data["tables"])
 
 
+class DbManagerExtraTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        model_backend.generate = (
+            lambda project_root, model, messages, num_ctx=8192, options=None: f"MODEL={model}"
+        )
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.httpd, self.port, self.session_token = _make_server(self.root)
+
+    def tearDown(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        self._tmp.cleanup()
+
+    def _get(self, path, token=None):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        hdrs = {}
+        if token:
+            hdrs["X-Auth-Token"] = token
+        conn.request("GET", path, headers=hdrs)
+        resp = conn.getresponse()
+        body = resp.read().decode("utf-8")
+        conn.close()
+        return resp.status, json.loads(body) if body else {}
+
+    def test_db_status_returns_200(self):
+        st, _ = self._get("/api/admin/db/status", token=self.session_token)
+        self.assertEqual(st, 200)
+
+    def test_db_status_is_string(self):
+        _, data = self._get("/api/admin/db/status", token=self.session_token)
+        self.assertIsInstance(data["status"], str)
+
+    def test_db_size_bytes_is_int(self):
+        _, data = self._get("/api/admin/db/status", token=self.session_token)
+        self.assertIsInstance(data["db_size_bytes"], int)
+
+    def test_migrations_applied_is_int(self):
+        _, data = self._get("/api/admin/db/status", token=self.session_token)
+        self.assertIsInstance(data["migrations_applied"], int)
+
+    def test_tables_contains_server_events_after_log(self):
+        db_manager.get_db_status(self.root)
+        db_manager.log_event(self.root, "startup", "test")
+        data = db_manager.get_db_status(self.root)
+        self.assertIn("server_events", data["tables"])
+
+    def test_no_auth_gives_401(self):
+        st, _ = self._get("/api/admin/db/status")
+        self.assertIn(st, (401, 403))
+
+
 if __name__ == "__main__":
     unittest.main()

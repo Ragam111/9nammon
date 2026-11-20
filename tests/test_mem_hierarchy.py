@@ -78,5 +78,37 @@ class MeasureAllTest(unittest.TestCase):
         self.assertIn(r["bottleneck"], text)
 
 
+class MemHierarchyExtraTest(unittest.TestCase):
+    def test_mb_constant_is_positive(self):
+        self.assertGreater(mh.MB, 0)
+
+    def test_mbps_proportional_to_size(self):
+        r1 = mh._mbps(mh.MB, 1.0)
+        r2 = mh._mbps(2 * mh.MB, 1.0)
+        self.assertAlmostEqual(r2, 2 * r1, places=3)
+
+    def test_bench_disk_returns_dict(self):
+        with tempfile.TemporaryDirectory() as d:
+            result = mh.bench_disk(d, size_mb=2)
+        self.assertIsInstance(result, dict)
+
+    def test_bench_disk_has_write_read_keys(self):
+        with tempfile.TemporaryDirectory() as d:
+            result = mh.bench_disk(d, size_mb=2)
+        self.assertIn("write_mbps", result)
+        self.assertIn("read_mbps", result)
+
+    def test_measure_all_bottleneck_is_string(self):
+        with tempfile.TemporaryDirectory() as d:
+            result = mh.measure_all(target_dir=d, size_mb=2)
+        self.assertIsInstance(result["bottleneck"], str)
+
+    def test_format_report_returns_string(self):
+        with tempfile.TemporaryDirectory() as d:
+            result = mh.measure_all(target_dir=d, size_mb=2)
+        text = mh.format_report(result)
+        self.assertIsInstance(text, str)
+
+
 if __name__ == "__main__":
     unittest.main()
