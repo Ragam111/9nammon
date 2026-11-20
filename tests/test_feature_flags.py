@@ -47,6 +47,41 @@ class FeatureFlagsTest(unittest.TestCase):
         ff.set_flag(self.root, "cluster_forward", True)
         self.assertTrue(cluster_forward.is_enabled(self.root))
 
+    def test_features_is_list(self):
+        self.assertIsInstance(ff.FEATURES, list)
+        self.assertGreater(len(ff.FEATURES), 0)
+
+    def test_each_feature_has_required_keys(self):
+        for f in ff.FEATURES:
+            self.assertIn("key", f)
+            self.assertIn("name", f)
+            self.assertIn("desc", f)
+
+    def test_is_on_returns_bool(self):
+        result = ff.is_on(self.root, "watchdog")
+        self.assertIsInstance(result, bool)
+
+    def test_status_returns_list(self):
+        result = ff.status(self.root)
+        self.assertIsInstance(result, list)
+
+    def test_status_length_matches_features(self):
+        result = ff.status(self.root)
+        self.assertEqual(len(result), len(ff.FEATURES))
+
+    def test_toggle_persists(self):
+        # Set then verify it survives a fresh call
+        ff.set_flag(self.root, "agent", True)
+        self.assertTrue(ff.is_on(self.root, "agent"))
+        ff.set_flag(self.root, "agent", False)
+        self.assertFalse(ff.is_on(self.root, "agent"))
+
+    def test_multiple_flags_independent(self):
+        ff.set_flag(self.root, "watchdog", True)
+        ff.set_flag(self.root, "agent", False)
+        self.assertTrue(ff.is_on(self.root, "watchdog"))
+        self.assertFalse(ff.is_on(self.root, "agent"))
+
 
 if __name__ == "__main__":
     unittest.main()

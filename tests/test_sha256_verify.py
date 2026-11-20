@@ -1,4 +1,4 @@
-"""test_sha256_verify.py — installer_gui.verify_sha256
+"""test_sha256_verify.py — installer_gui.verify_sha256 + check_free_disk
 
 ตรวจไฟล์ที่ดาวน์โหลดแล้ว: hash ตรงเก็บไฟล์ไว้, ไม่ตรงลบไฟล์แล้วโยน ChecksumMismatch.
 ไม่แตะเน็ต.
@@ -42,6 +42,65 @@ class VerifySha256Test(unittest.TestCase):
             self.assertIn(wrong, message)
             self.assertIn(actual, message)
             self.assertIn("ลบไฟล์", message)
+
+    def test_returns_lowercase_hex(self):
+        payload = b"hello"
+        digest = hashlib.sha256(payload).hexdigest()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "f.bin"
+            path.write_bytes(payload)
+            result = installer_gui.verify_sha256(path, digest)
+            self.assertEqual(result, result.lower())
+
+    def test_uppercase_expected_accepted(self):
+        payload = b"upper test"
+        digest = hashlib.sha256(payload).hexdigest()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "f.bin"
+            path.write_bytes(payload)
+            result = installer_gui.verify_sha256(path, digest.upper())
+            self.assertEqual(result, digest)
+
+    def test_checksummismatch_is_runtime_error(self):
+        self.assertTrue(issubclass(installer_gui.ChecksumMismatch, RuntimeError))
+
+    def test_empty_file_mismatch_raises(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "empty.bin"
+            path.write_bytes(b"")
+            wrong = "a" * 64
+            with self.assertRaises(installer_gui.ChecksumMismatch):
+                installer_gui.verify_sha256(path, wrong)
+
+    def test_large_file_multichunk(self):
+        payload = b"x" * (1024 * 1024)  # 1 MB > default chunk
+        digest = hashlib.sha256(payload).hexdigest()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "large.bin"
+            path.write_bytes(payload)
+            result = installer_gui.verify_sha256(path, digest)
+            self.assertEqual(result, digest)
+
+
+class CheckFreeDiskTest(unittest.TestCase):
+    def test_sufficient_space_returns_true(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ok, free, msg = installer_gui.check_free_disk(tmp, min_bytes=1)
+            self.assertTrue(ok)
+            self.assertGreater(free, 0)
+            self.assertEqual(msg, "")
+
+    def test_excessive_min_returns_false(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ok, _, msg = installer_gui.check_free_disk(tmp, min_bytes=10 * 1024 ** 4)
+            self.assertFalse(ok)
+            self.assertGreater(len(msg), 0)
+
+    def test_returns_tuple_of_three(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = installer_gui.check_free_disk(tmp, min_bytes=1)
+            self.assertIsInstance(result, tuple)
+            self.assertEqual(len(result), 3)
 
 
 if __name__ == "__main__":

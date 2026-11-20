@@ -69,6 +69,36 @@ class ConnUsageTest(unittest.TestCase):
         self.assertEqual(s["connections"][0]["conn_name"], "B")
         self.assertGreater(s["connections"][0]["output_tokens"], 0)
 
+    def test_price_per_1k_tokens_is_positive(self):
+        self.assertGreater(conn_usage.PRICE_PER_1K_TOKENS, 0)
+
+    def test_summary_has_price_per_1k_tokens(self):
+        s = conn_usage.summary(self.root)
+        self.assertIn("price_per_1k_tokens", s)
+
+    def test_estimate_tokens_returns_int(self):
+        result = conn_usage.estimate_tokens("hello world")
+        self.assertIsInstance(result, int)
+
+    def test_estimate_tokens_scales_with_length(self):
+        short = conn_usage.estimate_tokens("x" * 4)
+        long = conn_usage.estimate_tokens("x" * 40)
+        self.assertGreater(long, short)
+
+    def test_summary_totals_has_all_keys(self):
+        s = conn_usage.summary(self.root)
+        for key in ("requests", "input_tokens", "output_tokens", "total_tokens", "est_cost"):
+            self.assertIn(key, s["totals"])
+
+    def test_record_multiple_connections_independent(self):
+        conn_usage.record_usage(self.root, "A", "BrainA", 10, 10)
+        conn_usage.record_usage(self.root, "B", "BrainB", 50, 50)
+        s = conn_usage.summary(self.root)
+        self.assertEqual(s["totals"]["requests"], 2)
+        ids = {c["conn_id"] for c in s["connections"]}
+        self.assertIn("A", ids)
+        self.assertIn("B", ids)
+
 
 if __name__ == "__main__":
     unittest.main()
