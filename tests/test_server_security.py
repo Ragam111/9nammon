@@ -119,5 +119,69 @@ class RequestBodySizeLimitTest(unittest.TestCase):
                             "payload ภายใน limit ต้องไม่ถูกปฏิเสธด้วย body size")
 
 
+class ServerSecurityExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        handler = server.make_handler(Path(self._tmp.name), MASTER_TOKEN)
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        self.port = self.httpd.server_address[1]
+        self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
+        self.thread.start()
+
+    def tearDown(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        self._tmp.cleanup()
+
+    def _get(self, path, headers=None):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("GET", path, headers=headers or {})
+        resp = conn.getresponse()
+        body = resp.read().decode("utf-8")
+        conn.close()
+        return resp.status, body
+
+    def _post_cl(self, path, body_bytes, content_length):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.putrequest("POST", path)
+        conn.putheader("Content-Type", "application/json")
+        conn.putheader("Content-Length", str(content_length))
+        conn.putheader("X-Auth-Token", MASTER_TOKEN)
+        conn.endheaders()
+        conn.send(body_bytes)
+        resp = conn.getresponse()
+        body = resp.read().decode("utf-8")
+        conn.close()
+        return resp.status, body
+
+    def test_multiple_bad_tokens_all_rejected(self):
+        for bad in ["x", "1", "wrong", MASTER_TOKEN.upper()]:
+            st, _ = self._get("/api/me", headers={"X-Auth-Token": bad})
+            self.assertEqual(st, 401, f"token {bad!r} ต้องถูกปฏิเสธ")
+
+    def test_public_health_no_auth_200(self):
+        st, _ = self._get("/api/health")
+        self.assertEqual(st, 200)
+
+    def test_401_body_is_valid_json(self):
+        st, body = self._get("/api/me", headers={"X-Auth-Token": "wrong"})
+        self.assertEqual(st, 401)
+        data = json.loads(body)
+        self.assertIsInstance(data, dict)
+
+    def test_oversized_cl_gives_400(self):
+        st, _ = self._post_cl("/api/todos", b'{"text":"x"}', 5 * 1024 * 1024)
+        self.assertEqual(st, 400)
+
+    def test_correct_token_on_health(self):
+        st, _ = self._get("/api/health", headers={"X-Auth-Token": MASTER_TOKEN})
+        self.assertEqual(st, 200)
+
+    def test_oversized_body_response_has_content(self):
+        st, body = self._post_cl("/api/todos", b'{}', 4 * 1024 * 1024)
+        self.assertEqual(st, 400)
+        self.assertGreater(len(body), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

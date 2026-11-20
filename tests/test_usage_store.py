@@ -71,5 +71,42 @@ class UsageStoreTest(unittest.TestCase):
         self.assertEqual(s["by_key"], [])
 
 
+class UsageStoreExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_record_returns_dict(self):
+        rec = usage_store.record_usage(self.root, "k1", "u", "free")
+        self.assertIsInstance(rec, dict)
+
+    def test_record_has_id_field(self):
+        rec = usage_store.record_usage(self.root, "k1", "u", "free")
+        self.assertIn("id", rec)
+        self.assertIsNotNone(rec["id"])
+
+    def test_tier_unit_price_dict_exists(self):
+        self.assertIsInstance(usage_store.TIER_UNIT_PRICE, dict)
+        self.assertGreater(len(usage_store.TIER_UNIT_PRICE), 0)
+
+    def test_summary_has_currency_key(self):
+        s = usage_store.summary(self.root)
+        self.assertIn("currency", s)
+
+    def test_summary_total_cost_is_float(self):
+        usage_store.record_usage(self.root, "k1", "u", "paid")
+        s = usage_store.summary(self.root)
+        self.assertIsInstance(s["total_cost"], float)
+
+    def test_summary_by_key_contains_cost(self):
+        usage_store.record_usage(self.root, "k1", "u", "paid", units=2)
+        s = usage_store.summary(self.root)
+        self.assertGreater(len(s["by_key"]), 0)
+        self.assertIn("cost", s["by_key"][0])
+
+
 if __name__ == "__main__":
     unittest.main()
