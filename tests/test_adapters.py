@@ -202,5 +202,43 @@ class NotifierAdapterTest(unittest.TestCase):
         self.assertEqual(n.channels, ("discord",))
 
 
+class AdaptersExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_memory_backend_read_missing_returns_none(self):
+        s = sb.MemoryStorageBackend()
+        self.assertIsNone(s.read_text("nonexistent.txt"))
+
+    def test_local_backend_exists_false_for_nonexistent(self):
+        s = sb.LocalStorageBackend(self.root)
+        self.assertFalse(s.exists("does_not_exist.txt"))
+
+    def test_memory_backend_delete_nonexistent_returns_false(self):
+        s = sb.MemoryStorageBackend()
+        self.assertFalse(s.delete("ghost.txt"))
+
+    def test_static_auth_valid_token_has_role_key(self):
+        b = ab.StaticTokenBackend({"my-token": "USER"})
+        result = b.authenticate("my-token")
+        self.assertIsNotNone(result)
+        self.assertIn("role", result)
+
+    def test_null_notifier_sent_starts_empty(self):
+        n = nf.NullNotifier()
+        self.assertEqual(n.sent, [])
+
+    def test_local_auth_master_token_returns_dict_with_role(self):
+        b = ab.LocalAuthBackend(self.root, "master123")
+        result = b.authenticate("master123")
+        self.assertIsNotNone(result)
+        self.assertIn("role", result)
+        self.assertEqual(result["role"], "CEO")
+
+
 if __name__ == "__main__":
     unittest.main()

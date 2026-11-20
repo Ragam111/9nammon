@@ -187,5 +187,38 @@ class BuildRegistryTest(unittest.TestCase):
         self.assertNotIn("call_connection", reg)
 
 
+class AgentToolsExtraTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.sb = Sandbox(self.tmp)
+        Path(self.tmp, "sample.txt").write_text("sample content", encoding="utf-8")
+
+    def test_max_output_chars_is_positive_int(self):
+        self.assertIsInstance(MAX_OUTPUT_CHARS, int)
+        self.assertGreater(MAX_OUTPUT_CHARS, 0)
+
+    def test_default_allowed_commands_includes_ls(self):
+        self.assertIn("ls", DEFAULT_ALLOWED_COMMANDS)
+
+    def test_sandbox_write_none_content_creates_empty_file(self):
+        self.sb.write_file("empty_test.txt", None)
+        self.assertEqual(Path(self.tmp, "empty_test.txt").read_text(encoding="utf-8"), "")
+
+    def test_sandbox_list_empty_dir_returns_empty_marker(self):
+        Path(self.tmp, "emptydir").mkdir()
+        result = self.sb.list_dir("emptydir")
+        self.assertEqual(result, "(ว่าง)")
+
+    def test_ssrf_rejects_192_168_private_range(self):
+        with self.assertRaises(ToolError):
+            _assert_public_url("http://192.168.1.100/admin")
+
+    def test_build_registry_base_has_exactly_3_tools(self):
+        reg = build_registry(self.sb)
+        self.assertEqual(len(reg), 3)
+        for expected in ("read_file", "list_dir", "run_command"):
+            self.assertIn(expected, reg)
+
+
 if __name__ == "__main__":
     unittest.main()

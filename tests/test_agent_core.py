@@ -56,7 +56,7 @@ class SandboxTest(unittest.TestCase):
 
 
 class _ScriptedLLM:
-    """LLM ปลอม: ตอบตามสคริปต์ทีละรอบ (เทส loop แบบ deterministic)"""
+    """ส LLM ปลอม: ตอบตามสคริปต์ทีละรอบ (เทส loop แบบ deterministic)"""
     def __init__(self, replies):
         self.replies = list(replies)
         self.seen = []
@@ -111,7 +111,7 @@ class AgentLoopTest(unittest.TestCase):
 
     def test_max_steps_stop(self):
         # ตอบเรียก tool ไปเรื่อย ไม่ final → ต้องหยุดที่ max_steps ไม่วนไม่จบ
-        loop_reply = '{"tool":"list_dir","args":{"path":"."}}'
+        loop_reply = '{"tool":"list_dir","args":{"path":"."}}'  
         res, _ = self._run([loop_reply] * 20, max_steps=3)
         self.assertEqual(res["stopped_reason"], "max_steps")
         self.assertIsNone(res["final"])
@@ -128,7 +128,7 @@ class AgentLoopTest(unittest.TestCase):
 
 
 class NetToolsTest(unittest.TestCase):
-    """tool เครือข่าย (opt-in): http_get กัน SSRF + call_connection; เปิดเฉพาะเมื่อให้ net_ctx"""
+    """ส tool เครือข่าย (opt-in): http_get กัน SSRF + call_connection; เปิดเฉพาะเมื่อให้ net_ctx"""
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.root = Path(self._tmp.name)
@@ -150,7 +150,7 @@ class NetToolsTest(unittest.TestCase):
             tools._assert_public_url("http://localhost:8420/api")
 
     def test_ssrf_rejects_cloud_metadata(self):
-        # 169.254.169.254 = link-local (endpoint metadata ของ cloud) ต้องโดนปฏิเสธ
+        # 169.254.169.254 = link-local (บ endpoint metadata ของ cloud) ต้องโดนปฏิเสธ
         with self.assertRaises(tools.ToolError):
             tools._assert_public_url("http://169.254.169.254/latest/meta-data/")
 
@@ -177,7 +177,7 @@ class NetToolsTest(unittest.TestCase):
 
 
 class AgentBrainOverrideTest(unittest.TestCase):
-    """generate_fn = ใช้ "สมอง" ที่ส่งมา (เช่น connection) แทน backend กลาง + extra_system"""
+    """ส generate_fn = ใช้ "สมอง" ที่ส่งมา (เช่น connection) แทน backend กลาง + extra_system"""
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.root = Path(self._tmp.name)
@@ -206,6 +206,48 @@ class AgentBrainOverrideTest(unittest.TestCase):
             raise RuntimeError("สมองล่ม")
         with self.assertRaises(RuntimeError):
             core.run(Path("/tmp"), "ทำงาน", workspace=self.root, generate_fn=boom)
+
+
+class AgentCoreExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        (self.root / "file.txt").write_text("content123", encoding="utf-8")
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_sandbox_read_file_returns_content(self):
+        sb = tools.Sandbox(self.root)
+        result = sb.read_file("file.txt")
+        self.assertIn("content123", result)
+
+    def test_sandbox_path_traversal_raises_tool_error(self):
+        sb = tools.Sandbox(self.root)
+        with self.assertRaises(tools.ToolError):
+            sb.read_file("../../etc/passwd")
+
+    def test_ssrf_loopback_rejected(self):
+        with self.assertRaises(tools.ToolError):
+            tools._assert_public_url("http://127.0.0.1/secret")
+
+    def test_registry_has_read_file_key(self):
+        sb = tools.Sandbox(self.root)
+        reg = tools.build_registry(sb)
+        self.assertIn("read_file", reg)
+
+    def test_core_run_returns_dict_with_final(self):
+        def fake_gen(messages):
+            return '{"final":"done"}'
+        res = core.run(Path("/tmp"), "task", workspace=self.root, generate_fn=fake_gen)
+        self.assertIsInstance(res, dict)
+        self.assertIn("final", res)
+
+    def test_core_run_stopped_reason_key_present(self):
+        def fake_gen(messages):
+            return '{"final":"ok"}'
+        res = core.run(Path("/tmp"), "task", workspace=self.root, generate_fn=fake_gen)
+        self.assertIn("stopped_reason", res)
 
 
 if __name__ == "__main__":
