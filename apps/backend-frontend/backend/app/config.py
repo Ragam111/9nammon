@@ -57,6 +57,8 @@ class Settings:
     cookie_secure: bool
     cors_origins: list[str]
     cost_per_1k_tokens: float
+    # Proxies whose X-Real-IP header is trusted for rate limits (e.g. the nginx container). Empty = trust none.
+    trusted_proxies: list[str] = field(default_factory=list)
 
 
 def load_env_file(path: Path) -> None:
@@ -97,4 +99,5 @@ def load_settings() -> Settings:
         cookie_secure=_bool("COOKIE_SECURE", False),
         cors_origins=_list("CORS_ORIGINS", ["http://127.0.0.1:5173", "http://localhost:5173"]),
         cost_per_1k_tokens=_float("COST_PER_1K_TOKENS", 0.0),
+        trusted_proxies=_list("TRUSTED_PROXY_CIDRS", []),
     )
