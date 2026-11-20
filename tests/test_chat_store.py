@@ -288,5 +288,53 @@ class QueryTest(unittest.TestCase):
             self.assertEqual(conn.execute("SELECT count(*) FROM conversations").fetchone()[0], 2)
 
 
+class ChatStoreExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_create_conversation_returns_id(self):
+        with chat_store.write_txn(self.root) as conn:
+            conv = chat_store.create_conversation(conn, title="test")
+            self.assertIn("id", conv)
+
+    def test_insert_message_returns_id(self):
+        with chat_store.write_txn(self.root) as conn:
+            conv = chat_store.create_conversation(conn, title="test")
+            msg = chat_store.insert_message(conn, conv["id"], role="user", content="hi")
+            self.assertIn("id", msg)
+
+    def test_search_returns_messages_list(self):
+        with chat_store.write_txn(self.root) as conn:
+            conv = chat_store.create_conversation(conn, title="test")
+            chat_store.insert_message(conn, conv["id"], role="user", content="สวัสดี")
+            result = chat_store.search(conn, "สวัสดี")
+            self.assertIn("messages", result)
+            self.assertIsInstance(result["messages"], list)
+
+    def test_active_path_returns_list(self):
+        with chat_store.write_txn(self.root) as conn:
+            conv = chat_store.create_conversation(conn, title="test")
+            chat_store.insert_message(conn, conv["id"], role="user", content="hi")
+            path = chat_store.active_path(conn, conv["id"])
+            self.assertIsInstance(path, list)
+
+    def test_usage_by_model_returns_list(self):
+        with chat_store.write_txn(self.root) as conn:
+            result = chat_store.usage_by_model(conn)
+            self.assertIsInstance(result, list)
+
+    def test_delete_conversation_removes_messages(self):
+        with chat_store.write_txn(self.root) as conn:
+            conv = chat_store.create_conversation(conn, title="to delete")
+            chat_store.insert_message(conn, conv["id"], role="user", content="สวัสดี")
+            chat_store.delete_conversation(conn, conv["id"])
+            result = chat_store.search(conn, "สวัสดี")
+            self.assertEqual(result["messages"], [])
+
+
 if __name__ == "__main__":
     unittest.main()

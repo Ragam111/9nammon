@@ -139,5 +139,37 @@ class ForwardIntegrationTest(unittest.TestCase):
         self.assertIsNone(data.get("served_by"))          # ไม่มี served_by = ทำที่ hub เอง
 
 
+class ClusterForwardExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_disabled_by_default(self):
+        self.assertFalse(cluster_forward.is_enabled(self.root))
+
+    def test_enabled_after_config_set(self):
+        config_manager.set_key(self.root, "CLUSTER_FORWARD_ENABLED", "true")
+        self.assertTrue(cluster_forward.is_enabled(self.root))
+
+    def test_pick_target_returns_dict(self):
+        result = cluster_forward.pick_target(self.root, rr_index=0)
+        self.assertIsInstance(result, dict)
+
+    def test_pick_target_node_none_when_no_nodes(self):
+        result = cluster_forward.pick_target(self.root, rr_index=0)
+        self.assertIsNone(result["node"])
+
+    def test_forward_chat_raises_forward_error_on_connection_refused(self):
+        with self.assertRaises(cluster_forward.ForwardError):
+            cluster_forward.forward_chat("http://127.0.0.1:9", "tok",
+                                         {"messages": []}, timeout=0.5)
+
+    def test_forward_error_is_exception(self):
+        self.assertTrue(issubclass(cluster_forward.ForwardError, Exception))
+
+
 if __name__ == "__main__":
     unittest.main()

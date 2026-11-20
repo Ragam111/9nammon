@@ -1,7 +1,7 @@
 """
 test_cli_render.py — CLI แชทต้อง "ไม่ดึงจอ" ตอนผู้ใช้เลื่อนขึ้นอ่านระหว่างโมเดลตอบ (fix/cli-scroll-stable)
 
-ตรวจ: ไม่มี redraw (\\r วนซ้ำ/ANSI cursor/clear screen/alt-screen), flush ถูก throttle,
+ตรวจ: ไม่มี redraw (\r วนซ้ำ/ANSI cursor/clear screen/alt-screen), flush ถูก throttle,
 โหมด quiet ไม่เขียนอะไรระหว่างตอบ, Ctrl+C หยุดคำตอบแต่ไม่ปิดแชท, Ollama ล่มไม่ sys.exit,
 และประวัติแชทบันทึก/โหลดกลับได้
 """
@@ -25,7 +25,7 @@ import cli_render  # noqa: E402
 import cli_session  # noqa: E402
 import local_coder  # noqa: E402
 
-# ANSI ที่ "ขยับ cursor/ลบจอ/สลับจอ" = ต้นเหตุจอกระโดด (สี SGR ...m อนุญาต)
+# ANSI ที่ "ขยัด cursor/ลบจอ/สลับจอ" = ต้นเหตุจอกระโดด (สี SGR ...m อนุญาต)
 CURSOR_ANSI = re.compile(r"\x1b\[(\?1049|\d*[ABCDEFGHJKST]|\d*;\d*[Hf])")
 
 
@@ -87,7 +87,7 @@ class LiveRendererTest(unittest.TestCase):
         r, out, text, _ = self._run([f"tok{i} " for i in range(200)], step=0.01)
         full = out.getvalue()
         self.assertEqual(text, "".join(f"tok{i} " for i in range(200)))
-        self.assertIsNone(CURSOR_ANSI.search(full), "ห้ามมี ANSI ขยับ cursor/ลบจอ")
+        self.assertIsNone(CURSOR_ANSI.search(full), "ห้ามมี ANSI ขยัด cursor/ลบจอ")
         # \r ใช้ได้แค่ลบบรรทัดสถานะครั้งเดียว (2 ตัว: ก่อนและหลังช่องว่าง)
         self.assertLessEqual(full.count("\r"), 2)
         self.assertIn(text, full)
@@ -233,6 +233,43 @@ class SessionLogTest(unittest.TestCase):
         log.enabled = False
         log.append("user", "x")
         self.assertFalse(log.path.exists())
+
+
+class CliRenderExtraTest(unittest.TestCase):
+    def test_resolve_mode_live_on_posix(self):
+        self.assertEqual(cli_render.resolve_mode(None, env={}, os_name="posix"), "live")
+
+    def test_resolve_mode_quiet_explicit(self):
+        self.assertEqual(cli_render.resolve_mode("quiet", env={}, os_name="posix"), "quiet")
+
+    def test_resolve_mode_live_explicit(self):
+        self.assertEqual(cli_render.resolve_mode("live", env={}, os_name="posix"), "live")
+
+    def test_stream_renderer_feed_accumulates(self):
+        out = TTYOut()
+        r = cli_render.StreamRenderer("quiet", out=out, title=lambda t: None)
+        r.start()
+        r.feed("hello")
+        r.feed(" world")
+        text = r.finish()
+        self.assertEqual(text, "hello world")
+
+    def test_stream_renderer_finish_returns_string(self):
+        out = TTYOut()
+        r = cli_render.StreamRenderer("quiet", out=out, title=lambda t: None)
+        r.start()
+        r.feed("test")
+        result = r.finish()
+        self.assertIsInstance(result, str)
+
+    def test_stream_renderer_quiet_no_writes_during_feed(self):
+        out = TTYOut()
+        r = cli_render.StreamRenderer("quiet", out=out, title=lambda t: None)
+        r.start()
+        before = len(out.writes)
+        r.feed("x")
+        after = len(out.writes)
+        self.assertEqual(before, after)
 
 
 if __name__ == "__main__":
