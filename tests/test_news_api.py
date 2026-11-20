@@ -1,6 +1,4 @@
-"""
-test_news_api.py — HTTP integration tests for GET /api/news
-"""
+"""test_news_api.py — HTTP integration tests for GET /api/news"""
 import http.client
 import json
 import sys
@@ -99,6 +97,69 @@ class NewsApiTest(unittest.TestCase):
         article = data["articles"][0]
         for field in ("title", "link", "pubDate", "source"):
             self.assertIn(field, article, f"missing field: {field}")
+
+
+class NewsApiExtraTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        model_backend.generate = (
+            lambda project_root, model, messages, num_ctx=8192, options=None: f"MODEL={model}"
+        )
+        news_store._fetch_feed = _mock_fetch
+
+    @classmethod
+    def tearDownClass(cls):
+        news_store._fetch_feed = _ORIG_FETCH
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.httpd, self.port, self.session_token = _make_server(self.root)
+        news_store._cache.clear()
+
+    def tearDown(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        self._tmp.cleanup()
+
+    def _get(self, path, token=None):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        hdrs = {}
+        if token:
+            hdrs["X-Auth-Token"] = token
+        conn.request("GET", path, headers=hdrs)
+        resp = conn.getresponse()
+        body = resp.read().decode("utf-8")
+        conn.close()
+        return resp.status, json.loads(body) if body else {}
+
+    def test_news_articles_title_is_string(self):
+        _, data = self._get("/api/news", token=self.session_token)
+        self.assertGreater(len(data["articles"]), 0)
+        self.assertIsInstance(data["articles"][0]["title"], str)
+
+    def test_news_articles_link_is_string(self):
+        _, data = self._get("/api/news", token=self.session_token)
+        self.assertGreater(len(data["articles"]), 0)
+        self.assertIsInstance(data["articles"][0]["link"], str)
+
+    def test_news_feeds_is_int(self):
+        # feeds is an integer count of configured feed URLs
+        _, data = self._get("/api/news", token=self.session_token)
+        self.assertIsInstance(data["feeds"], int)
+
+    def test_news_errors_is_list(self):
+        _, data = self._get("/api/news", token=self.session_token)
+        self.assertIsInstance(data["errors"], list)
+
+    def test_news_count_is_int(self):
+        _, data = self._get("/api/news", token=self.session_token)
+        self.assertIsInstance(data["count"], int)
+
+    def test_news_mock_articles_returned(self):
+        # mock returns articles; count >= 1 confirms mock was used
+        _, data = self._get("/api/news", token=self.session_token)
+        self.assertGreater(len(data["articles"]), 0)
 
 
 if __name__ == "__main__":
