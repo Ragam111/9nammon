@@ -4,6 +4,20 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [0.3.6] — 2026-11-05
+
+### Added
+- tests/test_hw_meter_api.py: 6 → 16 tests — hw_meter HTTP API
+  field types (recommended_model, tier_reasons, logical_cores),
+  value ranges (cpu_pct/ram_pct 0-100, ram_total_gb > 0),
+  mock fidelity (values match _FAKE_SNAPSHOT, per_core length == logical_cores)
+- tests/test_news_api.py: 6 → 16 tests — news RSS API
+  field types (feeds/errors/count/cached_until), article title/link non-empty,
+  count >= fake articles, second call returns same count, bad token 401/403
+- tests/test_server_rate_limit.py: 6 → 11 tests — rate limit HTTP
+  first request always 200, exact boundary (3rd succeeds / 4th fails),
+  error message non-empty, authenticated requests pass when disabled
+
 ## [0.3.4] — 2026-11-05 (Test Coverage — router unit tests)
 
 ### Added
