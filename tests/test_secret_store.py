@@ -91,7 +91,7 @@ class DpapiCallTest(unittest.TestCase):
 
     def test_protect_off_windows_raises_and_does_not_echo_secret(self):
         buf = io.StringIO()
-        with redirect_stdout(buf):
+        with mock.patch.object(secrets, "using_dpapi", return_value=False), redirect_stdout(buf):
             with self.assertRaises(secrets.SecretError):
                 secrets.protect(b"sk-do-not-log")
         self.assertNotIn("sk-do-not-log", buf.getvalue())
@@ -102,6 +102,10 @@ class FileFallbackTest(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.root = Path(self._tmp.name)
         secrets._file_fallback_warned = False
+        # These tests cover the non-DPAPI path; force it so they also run on Windows
+        dpapi_off = mock.patch.object(secrets, "using_dpapi", return_value=False)
+        dpapi_off.start()
+        self.addCleanup(dpapi_off.stop)
 
     def tearDown(self):
         self._tmp.cleanup()
@@ -109,6 +113,7 @@ class FileFallbackTest(unittest.TestCase):
     def test_keyring_is_not_a_dependency(self):
         self.assertFalse(secrets.keyring_is_dependency())
 
+    @unittest.skipUnless(os.name == "posix", "0600 file mode only exists on POSIX")
     def test_0600_file_warning_and_no_secret_in_stdout(self):
         fake_keyring = mock.Mock()
         buf = io.StringIO()
