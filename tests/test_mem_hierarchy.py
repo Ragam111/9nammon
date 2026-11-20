@@ -27,10 +27,28 @@ class HelperTest(unittest.TestCase):
         self.assertEqual(mh._mbps(mh.MB, 0.0), 0.0)
         self.assertEqual(mh._mbps(mh.MB, -1.0), 0.0)
 
+    def test_mbps_returns_float(self):
+        result = mh._mbps(mh.MB, 2.0)
+        self.assertIsInstance(result, float)
+
+    def test_mb_constant_positive(self):
+        self.assertIsInstance(mh.MB, int)
+        self.assertGreater(mh.MB, 0)
+
+    def test_mbps_scales_linearly(self):
+        # 2× bytes at same time → 2× speed
+        v1 = mh._mbps(mh.MB, 1.0)
+        v2 = mh._mbps(2 * mh.MB, 1.0)
+        self.assertAlmostEqual(v2 / v1, 2.0, places=5)
+
 
 class RamBenchTest(unittest.TestCase):
     def test_returns_positive(self):
         self.assertGreater(mh.bench_ram(size_mb=4, repeat=2), 0.0)
+
+    def test_returns_float(self):
+        result = mh.bench_ram(size_mb=2, repeat=1)
+        self.assertIsInstance(result, float)
 
 
 class DiskBenchTest(unittest.TestCase):
@@ -53,10 +71,26 @@ class DiskBenchTest(unittest.TestCase):
             r = mh.bench_disk(sub, size_mb=2)      # dir ยังไม่มี → ต้องสร้างให้
         self.assertGreater(r["write_mbps"], 0.0)
 
+    def test_result_has_write_and_read_keys(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = mh.bench_disk(d, size_mb=2)
+        self.assertIn("write_mbps", r)
+        self.assertIn("read_mbps", r)
+
+    def test_result_values_are_floats(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = mh.bench_disk(d, size_mb=2)
+        self.assertIsInstance(r["write_mbps"], float)
+        self.assertIsInstance(r["read_mbps"], float)
+
 
 class NetworkBenchTest(unittest.TestCase):
     def test_loopback_positive(self):
         self.assertGreater(mh.bench_network_loopback(size_mb=4), 0.0)
+
+    def test_loopback_returns_float(self):
+        result = mh.bench_network_loopback(size_mb=2)
+        self.assertIsInstance(result, float)
 
 
 class MeasureAllTest(unittest.TestCase):
@@ -76,6 +110,24 @@ class MeasureAllTest(unittest.TestCase):
         text = mh.format_report(r)
         self.assertIn("คอขวด", text)
         self.assertIn(r["bottleneck"], text)
+
+    def test_size_mb_in_result_matches_input(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = mh.measure_all(target_dir=d, size_mb=4)
+        self.assertEqual(r["size_mb"], 4)
+
+    def test_all_speed_values_are_positive(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = mh.measure_all(target_dir=d, size_mb=4)
+        for key in ("ram_mbps", "disk_write_mbps", "disk_read_mbps", "net_loopback_mbps"):
+            self.assertGreater(r[key], 0.0, f"{key} ต้องเป็นบวก")
+
+    def test_format_report_returns_string(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = mh.measure_all(target_dir=d, size_mb=4)
+        text = mh.format_report(r)
+        self.assertIsInstance(text, str)
+        self.assertGreater(len(text), 0)
 
 
 if __name__ == "__main__":
