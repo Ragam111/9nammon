@@ -150,7 +150,8 @@ class TestDbPath(unittest.TestCase):
 
     def test_path_under_project_root(self):
         result = db_path("/my/project")
-        self.assertTrue(str(result).startswith("/my/project"))
+        # compare as paths so the separator does not matter on Windows
+        self.assertEqual(result.parent.parent, Path("/my/project"))
 
     def test_relative_root_works(self):
         result = db_path(".")
@@ -166,7 +167,8 @@ class TestDbPath(unittest.TestCase):
 class TestWriteLock(unittest.TestCase):
     def test_returns_lock(self):
         lock = write_lock("/tmp/testroot_a")
-        self.assertIsInstance(lock, threading.Lock)
+        # threading.Lock is a factory function, not a type, so compare with a real lock's type
+        self.assertIsInstance(lock, type(threading.Lock()))
 
 
     def test_same_root_same_lock(self):

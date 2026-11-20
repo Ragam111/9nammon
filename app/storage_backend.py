@@ -19,7 +19,7 @@ stdlib ล้วน — ไม่เพิ่ม dependency
 
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from app import config_manager
 
@@ -34,9 +34,12 @@ def _safe_key(key: str) -> str:
     key = (key or "").strip()
     if not key:
         raise StorageError("key ว่างไม่ได้")
-    p = Path(key)
-    if p.is_absolute() or ".." in p.parts:
-        raise StorageError(f"key ไม่ปลอดภัย: {key!r}")
+    # Check with both path flavours so the guard does not depend on the OS:
+    # on Windows "/etc/passwd" is not is_absolute() (no drive) but still has a root,
+    # and "C:x" is drive-relative. Any anchor (root or drive) or ".." is rejected.
+    for p in (PurePosixPath(key), PureWindowsPath(key)):
+        if p.anchor or ".." in p.parts:
+            raise StorageError(f"key ไม่ปลอดภัย: {key!r}")
     return key
 
 

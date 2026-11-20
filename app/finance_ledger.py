@@ -27,6 +27,7 @@ Interface:
 from __future__ import annotations
 
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -40,6 +41,18 @@ _SETTLED_BY_DIRECTION = {"in": "received", "out": "paid"}
 
 def _now() -> str:
     return datetime.now().isoformat(timespec="seconds")
+
+
+@contextmanager
+def _session(project_root: Path):
+    """Open, commit/rollback, then always close. A bare `with sqlite3.connect()`
+    only commits; it never closes, so the file stays locked (Windows) until GC."""
+    conn = _connect(project_root)
+    try:
+        with conn:
+            yield conn
+    finally:
+        conn.close()
 
 
 def _connect(project_root: Path) -> sqlite3.Connection:
@@ -86,7 +99,7 @@ def record_entry(
     status = (status or "pending").strip().lower()
     _validate_status_for_direction(status, direction)
     now = _now()
-    with _connect(project_root) as conn:
+    with _session(project_root) as conn:
         cur = conn.execute(
             "INSERT INTO ledger (created_at, updated_at, amount, direction, status, category, note) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -135,13 +148,13 @@ def list_entries(
         sql += " WHERE " + " AND ".join(where)
     sql += " ORDER BY id DESC LIMIT ?"
     params.append(int(limit))
-    with _connect(project_root) as conn:
+    with _session(project_root) as conn:
         rows = conn.execute(sql, tuple(params)).fetchall()
     return [dict(r) for r in rows]
 
 
 def get_entry(project_root: Path, entry_id: int) -> Optional[dict]:
-    with _connect(project_root) as conn:
+    with _session(project_root) as conn:
         row = conn.execute("SELECT * FROM ledger WHERE id = ?", (int(entry_id),)).fetchone()
     return dict(row) if row else None
 
@@ -152,7 +165,7 @@ def set_status(project_root: Path, entry_id: int, status: str) -> Optional[dict]
     status = (status or "").strip().lower()
     if status not in VALID_STATUSES:
         raise ValueError(f"status ไม่ถูกต้อง: {status} (ต้องเป็น {sorted(VALID_STATUSES)})")
-    with _connect(project_root) as conn:
+    with _session(project_root) as conn:
         row = conn.execute("SELECT * FROM ledger WHERE id = ?", (int(entry_id),)).fetchone()
         if row is None:
             return None
@@ -166,7 +179,7 @@ def set_status(project_root: Path, entry_id: int, status: str) -> Optional[dict]
 
 
 def delete_entry(project_root: Path, entry_id: int) -> bool:
-    with _connect(project_root) as conn:
+    with _session(project_root) as conn:
         cur = conn.execute("DELETE FROM ledger WHERE id = ?", (int(entry_id),))
         return cur.rowcount > 0
 
@@ -174,7 +187,7 @@ def delete_entry(project_root: Path, entry_id: int) -> bool:
 def summary(project_root: Path) -> dict:
     """สรุปยอด: เงินเข้าที่รับแล้ว (received) - เงินออกที่จ่ายแล้ว (paid) = balance
     พร้อมยอดที่ยังค้าง (pending) แยกทิศทาง เพื่อให้ dashboard แสดงได้ทันที"""
-    with _connect(project_root) as conn:
+    with _session(project_root) as conn:
         rows = conn.execute(
             "SELECT direction, status, COUNT(*) AS n, COALESCE(SUM(amount), 0) AS total "
             "FROM ledger GROUP BY direction, status"

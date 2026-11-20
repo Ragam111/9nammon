@@ -23,6 +23,8 @@ class DashboardFrontendTest(unittest.TestCase):
                 cwd=ROOT,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",      # node prints UTF-8; the Windows default codepage cannot decode it
+                errors="replace",
             )
             self.assertEqual(proc.returncode, 0, f"{script}\n{proc.stderr}")
         suite = subprocess.run(
@@ -30,6 +32,8 @@ class DashboardFrontendTest(unittest.TestCase):
             cwd=ROOT,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
         )
         self.assertEqual(
             suite.returncode,

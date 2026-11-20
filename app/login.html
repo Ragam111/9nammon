@@ -17,19 +17,22 @@
     <div class="card">
       <h2>เข้าสู่ระบบ</h2>
 
-      <div id="status" class="note">กำลังตรวจสอบสถานะ…</div>
+      <div id="status" class="note" role="status">กำลังตรวจสอบสถานะ…</div>
 
       <div id="form" style="display:none; margin-top:10px">
         <form id="pw-form" autocomplete="on" style="display:flex; flex-direction:column; gap:8px">
+          <label for="username" class="lca-sr-only">ชื่อผู้ใช้</label>
           <input id="username" type="text" autocomplete="username" placeholder="username" />
+          <label for="password" class="lca-sr-only">รหัสผ่าน</label>
           <input id="password" type="password" autocomplete="current-password" placeholder="password" />
           <button id="go" type="submit">เข้าสู่ระบบ</button>
         </form>
-        <p id="err" class="err" style="display:none; margin-top:8px"></p>
+        <p id="err" class="err" role="alert" style="display:none; margin-top:8px"></p>
 
         <details style="margin-top:12px">
           <summary class="muted">หรือวาง API key / token</summary>
           <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px">
+            <label for="key" class="lca-sr-only">API key หรือ token</label>
             <input id="key" type="password" autocomplete="off" style="flex:1"
                    placeholder="X-API-Key หรือ X-Auth-Token" />
             <button id="go-key" type="button">ใช้ key</button>

@@ -22,6 +22,7 @@ Interface:
 from __future__ import annotations
 
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -39,6 +40,18 @@ _DEFAULT_PRICE = 0.0  # tier ที่ไม่รู้จัก = ไม่ค
 
 def _now() -> str:
     return datetime.now().isoformat(timespec="seconds")
+
+
+@contextmanager
+def _session(project_root: Path):
+    """Open, commit/rollback, then always close. A bare `with sqlite3.connect()`
+    only commits; it never closes, so the file stays locked (Windows) until GC."""
+    conn = _connect(project_root)
+    try:
+        with conn:
+            yield conn
+    finally:
+        conn.close()
 
 
 def _connect(project_root: Path) -> sqlite3.Connection:
@@ -78,7 +91,7 @@ def record_usage(
     if units <= 0:
         raise ValueError("units ต้องมากกว่า 0")
     now = _now()
-    with _connect(project_root) as conn:
+    with _session(project_root) as conn:
         cur = conn.execute(
             "INSERT INTO usage (used_at, key_id, owner, tier, endpoint, units) "
             "VALUES (?, ?, ?, ?, ?, ?)",
@@ -90,7 +103,7 @@ def record_usage(
 
 def list_usage(project_root: Path, key_id: Optional[str] = None, limit: int = 100) -> list:
     """คืน event ล่าสุดก่อน กรองตาม key_id ได้"""
-    with _connect(project_root) as conn:
+    with _session(project_root) as conn:
         if key_id:
             rows = conn.execute(
                 "SELECT * FROM usage WHERE key_id = ? ORDER BY id DESC LIMIT ?",
@@ -106,7 +119,7 @@ def list_usage(project_root: Path, key_id: Optional[str] = None, limit: int = 10
 def summary(project_root: Path) -> dict:
     """สรุปรวมการใช้งาน: units+cost รวม, แยกตาม tier, และแยกต่อ key
     cost = units * TIER_UNIT_PRICE[tier] (ประมาณการ ไม่ใช่เรียกเก็บจริง)"""
-    with _connect(project_root) as conn:
+    with _session(project_root) as conn:
         by_tier_rows = conn.execute(
             "SELECT tier, COALESCE(SUM(units), 0) AS units, COUNT(*) AS events "
             "FROM usage GROUP BY tier"

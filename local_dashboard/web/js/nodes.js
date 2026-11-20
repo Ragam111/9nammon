@@ -6,10 +6,11 @@ const EXPECTED = Object.freeze([
 ]);
 
 export function nodeStateLabel(state) {
-  if (state === "up") return "up";
-  if (state === "not_implemented") return "not implemented";
-  if (state === "checking") return "checking";
-  return "down";
+  if (state === "up") return "ทำงาน";
+  if (state === "not_implemented") return "ยังไม่รองรับ";
+  if (state === "checking") return "กำลังตรวจ";
+  if (state === "unknown") return "ไม่ทราบ";
+  return "ไม่ทำงาน";
 }
 
 export function roleLabel(role) {
@@ -25,7 +26,9 @@ export function emptyCluster() {
 }
 
 export function rowsForTransport(plan) {
-  const state = plan === "missing" ? "not_implemented" : "down";
+  // "missing" = the endpoint does not exist. "offline" = the status request failed, so the
+  // real state of each node is unknown; do not report every node as down.
+  const state = plan === "missing" ? "not_implemented" : "unknown";
   return EXPECTED.map(function (item) {
     return { port: item.port, role: item.role, state: state, latencyMs: null };
   });

@@ -679,8 +679,13 @@ def handle_get(handler, parsed, project_root) -> None:
             else:
                 folder = "all" if "folder_id" not in qs else qs["folder_id"][0]
                 limit = (qs.get("limit") or ["50"])[0]
+                from app import org_store
+                sees_all = org_store.role_at_least((ident or {}).get("role") or "USER", "ADMIN")
                 with chat_store.read_txn(project_root) as conn:
-                    rows = chat_store.list_conversations(conn, folder_id=folder, limit=limit)
+                    rows = chat_store.list_conversations(
+                        conn, folder_id=folder, limit=limit,
+                        restrict_owner=not sees_all, owner=_owner(ident),
+                    )
                 handler._send_json(200, {"conversations": _only_visible(rows, ident)})
         else:
             handler._send_json(404, {"error": "not found"})

@@ -456,7 +456,10 @@ class StorageTest(unittest.TestCase):
             self.assertTrue(db.exists())
 
             link = root / "link.db.tmp"
-            link.symlink_to(foreign)
+            try:
+                link.symlink_to(foreign)
+            except OSError:
+                self.skipTest("creating symlinks needs admin or Developer Mode on Windows")
             register(link)
             skipped = cleanup_stale(root, dry_run=False)
             self.assertTrue(link.exists())

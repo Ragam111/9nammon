@@ -72,6 +72,7 @@ button { cursor: pointer; }
 .main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .head {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
   padding: 10px 12px;
@@ -91,7 +92,8 @@ button { cursor: pointer; }
   font-size: 13px;
   line-height: 1.5;
 }
-.banner.warn { background: #f8e7c8; }
+/* พื้นผิวตามโทเคนของธีม (สว่าง/มืด) ตัวอักษรใช้ --lca-fg ได้ชัดทั้งสองธีม */
+.banner.warn { background: var(--lca-surface-2); border-left: 3px solid var(--lca-warn); padding-left: 9px; }
 .thread { flex: 1; overflow: auto; padding: 16px; }
 .msg { line-height: 1.75; word-break: normal; line-break: auto; overflow-wrap: anywhere; margin: 0 0 16px; }
 .msg .who { font-size: 13px; line-height: 1.5; color: var(--lca-muted); display: flex; gap: 8px; align-items: center; }
@@ -151,11 +153,31 @@ pre .copy { position: absolute; top: 6px; right: 6px; }
   background: var(--lca-bg);
 }
 .meta { font-size: 13px; line-height: 1.5; color: var(--lca-muted); }
+/* ป้ายโหมดแก้ไข/แตกสาขา อยู่เหนือช่องพิมพ์ (สร้างโดย chat.js) */
+.mode-chip {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--lca-line);
+  background: var(--lca-accent-weak);
+  font-size: 13px; line-height: 1.5;
+}
+.mode-chip[hidden] { display: none; }
+.mode-chip .mode-label { flex: 1; min-width: 0; }
+.mode-chip .mode-cancel {
+  flex: none;
+  border: 1px solid var(--lca-line);
+  background: var(--lca-surface);
+  border-radius: 8px;
+  padding: 2px 8px;
+  font-size: 13px;
+  line-height: 1.5;
+}
 h1, h2, h3 { line-height: 1.4; font-weight: 600; font-size: 1rem; margin: 0; }
 .num { font-variant-numeric: tabular-nums; }
 @media (max-width: 720px) {
   .hub { grid-template-columns: 1fr; }
   .sidebar { max-height: 40vh; }
+  .head .title { flex: 1 1 100%; } /* ชื่อแชทขึ้นบรรทัดของตัวเอง ปุ่มควบคุมตัดลงบรรทัดถัดไป */
 }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }

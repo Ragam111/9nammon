@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -34,6 +35,18 @@ VALID_STATUS = {"pending", "running", "done", "failed"}
 
 def _now() -> str:
     return datetime.now().isoformat(timespec="seconds")
+
+
+@contextmanager
+def _session(project_root: Path):
+    """Open, commit/rollback, then always close. A bare `with sqlite3.connect()`
+    only commits; it never closes, so the file stays locked (Windows) until GC."""
+    conn = _connect(project_root)
+    try:
+        with conn:
+            yield conn
+    finally:
+        conn.close()
 
 
 def _connect(project_root: Path) -> sqlite3.Connection:
@@ -76,7 +89,7 @@ def enqueue(project_root: Path, name: str, payload: Optional[Any] = None) -> dic
         raise ValueError(f"payload ต้อง serialise เป็น JSON ได้: {e}") from e
 
     now = _now()
-    with _connect(project_root) as conn:
+    with _session(project_root) as conn:
         cur = conn.execute(
             "INSERT INTO jobs (name, payload, status, created_at, updated_at) "
             "VALUES (?, ?, 'pending', ?, ?)",
@@ -91,7 +104,7 @@ def list_jobs(project_root: Path, status: Optional[str] = None, limit: int = 100
     """คืนรายการงาน เรียงตาม id (เก่า→ใหม่) กรองตาม status ได้"""
     if status is not None and status not in VALID_STATUS:
         raise ValueError(f"status ไม่ถูกต้อง: {status}")
-    with _connect(project_root) as conn:
+    with _session(project_root) as conn:
         if status:
             rows = conn.execute(
                 "SELECT * FROM jobs WHERE status = ? ORDER BY id LIMIT ?",
@@ -105,7 +118,7 @@ def list_jobs(project_root: Path, status: Optional[str] = None, limit: int = 100
 
 
 def get_job(project_root: Path, job_id: int) -> Optional[dict]:
-    with _connect(project_root) as conn:
+    with _session(project_root) as conn:
         row = conn.execute("SELECT * FROM jobs WHERE id = ?", (int(job_id),)).fetchone()
     return _row_to_dict(row) if row else None
 
@@ -114,7 +127,7 @@ def set_status(project_root: Path, job_id: int, status: str) -> bool:
     """เปลี่ยน status ของงาน — คืน True ถ้าเจอ id, raise ValueError ถ้า status ผิด"""
     if status not in VALID_STATUS:
         raise ValueError(f"status ไม่ถูกต้อง: {status} (ต้องเป็น {sorted(VALID_STATUS)})")
-    with _connect(project_root) as conn:
+    with _session(project_root) as conn:
         cur = conn.execute(
             "UPDATE jobs SET status = ?, updated_at = ? WHERE id = ?",
             (status, _now(), int(job_id)),
@@ -125,7 +138,7 @@ def set_status(project_root: Path, job_id: int, status: str) -> bool:
 def claim_next(project_root: Path) -> Optional[dict]:
     """ดึงงาน pending ที่เก่าสุด 1 งาน เปลี่ยนเป็น running แบบ atomic (กัน worker แย่งกัน)
     คืน record ของงานที่ claim ได้ หรือ None ถ้าไม่มีงาน pending"""
-    with _connect(project_root) as conn:
+    with _session(project_root) as conn:
         try:
             conn.execute("BEGIN IMMEDIATE")
             row = conn.execute(
@@ -148,6 +161,6 @@ def claim_next(project_root: Path) -> Optional[dict]:
 
 
 def delete_job(project_root: Path, job_id: int) -> bool:
-    with _connect(project_root) as conn:
+    with _session(project_root) as conn:
         cur = conn.execute("DELETE FROM jobs WHERE id = ?", (int(job_id),))
         return cur.rowcount > 0
