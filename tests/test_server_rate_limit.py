@@ -123,5 +123,94 @@ class RateLimitDisabledTest(unittest.TestCase):
             self.assertNotEqual(st, 429, f"ครั้งที่ {i+1}: rate limit ถูก disable แต่ได้ 429")
 
 
+class RateLimitExtraTest(unittest.TestCase):
+    def setUp(self):
+        self.httpd, self.port, self.session_token, self._tmp = _make_server(rate_limit_max=3)
+
+    def tearDown(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        self._tmp.cleanup()
+
+    def _get(self, path, token=None):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        hdrs = {}
+        if token:
+            hdrs["X-Auth-Token"] = token
+        conn.request("GET", path, headers=hdrs)
+        resp = conn.getresponse()
+        body = resp.read().decode("utf-8")
+        conn.close()
+        try:
+            data = json.loads(body) if body else {}
+        except json.JSONDecodeError:
+            data = {}
+        return resp.status, data
+
+    def test_first_ever_request_always_200(self):
+        st, _ = self._get("/api/health")
+        self.assertEqual(st, 200)
+
+    def test_max_1_blocks_second_request(self):
+        httpd, port, _, tmp = _make_server(rate_limit_max=1)
+        try:
+            conn1 = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+            conn1.request("GET", "/api/health")
+            r1 = conn1.getresponse()
+            r1.read()
+            conn1.close()
+            conn2 = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+            conn2.request("GET", "/api/health")
+            r2 = conn2.getresponse()
+            r2.read()
+            conn2.close()
+            self.assertEqual(r2.status, 429)
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+            tmp.cleanup()
+
+    def test_mixed_api_paths_consume_quota(self):
+        self._get("/api/health")
+        self._get("/api/health")
+        self._get("/api/health")
+        st, _ = self._get("/api/health")
+        self.assertEqual(st, 429)
+
+    def test_429_body_valid_json(self):
+        for _ in range(3):
+            self._get("/api/health")
+        st, data = self._get("/api/health")
+        self.assertEqual(st, 429)
+        self.assertIsInstance(data, dict)
+
+    def test_max_5_allows_5_then_blocks(self):
+        httpd, port, _, tmp = _make_server(rate_limit_max=5)
+        try:
+            for _ in range(5):
+                conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+                conn.request("GET", "/api/health")
+                r = conn.getresponse()
+                self.assertEqual(r.status, 200)
+                r.read()
+                conn.close()
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+            conn.request("GET", "/api/health")
+            r = conn.getresponse()
+            self.assertEqual(r.status, 429)
+            r.read()
+            conn.close()
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+            tmp.cleanup()
+
+    def test_non_api_after_quota_still_ok(self):
+        for _ in range(4):
+            self._get("/api/health")
+        st, _ = self._get("/")
+        self.assertNotEqual(st, 429)
+
+
 if __name__ == "__main__":
     unittest.main()
