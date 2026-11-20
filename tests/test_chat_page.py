@@ -39,5 +39,38 @@ class ChatPageBudgetTest(unittest.TestCase):
         self.assertNotIn("vue", js.lower())
 
 
+class ChatPageStructureTest(unittest.TestCase):
+    def test_chat_html_exists(self):
+        self.assertTrue((ROOT / "app" / "chat.html").is_file())
+
+    def test_chat_js_exists(self):
+        self.assertTrue((ROOT / "app" / "chat.js").is_file())
+
+    def test_chat_css_exists(self):
+        self.assertTrue((ROOT / "app" / "chat.css").is_file())
+
+    def test_html_has_viewport_meta(self):
+        html = (ROOT / "app" / "chat.html").read_text(encoding="utf-8")
+        self.assertIn("viewport", html)
+
+    def test_js_has_auth_ref(self):
+        js = (ROOT / "app" / "chat.js").read_text(encoding="utf-8")
+        # chat JS must send auth header
+        self.assertIn("token", js.lower())
+
+    def test_js_is_nonempty(self):
+        content = (ROOT / "app" / "chat.js").read_bytes()
+        self.assertGreater(len(content), 0)
+
+    def test_css_has_root_vars_or_body(self):
+        css = (ROOT / "app" / "chat.css").read_text(encoding="utf-8")
+        self.assertTrue(":root" in css or "body" in css)
+
+    def test_fonts_dir_has_woff2_files(self):
+        fonts = ROOT / "app" / "fonts"
+        woff2 = list(fonts.glob("*.woff2"))
+        self.assertGreater(len(woff2), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

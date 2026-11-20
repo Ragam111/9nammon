@@ -44,5 +44,56 @@ class VerifySha256Test(unittest.TestCase):
             self.assertIn("ลบไฟล์", message)
 
 
+class ChecksumMismatchTest(unittest.TestCase):
+    def test_checksum_mismatch_is_runtime_error(self):
+        self.assertTrue(issubclass(installer_gui.ChecksumMismatch, RuntimeError))
+
+    def test_bad_hex_format_raises(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "f.bin"
+            path.write_bytes(b"data")
+            with self.assertRaises(installer_gui.ChecksumMismatch):
+                installer_gui.verify_sha256(path, "not-a-valid-hex-string")
+
+    def test_missing_file_raises(self):
+        with self.assertRaises(installer_gui.ChecksumMismatch):
+            installer_gui.verify_sha256(
+                Path("/nonexistent/file.bin"),
+                hashlib.sha256(b"x").hexdigest()
+            )
+
+    def test_returned_digest_is_lowercase_hex(self):
+        payload = b"test payload"
+        expected = hashlib.sha256(payload).hexdigest()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "f.bin"
+            path.write_bytes(payload)
+            result = installer_gui.verify_sha256(path, expected)
+            self.assertEqual(result, result.lower())
+            self.assertEqual(len(result), 64)
+
+    def test_accepts_uppercase_expected(self):
+        payload = b"upper case test"
+        expected = hashlib.sha256(payload).hexdigest().upper()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "f.bin"
+            path.write_bytes(payload)
+            result = installer_gui.verify_sha256(path, expected)
+            self.assertEqual(result, expected.lower())
+
+    def test_mismatch_error_message_contains_expected_and_actual(self):
+        payload = b"bytes"
+        actual = hashlib.sha256(payload).hexdigest()
+        wrong = hashlib.sha256(b"other").hexdigest()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "f.bin"
+            path.write_bytes(payload)
+            with self.assertRaises(installer_gui.ChecksumMismatch) as cm:
+                installer_gui.verify_sha256(path, wrong)
+            msg = str(cm.exception)
+            self.assertIn(wrong, msg)
+            self.assertIn(actual, msg)
+
+
 if __name__ == "__main__":
     unittest.main()

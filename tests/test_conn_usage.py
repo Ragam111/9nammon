@@ -70,5 +70,48 @@ class ConnUsageTest(unittest.TestCase):
         self.assertGreater(s["connections"][0]["output_tokens"], 0)
 
 
+class ConnUsageExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_price_per_1k_positive(self):
+        self.assertGreater(conn_usage.PRICE_PER_1K_TOKENS, 0)
+
+    def test_estimate_tokens_returns_int(self):
+        result = conn_usage.estimate_tokens("hello world")
+        self.assertIsInstance(result, int)
+
+    def test_estimate_messages_returns_int(self):
+        msgs = [{"role": "user", "content": "hi"}]
+        result = conn_usage.estimate_messages_tokens(msgs)
+        self.assertIsInstance(result, int)
+
+    def test_summary_returns_dict(self):
+        result = conn_usage.summary(self.root)
+        self.assertIsInstance(result, dict)
+
+    def test_summary_has_totals(self):
+        result = conn_usage.summary(self.root)
+        self.assertIn("totals", result)
+
+    def test_summary_totals_has_requests(self):
+        result = conn_usage.summary(self.root)
+        self.assertIn("requests", result["totals"])
+
+    def test_record_increases_count(self):
+        conn_usage.record_usage(self.root, "c1", "Name", 5, 10)
+        s = conn_usage.summary(self.root)
+        self.assertEqual(s["totals"]["requests"], 1)
+
+    def test_estimate_tokens_scales_with_length(self):
+        short = conn_usage.estimate_tokens("hi")
+        long = conn_usage.estimate_tokens("x" * 400)
+        self.assertGreater(long, short)
+
+
 if __name__ == "__main__":
     unittest.main()
