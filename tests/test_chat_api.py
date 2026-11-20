@@ -296,6 +296,53 @@ class ChatApiTest(unittest.TestCase):
         self.assertEqual(st, 400)
         self.assertIn("unknown provider", data["error"])
 
+    def test_reply_field_is_string(self):
+        st, data = self._post("/api/chat", {
+            "provider": "ollama", "model": "qwen",
+            "messages": [{"role": "user", "content": "hello"}],
+        })
+        self.assertEqual(st, 200)
+        self.assertIsInstance(data.get("reply"), str)
+
+    def test_providers_endpoint_returns_list(self):
+        st, data = self._get("/api/chat/providers")
+        self.assertEqual(st, 200)
+        providers = data.get("providers", data) if isinstance(data, dict) else data
+        self.assertIsInstance(providers, list)
+        self.assertGreater(len(providers), 0)
+
+    def test_providers_items_have_id(self):
+        _, data = self._get("/api/chat/providers")
+        providers = data.get("providers", data) if isinstance(data, dict) else data
+        for p in providers:
+            self.assertIn("id", p, "each provider must have 'id'")
+
+    def test_unauthenticated_chat_returns_401(self):
+        import http.client
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        body = json.dumps({"provider": "ollama", "model": "qwen",
+                           "messages": [{"role": "user", "content": "hi"}]}).encode()
+        conn.request("POST", "/api/chat", body=body,
+                     headers={"Content-Type": "application/json"})
+        resp = conn.getresponse()
+        resp.read()
+        conn.close()
+        self.assertEqual(resp.status, 401)
+
+    def test_404_on_unknown_api_path(self):
+        st, _ = self._get("/api/definitely-does-not-exist-xyz")
+        self.assertEqual(st, 404)
+
+    def test_chat_response_has_message_id(self):
+        _, created = self._post("/api/chat/conversations", {})
+        cid = created["conversation"]["id"]
+        st, data = self._post("/api/chat", {
+            "conversation_id": cid, "content": "hi",
+            "provider": "ollama", "model": "qwen",
+        })
+        self.assertEqual(st, 200)
+        self.assertIn("message_id", data)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -33,6 +33,33 @@ class StatsTest(unittest.TestCase):
             s.record({"ok": True, "duration_s": 1, "steps": 1, "task": str(i)})
         self.assertEqual(len(s.recent(99999)), stats_mod.MAX_RECENT)
 
+    def test_record_returns_none(self):
+        s = stats_mod.Stats()
+        result = s.record({"ok": True, "duration_s": 1.0, "steps": 1})
+        self.assertIsNone(result)
+
+    def test_summary_has_all_required_keys(self):
+        s = stats_mod.Stats()
+        summ = s.summary()
+        for key in ("count", "ok", "success_rate", "avg_duration_s", "avg_steps", "est_per_day"):
+            self.assertIn(key, summ, f"summary ต้องมี key: {key}")
+
+    def test_all_ok_success_rate_one(self):
+        s = stats_mod.Stats()
+        for _ in range(5):
+            s.record({"ok": True, "duration_s": 1.0, "steps": 1})
+        self.assertEqual(s.summary()["success_rate"], 1.0)
+
+    def test_all_fail_success_rate_zero(self):
+        s = stats_mod.Stats()
+        for _ in range(5):
+            s.record({"ok": False, "duration_s": 1.0, "steps": 1})
+        self.assertEqual(s.summary()["success_rate"], 0.0)
+
+    def test_max_recent_is_positive_int(self):
+        self.assertIsInstance(stats_mod.MAX_RECENT, int)
+        self.assertGreater(stats_mod.MAX_RECENT, 0)
+
 
 class _Clock:
     def __init__(self): self.t = 0.0
@@ -64,6 +91,26 @@ class RunOneTest(unittest.TestCase):
         self.assertFalse(rec["ok"])
         self.assertEqual(rec["stopped_reason"], "error")
         self.assertIn("LLM ล่ม", rec["error"])
+
+    def test_run_one_record_has_ok_field(self):
+        with mock.patch.object(core, "run",
+                               lambda *a, **k: {"final": "x", "steps": [], "stopped_reason": "final"}):
+            rec = worker.run_one(".", "task", ".", clock=_Clock())
+        self.assertIn("ok", rec)
+        self.assertIsInstance(rec["ok"], bool)
+
+    def test_run_one_record_has_duration_field(self):
+        with mock.patch.object(core, "run",
+                               lambda *a, **k: {"final": "x", "steps": [], "stopped_reason": "final"}):
+            rec = worker.run_one(".", "task", ".", clock=_Clock())
+        self.assertIn("duration_s", rec)
+
+    def test_run_one_record_has_steps_field(self):
+        with mock.patch.object(core, "run",
+                               lambda *a, **k: {"final": "x", "steps": [{}, {}], "stopped_reason": "final"}):
+            rec = worker.run_one(".", "task", ".", clock=_Clock())
+        self.assertIn("steps", rec)
+        self.assertIsInstance(rec["steps"], int)
 
 
 class WorkerTest(unittest.TestCase):
@@ -99,6 +146,17 @@ class WorkerTest(unittest.TestCase):
                           done_fn=bad, clock=_Clock())
         rec = w.tick()           # ต้องไม่ raise
         self.assertTrue(rec["ok"])
+
+    def test_worker_has_stats_attribute(self):
+        w = worker.Worker(claim_fn=lambda: None, clock=_Clock())
+        self.assertIsInstance(w.stats, stats_mod.Stats)
+
+    def test_tick_accumulates_stats_across_multiple_jobs(self):
+        jobs = [{"task": f"j{i}", "workspace": "."} for i in range(3)]
+        w = worker.Worker(claim_fn=lambda: jobs.pop(0) if jobs else None, clock=_Clock())
+        for _ in range(3):
+            w.tick()
+        self.assertEqual(w.stats.summary()["count"], 3)
 
 
 if __name__ == "__main__":
