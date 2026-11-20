@@ -81,5 +81,41 @@ class FormatResultsTest(unittest.TestCase):
         self.assertIn("2.", out)
 
 
+class WebSearchExtraTest(unittest.TestCase):
+    def test_max_results_is_positive_int(self):
+        self.assertIsInstance(web_search.MAX_RESULTS, int)
+        self.assertGreater(web_search.MAX_RESULTS, 0)
+
+    def test_format_returns_string(self):
+        out = web_search.format_results_for_context([])
+        self.assertIsInstance(out, str)
+
+    def test_format_one_result_has_number_one(self):
+        results = [{"title": "X", "url": "https://x.com", "snippet": "s"}]
+        out = web_search.format_results_for_context(results)
+        self.assertIn("1.", out)
+
+    def test_format_snippet_in_output(self):
+        results = [{"title": "T", "url": "https://t.com", "snippet": "unique-snippet-text"}]
+        out = web_search.format_results_for_context(results)
+        self.assertIn("unique-snippet-text", out)
+
+    def test_format_url_in_output(self):
+        results = [{"title": "T", "url": "https://unique-url.example", "snippet": "s"}]
+        out = web_search.format_results_for_context(results)
+        self.assertIn("https://unique-url.example", out)
+
+    def test_format_multiple_results_has_all_titles(self):
+        results = [
+            {"title": "Alpha", "url": "https://a.com", "snippet": "sa"},
+            {"title": "Beta", "url": "https://b.com", "snippet": "sb"},
+            {"title": "Gamma", "url": "https://c.com", "snippet": "sc"},
+        ]
+        out = web_search.format_results_for_context(results)
+        self.assertIn("Alpha", out)
+        self.assertIn("Beta", out)
+        self.assertIn("Gamma", out)
+
+
 if __name__ == "__main__":
     unittest.main()

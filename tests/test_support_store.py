@@ -72,5 +72,40 @@ class SupportStoreTest(unittest.TestCase):
         self.assertEqual(c["closed"], 0)  # สถานะที่ไม่มีก็ต้องเป็น 0 ไม่ใช่หาย
 
 
+class SupportStoreExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_create_returns_dict_with_id(self):
+        t = support_store.create_ticket(self.root, "user1", "subject", "body text")
+        self.assertIsInstance(t, dict)
+        self.assertIn("id", t)
+
+    def test_get_unknown_id_returns_none(self):
+        result = support_store.get_ticket(self.root, 999999)
+        self.assertIsNone(result)
+
+    def test_list_empty_root_returns_list(self):
+        result = support_store.list_tickets(self.root)
+        self.assertIsInstance(result, list)
+        self.assertEqual(len(result), 0)
+
+    def test_counts_empty_root_total_zero(self):
+        c = support_store.counts_by_status(self.root)
+        self.assertEqual(c["total"], 0)
+
+    def test_ticket_has_reporter_field(self):
+        t = support_store.create_ticket(self.root, "reporter_name", "s", "b")
+        self.assertEqual(t["reporter"], "reporter_name")
+
+    def test_create_default_status_is_open(self):
+        t = support_store.create_ticket(self.root, "u", "s", "b")
+        self.assertEqual(t["status"], "open")
+
+
 if __name__ == "__main__":
     unittest.main()

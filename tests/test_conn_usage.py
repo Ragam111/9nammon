@@ -70,5 +70,38 @@ class ConnUsageTest(unittest.TestCase):
         self.assertGreater(s["connections"][0]["output_tokens"], 0)
 
 
+class ConnUsageExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_price_constant_is_positive(self):
+        self.assertGreater(conn_usage.PRICE_PER_1K_TOKENS, 0)
+
+    def test_estimate_tokens_returns_int(self):
+        result = conn_usage.estimate_tokens("hello world")
+        self.assertIsInstance(result, int)
+
+    def test_estimate_messages_empty_returns_zero(self):
+        self.assertEqual(conn_usage.estimate_messages_tokens([]), 0)
+
+    def test_summary_totals_is_dict(self):
+        s = conn_usage.summary(self.root)
+        self.assertIsInstance(s["totals"], dict)
+
+    def test_summary_connections_is_list(self):
+        s = conn_usage.summary(self.root)
+        self.assertIsInstance(s["connections"], list)
+
+    def test_record_then_connection_in_summary(self):
+        conn_usage.record_usage(self.root, "cx", "BrainX", 5, 5)
+        s = conn_usage.summary(self.root)
+        ids = [c["conn_id"] for c in s["connections"]]
+        self.assertIn("cx", ids)
+
+
 if __name__ == "__main__":
     unittest.main()
