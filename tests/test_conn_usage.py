@@ -70,5 +70,59 @@ class ConnUsageTest(unittest.TestCase):
         self.assertGreater(s["connections"][0]["output_tokens"], 0)
 
 
+class ConnUsageExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_price_per_1k_tokens_is_positive(self):
+        self.assertGreater(conn_usage.PRICE_PER_1K_TOKENS, 0)
+
+    def test_price_per_1k_tokens_is_numeric(self):
+        self.assertIsInstance(conn_usage.PRICE_PER_1K_TOKENS, (int, float))
+
+    def test_estimate_tokens_thai_text_nonzero(self):
+        result = conn_usage.estimate_tokens("สวัสดีโลก")
+        self.assertGreater(result, 0)
+
+    def test_estimate_tokens_returns_int(self):
+        result = conn_usage.estimate_tokens("hello world test")
+        self.assertIsInstance(result, int)
+
+    def test_summary_has_totals_key(self):
+        s = conn_usage.summary(self.root)
+        self.assertIn("totals", s)
+
+    def test_summary_has_connections_key(self):
+        s = conn_usage.summary(self.root)
+        self.assertIn("connections", s)
+
+    def test_summary_connections_is_list(self):
+        s = conn_usage.summary(self.root)
+        self.assertIsInstance(s["connections"], list)
+
+    def test_record_usage_conn_name_stored(self):
+        conn_usage.record_usage(self.root, "id-x", "BrainX", 5, 10)
+        s = conn_usage.summary(self.root)
+        entry = next((c for c in s["connections"] if c["conn_id"] == "id-x"), None)
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry["conn_name"], "BrainX")
+
+    def test_multiple_records_accumulate(self):
+        conn_usage.record_usage(self.root, "c", "N", 1, 1)
+        conn_usage.record_usage(self.root, "c", "N", 2, 2)
+        s = conn_usage.summary(self.root)
+        self.assertEqual(s["totals"]["requests"], 2)
+
+    def test_estimate_messages_tokens_returns_int(self):
+        msgs = [{"role": "user", "content": "hi"}]
+        result = conn_usage.estimate_messages_tokens(msgs)
+        self.assertIsInstance(result, int)
+        self.assertGreater(result, 0)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -39,5 +39,42 @@ class ChatPageBudgetTest(unittest.TestCase):
         self.assertNotIn("vue", js.lower())
 
 
+class ChatPageExtraTest(unittest.TestCase):
+    def test_chat_html_exists(self):
+        self.assertTrue((ROOT / "app" / "chat.html").is_file())
+
+    def test_app_js_exists(self):
+        self.assertTrue((ROOT / "app" / "app.js").is_file())
+
+    def test_chat_css_exists(self):
+        self.assertTrue((ROOT / "app" / "chat.css").is_file())
+
+    def test_chat_html_loads_app_js_before_chat_js(self):
+        html = (ROOT / "app" / "chat.html").read_text(encoding="utf-8")
+        pos_app = html.find('src="/app.js"')
+        pos_chat = html.find('src="/chat.js"')
+        self.assertGreater(pos_app, -1)
+        self.assertGreater(pos_chat, -1)
+        self.assertLess(pos_app, pos_chat)
+
+    def test_chat_html_has_viewport_meta(self):
+        html = (ROOT / "app" / "chat.html").read_text(encoding="utf-8")
+        self.assertIn("viewport", html)
+
+    def test_chat_js_is_valid_utf8(self):
+        raw = (ROOT / "app" / "chat.js").read_bytes()
+        try:
+            raw.decode("utf-8")
+        except UnicodeDecodeError:
+            self.fail("chat.js ไม่ใช่ UTF-8")
+
+    def test_app_js_is_valid_utf8(self):
+        raw = (ROOT / "app" / "app.js").read_bytes()
+        try:
+            raw.decode("utf-8")
+        except UnicodeDecodeError:
+            self.fail("app.js ไม่ใช่ UTF-8")
+
+
 if __name__ == "__main__":
     unittest.main()

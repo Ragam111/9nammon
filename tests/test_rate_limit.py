@@ -46,5 +46,49 @@ class RateLimiterTest(unittest.TestCase):
         self.assertTrue(rl.allow("ip1", now=0))
 
 
+class RateLimiterExtraTest(unittest.TestCase):
+    def test_allow_returns_bool(self):
+        rl = RateLimiter(max_requests=5, window_seconds=60)
+        result = rl.allow("ip1", now=0)
+        self.assertIsInstance(result, bool)
+
+    def test_max_one_allows_exactly_one(self):
+        rl = RateLimiter(max_requests=1, window_seconds=60)
+        self.assertTrue(rl.allow("ip1", now=0))
+        self.assertFalse(rl.allow("ip1", now=0))
+
+    def test_reset_all_clears_all_clients(self):
+        rl = RateLimiter(max_requests=1, window_seconds=60)
+        rl.allow("ip1", now=0)
+        rl.allow("ip2", now=0)
+        rl.reset(None)  # reset ทั้งหมด
+        self.assertTrue(rl.allow("ip1", now=0))
+        self.assertTrue(rl.allow("ip2", now=0))
+
+    def test_large_limit_allows_many(self):
+        rl = RateLimiter(max_requests=1000, window_seconds=60)
+        for i in range(1000):
+            self.assertTrue(rl.allow("ip1", now=float(i)))
+
+    def test_negative_max_disables_limit(self):
+        rl = RateLimiter(max_requests=-1, window_seconds=60)
+        for i in range(500):
+            self.assertTrue(rl.allow("ip1", now=float(i)))
+
+    def test_different_instances_independent(self):
+        rl1 = RateLimiter(max_requests=1, window_seconds=60)
+        rl2 = RateLimiter(max_requests=1, window_seconds=60)
+        rl1.allow("ip1", now=0)
+        # rl2 ยังไม่ได้นับ ip1 → ต้องอนุญาต
+        self.assertTrue(rl2.allow("ip1", now=0))
+
+    def test_window_expiry_precise(self):
+        rl = RateLimiter(max_requests=1, window_seconds=10)
+        self.assertTrue(rl.allow("ip1", now=0))
+        self.assertFalse(rl.allow("ip1", now=5))
+        # พ้น window (now=11 > 0+10) → reset
+        self.assertTrue(rl.allow("ip1", now=11))
+
+
 if __name__ == "__main__":
     unittest.main()
