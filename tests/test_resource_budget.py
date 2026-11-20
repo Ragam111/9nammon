@@ -131,5 +131,34 @@ class BudgetReportTest(unittest.TestCase):
             self.assertIn("footprint", m)
 
 
+class ResourceBudgetExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_gb_constant_is_positive(self):
+        self.assertGreater(rb.GB, 0)
+
+    def test_pick_model_returns_dict(self):
+        result = rb.pick_model(avail=4 * rb.GB)
+        self.assertIsInstance(result, dict)
+
+    def test_pick_model_has_model_key(self):
+        self.assertIn("model", rb.pick_model(avail=4 * rb.GB))
+
+    def test_pick_model_has_fits_key(self):
+        self.assertIn("fits", rb.pick_model(avail=4 * rb.GB))
+
+    def test_budget_report_returns_dict(self):
+        rep = rb.budget_report(self.root)
+        self.assertIsInstance(rep, dict)
+
+    def test_fits_known_small_model_at_high_ram(self):
+        self.assertTrue(rb.fits("qwen2.5-coder:0.5b", 4 * rb.GB))
+
+
 if __name__ == "__main__":
     unittest.main()
