@@ -110,6 +110,84 @@ class ClusterHealthTest(unittest.TestCase):
         self.assertEqual(out["summary"], {"total": 0, "up": 0, "down": 0})
         self.assertEqual(out["nodes"], [])
 
+    def test_preserves_node_order(self):
+        """ผลลัพธ์ต้องเรียงเหมือน cluster.json เสมอ ไม่ใช่ตามใครเสร็จก่อน"""
+        for name in ("a", "b", "c", "d"):
+            cs.add_node(self.root, name, f"http://{name}:8420")
+
+        import time
+
+        def slow_variable(url, timeout=2.0):
+            # a ช้าสุด, d เร็วสุด — ถ้าเรียงตาม "เสร็จก่อน" จะได้ d,c,b,a
+            delay = {"a": 0.04, "b": 0.03, "c": 0.02, "d": 0.01}
+            for k, v in delay.items():
+                if f"//{k}:" in url:
+                    time.sleep(v)
+                    break
+            return {"reachable": True, "health": {}}
+
+        with mock.patch.object(cs, "fetch_node_health", side_effect=slow_variable):
+            out = cs.cluster_health(self.root)
+        self.assertEqual([n["name"] for n in out["nodes"]], ["a", "b", "c", "d"])
+
+    def test_parallel_is_faster_than_sequential(self):
+        """พิสูจน์ว่าขนานจริง: 4 node × sleep 0.2s → ขนาน < 0.5s (sequential จะ ~0.8s)
+        ขอบเขตผ่อน (0.5s) เพื่อกัน CI runner ที่ช้า — ยังชัดกว่า sequential เสมอ"""
+        for name in ("a", "b", "c", "d"):
+            cs.add_node(self.root, name, f"http://{name}:8420")
+
+        import time
+        DELAY = 0.2
+
+        def slow(url, timeout=2.0):
+            time.sleep(DELAY)
+            return {"reachable": True, "health": {}}
+
+        with mock.patch.object(cs, "fetch_node_health", side_effect=slow):
+            t0 = time.monotonic()
+            out = cs.cluster_health(self.root)
+            elapsed = time.monotonic() - t0
+
+        self.assertEqual(out["summary"], {"total": 4, "up": 4, "down": 0})
+        # ขนาน: ควร ~DELAY; sequential: ~4*DELAY. ตั้ง 0.5s = กันพลาดบน CI ช้า
+        self.assertLess(elapsed, 0.5,
+                        f"parallel cluster_health ช้าเกินไป: {elapsed:.3f}s (expected ≈{DELAY}s)")
+
+    def test_max_workers_1_runs_sequentially(self):
+        """max_workers=1 = fallback sequential (ไว้ debug/determinism)"""
+        for name in ("a", "b"):
+            cs.add_node(self.root, name, f"http://{name}:8420")
+        call_threads = []
+
+        def record(url, timeout=2.0):
+            import threading
+            call_threads.append(threading.get_ident())
+            return {"reachable": True, "health": {}}
+
+        with mock.patch.object(cs, "fetch_node_health", side_effect=record):
+            out = cs.cluster_health(self.root, max_workers=1)
+        self.assertEqual(out["summary"]["up"], 2)
+        # sequential = ทุก call รันบน thread เดียวกัน (ของ caller)
+        self.assertEqual(len(set(call_threads)), 1)
+
+    def test_max_workers_capped(self):
+        """node เยอะกว่า _MAX_WORKERS → ไม่สร้าง thread เกิน cap"""
+        import threading
+        for i in range(50):  # มากกว่า _MAX_WORKERS (32)
+            cs.add_node(self.root, f"n{i}", f"http://n{i}:8420")
+        seen_threads = set()
+        lock = threading.Lock()
+
+        def record(url, timeout=2.0):
+            with lock:
+                seen_threads.add(threading.get_ident())
+            return {"reachable": True, "health": {}}
+
+        with mock.patch.object(cs, "fetch_node_health", side_effect=record):
+            cs.cluster_health(self.root)
+        # thread ที่ใช้จริง ≤ cap + 1 (caller thread อาจเข้ามาด้วยในบางกรณี)
+        self.assertLessEqual(len(seen_threads), cs._MAX_WORKERS + 1)
+
 
 class EcosystemSettingsTest(unittest.TestCase):
     def setUp(self):
