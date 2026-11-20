@@ -39,5 +39,29 @@ class ChatPageBudgetTest(unittest.TestCase):
         self.assertNotIn("vue", js.lower())
 
 
+class ChatPageExtraTest(unittest.TestCase):
+    def test_chat_html_exists(self):
+        self.assertTrue((ROOT / "app" / "chat.html").is_file())
+
+    def test_chat_css_exists(self):
+        self.assertTrue((ROOT / "app" / "chat.css").is_file())
+
+    def test_chat_js_exists(self):
+        self.assertTrue((ROOT / "app" / "chat.js").is_file())
+
+    def test_chat_html_has_doctype(self):
+        html = (ROOT / "app" / "chat.html").read_text(encoding="utf-8")
+        self.assertIn("<!doctype", html.lower())
+
+    def test_chat_js_is_nonempty(self):
+        content = (ROOT / "app" / "chat.js").read_bytes()
+        self.assertGreater(len(content), 0)
+
+    def test_thai_font_regular_exists(self):
+        self.assertTrue(
+            (ROOT / "app" / "fonts" / "IBMPlexSansThai-Regular.sub.woff2").is_file()
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

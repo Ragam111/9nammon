@@ -122,5 +122,46 @@ class BuildAutoContextTest(unittest.TestCase):
         self.assertNotIn("old.txt", ctx)
 
 
+class AgentEvalExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        cm._content_cache.clear()
+
+    def tearDown(self):
+        cm._content_cache.clear()
+        self._tmp.cleanup()
+
+    def _write(self, rel, content):
+        p = self.root / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(content, encoding="utf-8")
+        return p
+
+    def test_scorecard_has_overall_key(self):
+        sc = agent_eval.scorecard()
+        self.assertIn("overall", sc)
+
+    def test_scorecard_dimensions_is_dict(self):
+        sc = agent_eval.scorecard()
+        self.assertIsInstance(sc["dimensions"], dict)
+
+    def test_build_auto_context_returns_dict(self):
+        self._write("x.py", "print(1)")
+        ctx = cm.build_auto_context(self.root, num_ctx=8192, already_manual=set())
+        self.assertIsInstance(ctx, dict)
+
+    def test_build_auto_context_empty_dir(self):
+        ctx = cm.build_auto_context(self.root, num_ctx=8192, already_manual=set())
+        self.assertIsInstance(ctx, dict)
+
+    def test_max_file_size_bytes_is_positive(self):
+        self.assertGreater(cm.MAX_FILE_SIZE_BYTES, 0)
+
+    def test_context_budget_ratio_between_0_and_1(self):
+        self.assertGreater(cm.CONTEXT_BUDGET_RATIO, 0)
+        self.assertLessEqual(cm.CONTEXT_BUDGET_RATIO, 1)
+
+
 if __name__ == "__main__":
     unittest.main()

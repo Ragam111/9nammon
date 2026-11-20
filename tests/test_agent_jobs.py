@@ -62,5 +62,37 @@ class AgentJobsTest(unittest.TestCase):
         self.assertFalse(jobs.complete(self.root, "job-nope", {"ok": True}))
 
 
+class AgentJobsExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_enqueue_returns_dict_with_id(self):
+        j = jobs.enqueue(self.root, "task")
+        self.assertIn("id", j)
+        self.assertIsInstance(j["id"], str)
+
+    def test_enqueue_status_is_queued(self):
+        j = jobs.enqueue(self.root, "task")
+        self.assertEqual(j["status"], jobs.QUEUED)
+
+    def test_get_nonexistent_returns_none(self):
+        self.assertIsNone(jobs.get(self.root, "job-nope"))
+
+    def test_stats_empty(self):
+        st = jobs.stats(self.root)
+        self.assertEqual(st["total"], 0)
+
+    def test_complete_nonexistent_returns_false(self):
+        result = jobs.complete(self.root, "job-nonexistent", {"ok": True})
+        self.assertFalse(result)
+
+    def test_claim_none_on_empty_queue(self):
+        self.assertIsNone(jobs.claim(self.root))
+
+
 if __name__ == "__main__":
     unittest.main()
