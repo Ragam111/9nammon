@@ -43,7 +43,6 @@ class UsageStoreTest(unittest.TestCase):
         self.assertEqual(len(usage_store.list_usage(self.root, key_id="k1")), 1)
 
     def test_summary_units_and_cost(self):
-        # free 2 ครั้ง (ฟรี cost 0), paid 3 ครั้ง (0.10 * 3 = 0.30)
         for _ in range(2):
             usage_store.record_usage(self.root, "kf", "freeuser", "free")
         for _ in range(3):
@@ -73,3 +72,40 @@ class UsageStoreTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UsageStoreExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_record_returns_dict_with_key_id(self):
+        rec = usage_store.record_usage(self.root, "k1", "dev", "free")
+        self.assertIsInstance(rec, dict)
+        self.assertIn("key_id", rec)
+
+    def test_list_empty_returns_list(self):
+        result = usage_store.list_usage(self.root)
+        self.assertIsInstance(result, list)
+        self.assertEqual(len(result), 0)
+
+    def test_summary_has_total_units(self):
+        s = usage_store.summary(self.root)
+        self.assertIn("total_units", s)
+
+    def test_summary_has_by_key(self):
+        s = usage_store.summary(self.root)
+        self.assertIn("by_key", s)
+
+    def test_record_multiple_increases_list(self):
+        usage_store.record_usage(self.root, "k1", "dev", "free")
+        usage_store.record_usage(self.root, "k2", "dev", "free")
+        self.assertEqual(len(usage_store.list_usage(self.root)), 2)
+
+    def test_summary_total_cost_is_float(self):
+        usage_store.record_usage(self.root, "kp", "dev", "paid")
+        s = usage_store.summary(self.root)
+        self.assertIsInstance(s["total_cost"], float)
