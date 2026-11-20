@@ -88,3 +88,34 @@ class SystemPromptTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PersonasExtraTest(unittest.TestCase):
+    def test_personas_dict_nonempty(self):
+        self.assertGreater(len(personas.PERSONAS), 0)
+
+    def test_get_returns_dict(self):
+        pid = next(iter(personas.PERSONAS))
+        result = personas.get(pid)
+        self.assertIsInstance(result, dict)
+
+    def test_list_personas_no_duplicate_ids(self):
+        result = personas.list_personas()
+        ids = [p["id"] for p in result]
+        self.assertEqual(len(ids), len(set(ids)))
+
+    def test_system_prompt_returns_string(self):
+        pid = next(iter(personas.PERSONAS))
+        result = personas.system_prompt(pid)
+        self.assertIsInstance(result, str)
+
+    def test_persona_skills_is_list(self):
+        pid = next(iter(personas.PERSONAS))
+        p = personas.get(pid)
+        self.assertIsInstance(p["skills"], list)
+
+    def test_all_prompts_contain_persona_name(self):
+        for pid in personas.PERSONAS:
+            p = personas.get(pid)
+            prompt = personas.system_prompt(pid)
+            self.assertIn(p["name"], prompt, f"prompt for {pid} missing name")

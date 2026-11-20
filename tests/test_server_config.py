@@ -66,3 +66,30 @@ class ResolveServerConfigTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ServerConfigExtraTest(unittest.TestCase):
+    def test_result_has_host_key(self):
+        cfg = server.resolve_server_config(_args(), env={})
+        self.assertIn("host", cfg)
+
+    def test_result_has_port_key(self):
+        cfg = server.resolve_server_config(_args(), env={})
+        self.assertIn("port", cfg)
+
+    def test_result_has_token_key(self):
+        cfg = server.resolve_server_config(_args(), env={})
+        self.assertIn("token", cfg)
+
+    def test_port_is_int(self):
+        cfg = server.resolve_server_config(_args(), env={})
+        self.assertIsInstance(cfg["port"], int)
+
+    def test_host_is_string(self):
+        cfg = server.resolve_server_config(_args(), env={})
+        self.assertIsInstance(cfg["host"], str)
+
+    def test_localhost_with_token_accepted(self):
+        # adding a token to localhost should not raise
+        cfg = server.resolve_server_config(_args(host="127.0.0.1", token="tok"), env={})
+        self.assertEqual(cfg["token"], "tok")

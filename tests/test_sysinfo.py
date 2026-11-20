@@ -68,3 +68,32 @@ class SystemInfoTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SysinfoExtraTest(unittest.TestCase):
+    def test_human_bytes_mb(self):
+        result = sysinfo._human_bytes(1024 ** 2)
+        self.assertIn("MiB", result)
+
+    def test_human_bytes_tb(self):
+        result = sysinfo._human_bytes(1024 ** 4)
+        self.assertIn("TiB", result)
+
+    def test_to_dict_has_memory_key(self):
+        info = get_system_info()
+        d = info.to_dict()
+        self.assertIn("memory", d)
+
+    def test_detect_gpus_items_are_dicts(self):
+        gpus = sysinfo.detect_gpus()
+        for gpu in gpus:
+            self.assertIsInstance(gpu, dict)
+
+    def test_run_returns_string(self):
+        # _run with a real simple command returns a string
+        result = sysinfo._run(["echo", "hello"])
+        self.assertIsInstance(result, str)
+
+    def test_cpu_logical_cores_is_int(self):
+        info = get_system_info()
+        self.assertIsInstance(info.cpu.logical_cores, int)
