@@ -53,7 +53,7 @@ async def authenticate(x_api_key: str = Header(...)) -> Auth:
         row = (
             await s.execute(
                 text("SELECT tenant_id, user_id FROM api_keys "
-                     "WHERE key_hash = :h AGND revoked_at IS NULL"),
+                     "WHERE key_hash = :h AND revoked_at IS NULL"),
                 {"h": hash_key(x_api_key)},
             )
         ).first()
@@ -93,13 +93,18 @@ async def chat(request: Request, body: ChatIn, auth: Auth = Depends(authenticate
         raise HTTPException(429, "Monthly token quota exceeded")
 
     # 2) Inference
-    async with httpx.AsyncClient(timeout=120) as client:
-        r = await client.post(
-            f"{OLLAMA_URL}/api/chat",
-            json={"model": MODEL, "stream": False,
-                  "options": {"num_ctx": NUM_CTX},
-                  "messages": [{"role": "user", "content": body.prompt}]},
-        )
+    try:
+        async with httpx.AsyncClient(timeout=120) as client:
+            r = await client.post(
+                f"{OLLAMA_URL}/api/chat",
+                json={"model": MODEL, "stream": False,
+                      "options": {"num_ctx": NUM_CTX},
+                      "messages": [{"role": "user", "content": body.prompt}]},
+            )
+    except httpx.TimeoutException:
+        raise HTTPException(504, "Inference backend timed out")
+    except httpx.HTTPError:
+        raise HTTPException(502, "Inference backend unreachable")
     if r.status_code != 200:
         raise HTTPException(502, "Inference backend error")
     data = r.json()

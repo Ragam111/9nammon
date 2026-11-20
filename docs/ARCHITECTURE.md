@@ -37,7 +37,17 @@
 - รีโปมี `Dockerfile` และ `docker-compose.yml` อยู่แล้ว ใช้เป็นจุดเริ่มสำหรับบิลด์และรัน server ในคอนเทนเนอร์
 - ทดสอบแล้ว 2026-11-20 (Docker 29.9.3): `docker build` ผ่าน, คอนเทนเนอร์รันเป็น user `app`, `GET /docs` ตอบ 200, ใช้ RAM ราว 58 MiB จากเพดาน 384 MiB
 - แก้ healthcheck ใน `docker-compose.yml` จากพอร์ต 8001 เป็น 8000 (8001 คือพอร์ตฝั่ง host ข้างในคอนเทนเนอร์ไม่มีอะไรฟัง เดิมจึงขึ้น unhealthy ตลอด)
-- ยังไม่ได้ทดสอบ `docker compose up` เต็มชุดกับ Postgres: repo ไม่มี `initdb/10-app-password.sh` และ `.env.example` ที่ compose อ้างถึง
+- เพิ่ม `initdb/10-app-password.sh` (ตั้งรหัสของ role `lca_app` จาก `LCA_APP_PASSWORD`) และ `.env.example` แล้ว. `.gitattributes` บังคับ `*.sh` เป็น LF
+- พอร์ตฝั่ง host ตั้งได้ด้วย `LCA_API_PORT` (ค่าเริ่มต้น 8001)
+- ทดสอบ `docker compose up` เต็มชุด 2026-11-20:
+  - db และ api ขึ้น healthy, `GET /docs` 200, RAM api ~62 MiB, db ~37 MiB
+  - initdb ทำงาน: รหัสใหม่ต่อจาก api container ได้, รหัสเดิม `change-me` ถูกปฏิเสธ (`InvalidPasswordError`)
+  - RLS ทำงาน: `lca_app` insert แถวของ tenant อื่นไม่ได้
+  - `/v1/chat`: key ผิดได้ 401, key ถูกผ่าน auth และเช็ก quota ได้
+  - แก้บั๊ก `main.py`: SQL เขียน `AGND` แทน `AND` ทำให้ทุก request ที่มี key ได้ 500
+  - แก้ `main.py`: Ollama timeout/ต่อไม่ได้ ตอนนี้คืน 504/502 แทน 500
+  - ยังไม่ได้คำตอบจากโมเดลจริง: Ollama บนเครื่องนี้ตอบไม่ทันใน 280 วินาที (RAM ว่าง ~350 MB) และโมเดลค่าเริ่มต้น `qwen2.5-coder:1.5b` ไม่ได้ติดตั้งไว้
+- `api` ใช้เวลาเริ่ม ~20-30 วินาทีบนเครื่องนี้ ก่อนจะรับ request ได้
 
 ### 5. โปสเตอร์ "Software Engineer" (Frontend, Backend, Database, APIs, Services, Monitoring)
 - รูปถูกเก็บไว้ที่ `docs/assets/software-engineer-poster.jpg` (commit แล้ว)
@@ -45,7 +55,7 @@
 
 ### สิ่งที่ยังไม่มีและควรทำต่อ (เรียงตามความคุ้มค่า)
 1. เมตริก/monitoring ของ server (เช่น จำนวนงานในคิว อัตราผิดพลาด ความหน่วงของ `/api/chat`)
-2. เพิ่ม `initdb/10-app-password.sh` และ `.env.example` แล้วทดสอบ `docker compose up` เต็มชุด
+2. ทดสอบ `/v1/chat` จนได้คำตอบจากโมเดลบนเครื่องที่มี RAM ว่างพอ
 3. Caching และ load balancing: ทำเมื่อวัดแล้วพบคอขวดเท่านั้น
 
 แผนผังด้านล่างเป็นเอกสารเดิมสมัยที่หัวข้อยังเป็น v0.0.2. มันเป็นแผนที่โมดูลยุคนั้น ไม่ใช่แผนสามชั้นที่ใช้แทนโค้ดปัจจุบัน
