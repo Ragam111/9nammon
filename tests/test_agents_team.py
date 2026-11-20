@@ -68,6 +68,10 @@ class AgentsTeamTest(unittest.TestCase):
         self.assertEqual(stats, {"done": 4, "failed": 0})   # pm + dev + qa + ops
         self.assertEqual(agents_team.status(), {"todo": 0, "doing": 0, "done": 4, "failed": 0})
 
+    def test_run_with_goal_queues_pm_first(self) -> None:
+        self.assertEqual(agents_team.main(["run", "--hours", "0.01", "--dry", "--goal", "check health"]), 0)
+        self.assertEqual(agents_team.status()["done"], 4)
+
     def test_failed_task_is_recorded_not_lost(self) -> None:
         agents_team.enqueue("qa", "review")
         old_url = agents_team.OLLAMA_URL

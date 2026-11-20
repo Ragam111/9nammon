@@ -203,6 +203,7 @@ def main(argv: list[str] | None = None) -> int:
     rn = sub.add_parser("run")
     rn.add_argument("--hours", type=float, default=8.0)
     rn.add_argument("--dry", action="store_true")
+    rn.add_argument("--goal", help="queue a PM task for this goal before running")
     sub.add_parser("status")
     args = ap.parse_args(argv)
 
@@ -210,6 +211,8 @@ def main(argv: list[str] | None = None) -> int:
         task = enqueue(args.role, args.goal)
         print(f"queued {task['id']} ({task['role']})")
     elif args.cmd == "run":
+        if args.goal:
+            enqueue("pm", args.goal)
         print(json.dumps(run(args.hours, args.dry)))
     else:
         print(json.dumps(status()))
