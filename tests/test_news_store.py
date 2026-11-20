@@ -186,5 +186,43 @@ class TestGetNews(unittest.TestCase):
         self.assertEqual(result["feeds"], len(news_store.DEFAULT_FEEDS))
 
 
+# ---------------------------------------------------------------------------
+# NewsStoreExtraTest
+# ---------------------------------------------------------------------------
+
+class NewsStoreExtraTest(unittest.TestCase):
+    def setUp(self):
+        news_store._cache.clear()
+
+    def test_fetch_feed_returns_list_type(self):
+        with patch("app.news_store.urlopen", return_value=_mock_urlopen(_RSS_ONE_ITEM)):
+            result = _fetch_feed("https://example.com/feed")
+        self.assertIsInstance(result, list)
+
+    def test_get_news_returns_dict_type(self):
+        with patch("app.news_store._fetch_feed", return_value=[]):
+            result = get_news(["https://example.com/feed"])
+        self.assertIsInstance(result, dict)
+
+    def test_get_news_articles_is_list(self):
+        with patch("app.news_store._fetch_feed", return_value=[]):
+            result = get_news(["https://example.com/feed"])
+        self.assertIsInstance(result["articles"], list)
+
+    def test_default_feeds_is_non_empty_list(self):
+        self.assertIsInstance(news_store.DEFAULT_FEEDS, list)
+        self.assertGreater(len(news_store.DEFAULT_FEEDS), 0)
+
+    def test_get_news_errors_is_list(self):
+        with patch("app.news_store._fetch_feed", return_value=[]):
+            result = get_news(["https://example.com/feed"])
+        self.assertIsInstance(result["errors"], list)
+
+    def test_cache_dict_starts_empty_after_clear(self):
+        news_store._cache["dummy"] = (0, [])
+        news_store._cache.clear()
+        self.assertEqual(len(news_store._cache), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

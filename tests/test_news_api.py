@@ -101,5 +101,66 @@ class NewsApiTest(unittest.TestCase):
             self.assertIn(field, article, f"missing field: {field}")
 
 
+class NewsApiExtraTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        model_backend.generate = (
+            lambda project_root, model, messages, num_ctx=8192, options=None: f"MODEL={model}"
+        )
+        news_store._fetch_feed = _mock_fetch
+
+    @classmethod
+    def tearDownClass(cls):
+        news_store._fetch_feed = _ORIG_FETCH
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.httpd, self.port, self.session_token = _make_server(self.root)
+        news_store._cache.clear()
+
+    def tearDown(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        self._tmp.cleanup()
+
+    def _get(self, path, token=None, send_auth=True):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        hdrs = {}
+        if send_auth and token:
+            hdrs["X-Auth-Token"] = token
+        conn.request("GET", path, headers=hdrs)
+        resp = conn.getresponse()
+        body = resp.read().decode("utf-8")
+        conn.close()
+        return resp.status, json.loads(body) if body else {}
+
+    def test_news_feeds_is_integer(self):
+        _, data = self._get("/api/news", token=self.session_token)
+        self.assertIsInstance(data["feeds"], int)
+
+    def test_news_errors_is_list(self):
+        _, data = self._get("/api/news", token=self.session_token)
+        self.assertIsInstance(data["errors"], list)
+
+    def test_news_no_header_requires_auth(self):
+        st, _ = self._get("/api/news", send_auth=False)
+        self.assertIn(st, (401, 403))
+
+    def test_news_article_titles_are_strings(self):
+        _, data = self._get("/api/news", token=self.session_token)
+        for article in data["articles"]:
+            self.assertIsInstance(article["title"], str)
+
+    def test_news_article_links_are_strings(self):
+        _, data = self._get("/api/news", token=self.session_token)
+        for article in data["articles"]:
+            self.assertIsInstance(article["link"], str)
+
+    def test_news_count_is_non_negative(self):
+        _, data = self._get("/api/news", token=self.session_token)
+        self.assertGreaterEqual(data["count"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()
