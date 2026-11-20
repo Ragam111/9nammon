@@ -35,6 +35,34 @@ class IsTrustedTest(unittest.TestCase):
             content = (p / ".lca_trust").read_text(encoding="utf-8")
             self.assertIn("trusted_at", content)
 
+    def test_is_trusted_returns_bool(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = folder_trust.is_trusted(Path(tmp))
+            self.assertIsInstance(result, bool)
+
+    def test_multiple_mark_trusted_idempotent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            folder_trust.mark_trusted(p)
+            folder_trust.mark_trusted(p)  # ทำซ้ำได้ ไม่ crash
+            self.assertTrue(folder_trust.is_trusted(p))
+
+    def test_marker_content_has_trusted_at_value(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            folder_trust.mark_trusted(p)
+            content = (p / ".lca_trust").read_text(encoding="utf-8")
+            # รูปแบบ: "trusted_at=<ISO timestamp>\n"
+            self.assertTrue(content.startswith("trusted_at="))
+
+    def test_trusted_at_value_is_nonempty(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            folder_trust.mark_trusted(p)
+            content = (p / ".lca_trust").read_text(encoding="utf-8")
+            value = content.strip().split("=", 1)[1]
+            self.assertGreater(len(value), 0)
+
 
 class EnsureTrustedTest(unittest.TestCase):
     @patch("builtins.input", return_value="y")
@@ -59,6 +87,13 @@ class EnsureTrustedTest(unittest.TestCase):
             folder_trust.mark_trusted(p)
             result = folder_trust.ensure_trusted(p)
             self.assertTrue(result)
+
+    def test_ensure_trusted_returns_bool(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            folder_trust.mark_trusted(p)
+            result = folder_trust.ensure_trusted(p)
+            self.assertIsInstance(result, bool)
 
 
 if __name__ == "__main__":

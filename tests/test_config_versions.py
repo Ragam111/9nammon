@@ -82,6 +82,41 @@ class ConfigVersionsTest(unittest.TestCase):
     def test_empty_when_no_snapshots(self):
         self.assertEqual(cv.list_versions(self.root), [])
 
+    def test_snapshot_returns_dict(self):
+        self._write_config({"K": "v"})
+        meta = cv.snapshot(self.root)
+        self.assertIsInstance(meta, dict)
+
+    def test_snapshot_has_ts_key(self):
+        self._write_config({"K": "v"})
+        meta = cv.snapshot(self.root)
+        self.assertIn("ts", meta)
+
+    def test_snapshot_id_is_string(self):
+        self._write_config({"K": "v"})
+        meta = cv.snapshot(self.root)
+        self.assertIsInstance(meta["id"], str)
+
+    def test_list_returns_list(self):
+        result = cv.list_versions(self.root)
+        self.assertIsInstance(result, list)
+
+    def test_rollback_returns_dict_with_restored(self):
+        self._write_config({"K": "v"})
+        v1 = cv.snapshot(self.root)
+        config_manager.set_key(self.root, "K", "v2")
+        res = cv.rollback(self.root, v1["id"])
+        self.assertIsInstance(res, dict)
+        self.assertIn("restored", res)
+
+    def test_multiple_snapshots_ordered_newest_first(self):
+        self._write_config({"K": "v1"})
+        cv.snapshot(self.root, label="first")
+        config_manager.set_key(self.root, "K", "v2")
+        cv.snapshot(self.root, label="second")
+        versions = cv.list_versions(self.root)
+        self.assertEqual(versions[0]["label"], "second")
+
 
 if __name__ == "__main__":
     unittest.main()
