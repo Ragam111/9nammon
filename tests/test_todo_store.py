@@ -72,3 +72,41 @@ class TodoStoreTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TodoStoreExtraTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+
+    def test_load_returns_list_type(self):
+        result = todo_store.load_todos(self.tmp)
+        self.assertIsInstance(result, list)
+
+    def test_add_preserves_text(self):
+        todo_store.add_todo(self.tmp, "exact text here")
+        todos = todo_store.load_todos(self.tmp)
+        self.assertEqual(todos[0]["text"], "exact text here")
+
+    def test_new_todo_done_is_false(self):
+        todo_store.add_todo(self.tmp, "fresh item")
+        todos = todo_store.load_todos(self.tmp)
+        self.assertFalse(todos[0]["done"])
+
+    def test_delete_single_empties_list(self):
+        todo_store.add_todo(self.tmp, "only item")
+        todos = todo_store.load_todos(self.tmp)
+        todo_store.delete_todo(self.tmp, todos[0]["id"])
+        self.assertEqual(todo_store.load_todos(self.tmp), [])
+
+    def test_toggle_twice_returns_to_original(self):
+        todo_store.add_todo(self.tmp, "toggle twice")
+        tid = todo_store.load_todos(self.tmp)[0]["id"]
+        todo_store.toggle_todo(self.tmp, tid)
+        todo_store.toggle_todo(self.tmp, tid)
+        todos = todo_store.load_todos(self.tmp)
+        self.assertFalse(todos[0]["done"])
+
+    def test_each_todo_has_id(self):
+        todo_store.add_todo(self.tmp, "item with id")
+        todos = todo_store.load_todos(self.tmp)
+        self.assertIn("id", todos[0])

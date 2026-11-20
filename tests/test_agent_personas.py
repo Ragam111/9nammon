@@ -88,3 +88,31 @@ class SystemPromptTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AgentPersonasExtraTest(unittest.TestCase):
+    def test_personas_dict_is_nonempty(self):
+        self.assertGreater(len(personas.PERSONAS), 0)
+
+    def test_get_returns_dict(self):
+        result = personas.get("ceo")
+        self.assertIsInstance(result, dict)
+
+    def test_system_prompt_returns_str(self):
+        result = personas.system_prompt("ceo")
+        self.assertIsInstance(result, str)
+
+    def test_system_prompt_min_length(self):
+        for pid in personas.PERSONAS:
+            prompt = personas.system_prompt(pid)
+            self.assertGreater(len(prompt), 50, f"{pid} prompt too short")
+
+    def test_list_personas_all_have_id(self):
+        for p in personas.list_personas():
+            self.assertIn("id", p)
+            self.assertIsInstance(p["id"], str)
+
+    def test_personas_id_matches_lookup(self):
+        for pid in personas.PERSONAS:
+            p = personas.get(pid)
+            self.assertEqual(p["id"], pid)
