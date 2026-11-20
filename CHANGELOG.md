@@ -4,6 +4,21 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [0.3.5] — 2026-11-05 (Test Coverage — web_search + support_store extended tests)
+
+### Added
+- `tests/test_web_search.py` — expanded from 7 to 16 tests: URLError/bad-JSON raise
+  RuntimeError, empty results/missing "web" key return [], result has all 3 fields
+  (title/url/snippet), description→snippet mapping, format header line, single-item
+  numbering
+- `tests/test_support_store.py` — expanded from 6 to 32 tests: `create_ticket`
+  validation (empty subject/body, too-long, invalid kind/channel), return shape (all 9
+  fields, defaults, None reporter, custom kind/channel), `list_tickets` (empty→[],
+  newest-first, status/kind/combined filters, limit, bad-filter raises),
+  `get_ticket` (found/not-found None), `set_status` (transitions, invalid raises,
+  unknown-id None), `counts_by_status` (empty all-zero, all statuses, total key)
+- Test suite: 1273 → 1307 tests total
+
 ## [0.3.4] — 2026-11-05 (Test Coverage — router unit tests)
 
 ### Added
