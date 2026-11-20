@@ -7,6 +7,7 @@ import sys
 import tempfile
 import threading
 import unittest
+import unittest.mock
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
@@ -104,6 +105,53 @@ class HwMeterApiTest(unittest.TestCase):
     def test_hw_meter_per_core_is_list(self):
         _, data = self._get("/api/metrics/hw", token=self.session_token)
         self.assertIsInstance(data["cpu_per_core"], list)
+
+
+class HwMeterApiExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self._root = Path(self._tmp.name)
+        with unittest.mock.patch.object(hw_meter, "snapshot", _mock_snapshot):
+            self._handler_cls = server.make_handler(self._root, None)
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), self._handler_cls)
+        self.port = self.httpd.server_address[1]
+        self.session_token = self._handler_cls.session_token
+        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+
+    def tearDown(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        self._tmp.cleanup()
+
+    def _get(self, path, token=None):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        hdrs = {"X-Auth-Token": token} if token else {}
+        conn.request("GET", path, headers=hdrs)
+        resp = conn.getresponse()
+        body = resp.read()
+        conn.close()
+        return resp.status, json.loads(body) if body else {}
+
+    def test_logical_cores_is_int(self):
+        with unittest.mock.patch.object(hw_meter, "snapshot", _mock_snapshot):
+            _, data = self._get("/api/metrics/hw", token=self.session_token)
+        self.assertIsInstance(data["logical_cores"], int)
+
+    def test_ram_total_gb_is_number(self):
+        with unittest.mock.patch.object(hw_meter, "snapshot", _mock_snapshot):
+            _, data = self._get("/api/metrics/hw", token=self.session_token)
+        self.assertIsInstance(data["ram_total_gb"], (int, float))
+
+    def test_recommended_model_is_string(self):
+        with unittest.mock.patch.object(hw_meter, "snapshot", _mock_snapshot):
+            _, data = self._get("/api/metrics/hw", token=self.session_token)
+        self.assertIsInstance(data["recommended_model"], str)
+
+    def test_values_match_fake_snapshot(self):
+        with unittest.mock.patch.object(hw_meter, "snapshot", _mock_snapshot):
+            _, data = self._get("/api/metrics/hw", token=self.session_token)
+        self.assertEqual(data["cpu_pct"], _FAKE_SNAPSHOT["cpu_pct"])
+        self.assertEqual(data["tier"], _FAKE_SNAPSHOT["tier"])
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ import sys
 import tempfile
 import threading
 import unittest
+import unittest.mock
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
@@ -99,6 +100,55 @@ class NewsApiTest(unittest.TestCase):
         article = data["articles"][0]
         for field in ("title", "link", "pubDate", "source"):
             self.assertIn(field, article, f"missing field: {field}")
+
+
+class NewsApiExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self._root = Path(self._tmp.name)
+        with unittest.mock.patch.object(news_store, "_fetch_feed", _mock_fetch):
+            self.httpd, self.port, self.session_token = _make_server(self._root)
+
+    def tearDown(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        self._tmp.cleanup()
+
+    def _get(self, path, token=None):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        hdrs = {"X-Auth-Token": token} if token else {}
+        conn.request("GET", path, headers=hdrs)
+        resp = conn.getresponse()
+        body = resp.read()
+        conn.close()
+        return resp.status, json.loads(body) if body else {}
+
+    def test_news_feeds_is_int(self):
+        with unittest.mock.patch.object(news_store, "_fetch_feed", _mock_fetch):
+            _, data = self._get("/api/news", token=self.session_token)
+        self.assertIsInstance(data["feeds"], int)
+
+    def test_news_cached_until_is_int(self):
+        with unittest.mock.patch.object(news_store, "_fetch_feed", _mock_fetch):
+            _, data = self._get("/api/news", token=self.session_token)
+        self.assertIsInstance(data["cached_until"], int)
+
+    def test_news_has_errors_key(self):
+        with unittest.mock.patch.object(news_store, "_fetch_feed", _mock_fetch):
+            _, data = self._get("/api/news", token=self.session_token)
+        self.assertIn("errors", data)
+        self.assertIsInstance(data["errors"], list)
+
+    def test_news_count_is_int(self):
+        with unittest.mock.patch.object(news_store, "_fetch_feed", _mock_fetch):
+            _, data = self._get("/api/news", token=self.session_token)
+        self.assertIsInstance(data["count"], int)
+
+    def test_article_link_is_string(self):
+        with unittest.mock.patch.object(news_store, "_fetch_feed", _mock_fetch):
+            _, data = self._get("/api/news", token=self.session_token)
+        article = data["articles"][0]
+        self.assertIsInstance(article["link"], str)
 
 
 if __name__ == "__main__":
