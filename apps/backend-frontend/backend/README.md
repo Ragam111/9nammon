@@ -25,6 +25,25 @@ copy ..\.env.example .env
 
 app อ่าน `.env` ในโฟลเดอร์ที่รันเอง (หรือไฟล์ที่ระบุใน `ENV_FILE`) ค่าจาก environment จริงจะชนะค่าในไฟล์
 
+## โหมด dev (ไม่ต้องมีโมเดลจริง)
+
+เปิดสามหน้าต่าง: โมเดลจำลอง, API และหน้าเว็บ
+
+```powershell
+.venv\Scripts\python.exe scripts\fake_model.py 9100
+```
+
+```powershell
+.venv\Scripts\python.exe scripts\dev_server.py
+```
+
+```powershell
+cd ..\frontend
+npm run dev
+```
+
+API โหมด dev รันที่ port 8010 และ Vite ส่งต่อ `/api` ไปที่นั่น ข้อมูลเก็บใน `data-dev/` ใส่คำในข้อความเพื่อจำลองปัญหา: `badkey` (key ผิด), `busy` (บริการล่ม), `slowstart` (ตอบช้า 3 วินาที), `drop` (เน็ตหลุดกลางทาง)
+
 ## Endpoint
 
 | Method | Path | ต้อง login | หมายเหตุ |

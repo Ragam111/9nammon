@@ -13,6 +13,18 @@
       "port": 8431
     },
     {
+      "name": "bf-fake-model",
+      "runtimeExecutable": "apps/backend-frontend/backend/.venv/Scripts/python.exe",
+      "runtimeArgs": ["apps/backend-frontend/backend/scripts/fake_model.py", "9100"],
+      "port": 9100
+    },
+    {
+      "name": "bf-api",
+      "runtimeExecutable": "apps/backend-frontend/backend/.venv/Scripts/python.exe",
+      "runtimeArgs": ["apps/backend-frontend/backend/scripts/dev_server.py"],
+      "port": 8010
+    },
+    {
       "name": "backend-frontend-showcase",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "apps/backend-frontend/frontend", "run", "dev"],

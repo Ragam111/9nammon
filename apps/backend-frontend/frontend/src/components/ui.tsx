@@ -3,6 +3,7 @@
 import {
   createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState,
   type ButtonHTMLAttributes, type InputHTMLAttributes, type KeyboardEvent, type ReactNode, type SelectHTMLAttributes,
+  type TextareaHTMLAttributes,
 } from "react";
 import { CheckIcon, ErrorIcon, InfoIcon, SortIcon, WarnIcon } from "./icons";
 
@@ -85,6 +86,26 @@ export function Input({ label, hint, error, id, className = "", ...rest }: Input
         aria-invalid={error ? true : undefined}
         aria-describedby={error || hint ? `${inputId}-msg` : undefined}
         className={`${controlBase} border-line ${className}`}
+        {...rest}
+      />
+    </Field>
+  );
+}
+
+/* ---------- Textarea ---------- */
+
+type TextareaProps = TextareaHTMLAttributes<HTMLTextAreaElement> & { label: string; hint?: string; error?: string };
+
+export function Textarea({ label, hint, error, id, className = "", ...rest }: TextareaProps) {
+  const autoId = useId();
+  const areaId = id ?? autoId;
+  return (
+    <Field id={areaId} label={label} hint={hint} error={error}>
+      <textarea
+        id={areaId}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error || hint ? `${areaId}-msg` : undefined}
+        className={`${controlBase} border-line py-2 ${className}`}
         {...rest}
       />
     </Field>
@@ -278,16 +299,20 @@ export function Tabs({ tabs, label }: { tabs: Tab[]; label: string }) {
 
 /* ---------- Table (sortable columns, empty state) ---------- */
 
-export type Column<T> = { key: keyof T & string; label: string; numeric?: boolean; mono?: boolean; sortable?: boolean };
+export type Column<T> = {
+  key: keyof T & string; label: string; numeric?: boolean; mono?: boolean; sortable?: boolean;
+  render?: (row: T) => ReactNode;
+};
 
 type TableProps<T> = { caption: string; columns: Column<T>[]; rows: T[]; rowKey: (row: T) => string; empty: ReactNode };
 
-export function Table<T extends Record<string, string | number>>({ caption, columns, rows, rowKey, empty }: TableProps<T>) {
+export function Table<T extends Record<string, unknown>>({ caption, columns, rows, rowKey, empty }: TableProps<T>) {
   const [sort, setSort] = useState<{ key: keyof T & string; dir: "asc" | "desc" } | null>(null);
   const sorted = useMemo(() => {
     if (!sort) return rows;
     const factor = sort.dir === "asc" ? 1 : -1;
-    return [...rows].sort((a, b) => (a[sort.key] > b[sort.key] ? factor : a[sort.key] < b[sort.key] ? -factor : 0));
+    const val = (r: T) => r[sort.key] as string | number;
+    return [...rows].sort((a, b) => (val(a) > val(b) ? factor : val(a) < val(b) ? -factor : 0));
   }, [rows, sort]);
   const toggle = (key: keyof T & string) =>
     setSort((s) => (s?.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" }));
@@ -320,7 +345,7 @@ export function Table<T extends Record<string, string | number>>({ caption, colu
             <tr key={rowKey(row)} className="border-t border-line">
               {columns.map((c) => (
                 <td key={c.key} className={`px-3 py-2 text-fg ${c.numeric ? "text-right tabular" : ""} ${c.mono ? "mono" : ""}`}>
-                  {row[c.key]}
+                  {c.render ? c.render(row) : String(row[c.key] ?? "")}
                 </td>
               ))}
             </tr>
