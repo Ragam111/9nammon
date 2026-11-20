@@ -1,7 +1,7 @@
 """
 test_job_queue.py — unittest สำหรับคิวงาน SQLite (stdlib เท่านั้น)
 
-ทดสอบบน temp dir แยกทุกเคส ไม่แตะ jobs.db จริง
+ทดสอบบน temp dir แยกทุกเคส ไม่แต้ jobs.db จริง
 """
 
 import sys
@@ -78,3 +78,39 @@ class JobQueueTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class JobQueueExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_enqueue_returns_dict_with_id(self):
+        job = job_queue.enqueue(self.root, "my job")
+        self.assertIsInstance(job, dict)
+        self.assertIn("id", job)
+
+    def test_new_job_status_is_pending(self):
+        job = job_queue.enqueue(self.root, "pending job")
+        self.assertEqual(job["status"], "pending")
+
+    def test_get_job_returns_none_for_unknown_id(self):
+        result = job_queue.get_job(self.root, 99999)
+        self.assertIsNone(result)
+
+    def test_set_status_running_returns_true(self):
+        job = job_queue.enqueue(self.root, "run me")
+        result = job_queue.set_status(self.root, job["id"], "running")
+        self.assertTrue(result)
+
+    def test_list_jobs_returns_list(self):
+        result = job_queue.list_jobs(self.root)
+        self.assertIsInstance(result, list)
+
+    def test_enqueue_with_none_payload_ok(self):
+        # None payload should be accepted (no payload given)
+        job = job_queue.enqueue(self.root, "no payload")
+        self.assertIsNotNone(job)

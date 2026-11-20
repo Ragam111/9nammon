@@ -73,3 +73,36 @@ class UsageStoreTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UsageStoreExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_record_returns_dict(self):
+        result = usage_store.record_usage(self.root, "k", "u", "free")
+        self.assertIsInstance(result, dict)
+
+    def test_record_returns_key_id(self):
+        result = usage_store.record_usage(self.root, "mykey", "u", "free")
+        self.assertEqual(result["key_id"], "mykey")
+
+    def test_list_usage_returns_list(self):
+        result = usage_store.list_usage(self.root)
+        self.assertIsInstance(result, list)
+
+    def test_summary_has_total_units(self):
+        s = usage_store.summary(self.root)
+        self.assertIn("total_units", s)
+
+    def test_summary_has_by_tier(self):
+        s = usage_store.summary(self.root)
+        self.assertIn("by_tier", s)
+
+    def test_summary_has_by_key(self):
+        s = usage_store.summary(self.root)
+        self.assertIn("by_key", s)

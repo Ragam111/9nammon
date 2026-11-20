@@ -87,3 +87,43 @@ class WatchdogTickTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WatchdogExtraTest(unittest.TestCase):
+    def setUp(self):
+        self.clock = _FakeClock()
+
+    def test_critical_constant_is_string(self):
+        self.assertIsInstance(wd.CRITICAL, str)
+
+    def test_warning_constant_is_string(self):
+        self.assertIsInstance(wd.WARNING, str)
+
+    def test_evaluate_returns_list(self):
+        result = wd.evaluate(ollama_up=True, ram_pressure=False)
+        self.assertIsInstance(result, list)
+
+    def test_findings_have_key_level_msg(self):
+        findings = wd.evaluate(ollama_up=False, ram_pressure=False)
+        for f in findings:
+            self.assertIn("key", f)
+            self.assertIn("level", f)
+            self.assertIn("msg", f)
+
+    def test_tick_returns_list(self):
+        w = wd.Watchdog(
+            check_fn=lambda: [],
+            notify_fn=lambda lvl, msg: None,
+            clock=self.clock,
+        )
+        result = w.tick()
+        self.assertIsInstance(result, list)
+
+    def test_no_finding_last_findings_is_empty(self):
+        w = wd.Watchdog(
+            check_fn=lambda: [],
+            notify_fn=lambda lvl, msg: None,
+            clock=self.clock,
+        )
+        w.tick()
+        self.assertEqual(w.last_findings, [])
