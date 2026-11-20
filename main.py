@@ -48,7 +48,9 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 class Auth:
     tenant_id: str
     user_id: str | None
-async def authenticate(x_api_key: str = Header(...)) -> Auth:
+async def authenticate(x_api_key: str | None = Header(None)) -> Auth:
+    if not x_api_key:
+        raise HTTPException(401, "Missing API key")
     async with Session() as s:
         row = (
             await s.execute(
