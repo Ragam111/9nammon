@@ -139,5 +139,41 @@ class ForwardIntegrationTest(unittest.TestCase):
         self.assertIsNone(data.get("served_by"))          # ไม่มี served_by = ทำที่ hub เอง
 
 
+class ForwardUnitExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_is_enabled_returns_bool(self):
+        result = cluster_forward.is_enabled(self.root)
+        self.assertIsInstance(result, bool)
+
+    def test_pick_target_returns_dict(self):
+        res = cluster_forward.pick_target(self.root, rr_index=0)
+        self.assertIsInstance(res, dict)
+
+    def test_pick_target_has_node_key(self):
+        res = cluster_forward.pick_target(self.root, rr_index=0)
+        self.assertIn("node", res)
+
+    def test_forward_error_is_exception(self):
+        self.assertTrue(issubclass(cluster_forward.ForwardError, Exception))
+
+    def test_disabled_pick_target_returns_none_node(self):
+        self.assertFalse(cluster_forward.is_enabled(self.root))
+        res = cluster_forward.pick_target(self.root, rr_index=0)
+        self.assertIsNone(res["node"])
+
+    def test_enabled_key_is_bool(self):
+        from app import config_manager
+        config_manager.set_key(self.root, "CLUSTER_FORWARD_ENABLED", "true")
+        result = cluster_forward.is_enabled(self.root)
+        self.assertIsInstance(result, bool)
+        self.assertTrue(result)
+
+
 if __name__ == "__main__":
     unittest.main()
