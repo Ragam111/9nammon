@@ -74,3 +74,40 @@ class SupportStoreTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SupportStoreExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_create_ticket_returns_dict_with_id(self):
+        t = support_store.create_ticket(self.root, "user1", "Issue title", "Issue body")
+        self.assertIsInstance(t, dict)
+        self.assertIn("id", t)
+
+    def test_get_ticket_returns_none_for_unknown(self):
+        result = support_store.get_ticket(self.root, 999999)
+        self.assertIsNone(result)
+
+    def test_list_tickets_empty_returns_list(self):
+        result = support_store.list_tickets(self.root)
+        self.assertIsInstance(result, list)
+        self.assertEqual(len(result), 0)
+
+    def test_counts_by_status_empty(self):
+        c = support_store.counts_by_status(self.root)
+        self.assertEqual(c["total"], 0)
+        self.assertEqual(c["open"], 0)
+
+    def test_created_ticket_status_is_open(self):
+        t = support_store.create_ticket(self.root, "reporter", "subj", "body")
+        self.assertEqual(t["status"], "open")
+
+    def test_set_status_to_resolved(self):
+        t = support_store.create_ticket(self.root, "u", "s", "b")
+        updated = support_store.set_status(self.root, t["id"], "resolved")
+        self.assertEqual(updated["status"], "resolved")
