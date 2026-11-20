@@ -4,6 +4,18 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [0.3.6] — 2026-11-05 (Test Coverage — lca_context + stats_api extended tests)
+
+### Added
+- `tests/test_lca_context.py` — expanded from 6 to 17 tests: `TestDetectOllama`
+  (no procs→[], by name, non-ollama ignored, multiple ollama procs, dedupe by pid,
+  result dict fields), `TestCorrelateShape` (all 6 keys, note is string, rss is sum,
+  rss=0 when no ollama, processes is list), original 6 scenario tests preserved
+- `tests/test_stats_api.py` — expanded from 6 to 14 tests: total_errors is int,
+  last_24h is list/int, by_endpoint is list, no token→error, by_endpoint entries have
+  endpoint field, total_requests is int, error_rate 0–1, 3+ requests tracked
+- Test suite: 1273 → 1298 tests total
+
 ## [0.3.4] — 2026-11-05 (Test Coverage — router unit tests)
 
 ### Added
