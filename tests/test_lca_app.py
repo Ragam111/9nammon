@@ -18,7 +18,7 @@ import lca_app  # noqa: E402
 
 class ResourceRootTest(unittest.TestCase):
     def test_not_frozen_uses_script_dir(self):
-        # ปกติ (ไม่ได้ถูกแพ็กเป็น .exe) → รากไฟล์ = โฟลเดอร์ของ server.py
+        # ปกติ (ไม่ได้ถูกแพ็กเป็น .exe) → รากไฟล์ = โฟล์เดอร์ของ server.py
         self.assertEqual(server._resource_root(), Path(server.__file__).resolve().parent)
 
 
@@ -172,6 +172,29 @@ class ReadVersionTest(unittest.TestCase):
     def test_default_root_resource_root(self):
         # ไม่ส่ง root → ใช้ _resource_root() = ที่อยู่ server.py (มี VERSION อยู่จริง)
         self.assertNotEqual(server.read_version(), "")
+
+
+class LcaAppExtraTest(unittest.TestCase):
+    def test_is_first_run_new_dir_returns_true(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertTrue(lca_app._is_first_run(Path(tmp)))
+
+    def test_launch_url_contains_port(self):
+        url = lca_app.launch_url(9000, "/", "tok", auto=False)
+        self.assertIn("9000", url)
+
+    def test_launch_url_auto_token_in_fragment(self):
+        url = lca_app.launch_url(8420, "/", "my-token", auto=True)
+        self.assertIn("#lca_token=my-token", url)
+
+    def test_read_version_returns_string(self):
+        self.assertIsInstance(server.read_version(), str)
+
+    def test_resource_root_returns_path(self):
+        self.assertIsInstance(server._resource_root(), Path)
+
+    def test_resource_root_exists(self):
+        self.assertTrue(server._resource_root().exists())
 
 
 if __name__ == "__main__":
