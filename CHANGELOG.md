@@ -4,6 +4,21 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [0.3.6] — 2026-11-05 (Test Coverage — config_versions + desktop_archive extended tests)
+
+### Added
+- `tests/test_config_versions.py` — expanded from 7 to 25 tests: module constants
+  (VERSIONS_FILE, MAX_VERSIONS), `snapshot` shape (all 4 metadata keys, ts is int,
+  label stored/truncated at 120, keys count, empty config→0), `list_versions` (newest-first,
+  all metadata keys, no config key in output, no secret values leaked), `rollback` shape
+  (restored/keys/backup keys, config actually restored, backup created), original 7 preserved
+- `tests/test_desktop_archive.py` — expanded from 4 to 15 tests: module constants
+  (ARCHIVE_DIR_NAME), `get_archive_root` (is Path, contains ARCHIVE_DIR_NAME/Desktop),
+  `sync_project` (returns Path, copies changelog/todos, creates index, no-changelog OK,
+  no-todos OK, index has project entry with last_sync, second sync updates entry,
+  returns None when mkdir fails)
+- Test suite: 1273 → 1306 tests total
+
 ## [0.3.4] — 2026-11-05 (Test Coverage — router unit tests)
 
 ### Added
