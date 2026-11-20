@@ -77,3 +77,7 @@ agent_workspace/
 # local secrets for docker compose
 .env
 
+
+# agents_team runtime queue
+/state/
+
