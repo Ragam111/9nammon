@@ -1,0 +1,358 @@
+"""FastAPI app: health, auth (httpOnly session cookie), key onboarding, streaming run, history, settings.
+
+Run locally:  uvicorn app.main:app --host 127.0.0.1 --port 8000
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import re
+import secrets
+import time
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
+from typing import Any, TextIO
+
+import httpx
+from fastapi import APIRouter, Depends, FastAPI, Query, Request, Response
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import BaseModel, Field
+
+from . import auth, history, quota
+from .config import Settings, load_settings
+from .db import Database
+from .errors import AppError, from_exception
+from .keystore import KeyStore
+from .logging_json import estimate_cost, log_event
+from .model_client import StreamResult, estimate_tokens, iter_text, open_stream, require_key
+from .ratelimit import RateLimiter
+
+MAX_BODY_BYTES = 256 * 1024
+LOGIN_PER_MIN = 10
+LOGIN_PER_USER_PER_MIN = 5
+NOT_FOUND = "ไม่พบประวัตินี้ หรืออาจถูกลบไปแล้ว"
+_REQUEST_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+_UNSAFE = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+@dataclass
+class Context:
+    settings: Settings
+    db: Database
+    keys: KeyStore
+    limiter: RateLimiter
+    http: httpx.AsyncClient
+    log_stream: TextIO | None = None
+
+
+def ctx_of(request: Request) -> Context:
+    return request.app.state.ctx
+
+
+def current_user(request: Request) -> auth.User:
+    ctx = ctx_of(request)
+    user = auth.user_for_token(ctx.db, request.cookies.get(auth.SESSION_COOKIE))
+    request.state.user_id = user.id
+    return user
+
+
+def admin_user(user: auth.User = Depends(current_user)) -> auth.User:
+    if user.role != "admin":
+        raise AppError("auth", "เฉพาะผู้ดูแลระบบเท่านั้นที่ทำรายการนี้ได้", http_status=403)
+    return user
+
+
+def error_response(err: AppError, request: Request) -> JSONResponse:
+    request.state.error_type = err.type
+    headers = {"Retry-After": str(err.retry_after_s)} if err.retry_after_s else None
+    rid = getattr(request.state, "request_id", "")
+    return JSONResponse({"error": err.to_dict(rid)}, status_code=err.status, headers=headers)
+
+
+# ---------- request bodies ----------
+
+class LoginIn(BaseModel):
+    username: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_.-]+$")
+    password: str = Field(min_length=1, max_length=256)
+
+
+class KeyIn(BaseModel):
+    api_key: str = Field(min_length=1, max_length=512)
+
+
+class RunIn(BaseModel):
+    prompt: str = Field(min_length=1, max_length=100_000)
+
+
+# ---------- routes ----------
+
+router = APIRouter(prefix="/api")
+
+
+@router.get("/health")
+def health(request: Request) -> dict[str, Any]:
+    ctx = ctx_of(request)
+    return {"status": "ok", "model": ctx.settings.model_name, "model_key_configured": ctx.keys.status().configured}
+
+
+@router.post("/auth/login")
+def login(body: LoginIn, request: Request, response: Response) -> dict[str, Any]:
+    ctx = ctx_of(request)
+    ctx.limiter.hit(f"login:{client_ip(request)}", LOGIN_PER_MIN)
+    ctx.limiter.hit(f"login-user:{body.username.lower()}", LOGIN_PER_USER_PER_MIN)  # many IPs, one account
+    token = auth.login(ctx.db, body.username, body.password, ctx.settings.session_ttl_hours)
+    response.set_cookie(
+        auth.SESSION_COOKIE, token, httponly=True, samesite="lax", secure=ctx.settings.cookie_secure,
+        max_age=ctx.settings.session_ttl_hours * 3600, path="/",
+    )
+    user = auth.user_for_token(ctx.db, token)
+    return {"user": {"username": user.username, "role": user.role}}
+
+
+@router.post("/auth/logout")
+def logout(request: Request, response: Response) -> dict[str, bool]:
+    auth.logout(ctx_of(request).db, request.cookies.get(auth.SESSION_COOKIE))
+    response.delete_cookie(auth.SESSION_COOKIE, path="/")
+    return {"ok": True}
+
+
+@router.get("/auth/me")
+def me(user: auth.User = Depends(current_user)) -> dict[str, Any]:
+    return {"user": {"username": user.username, "role": user.role}}
+
+
+@router.get("/settings/key")
+def key_status(request: Request, _: auth.User = Depends(current_user)) -> dict[str, object]:
+    return ctx_of(request).keys.status().to_dict()
+
+
+@router.put("/settings/key")
+def save_key(body: KeyIn, request: Request, _: auth.User = Depends(admin_user)) -> dict[str, object]:
+    return ctx_of(request).keys.save(body.api_key).to_dict()
+
+
+@router.delete("/settings/key")
+def clear_key(request: Request, _: auth.User = Depends(admin_user)) -> dict[str, object]:
+    return ctx_of(request).keys.clear().to_dict()
+
+
+@router.get("/settings")
+def settings_view(request: Request, user: auth.User = Depends(current_user)) -> dict[str, Any]:
+    ctx = ctx_of(request)
+    s = ctx.settings
+    used = quota.used(ctx.db, user.id)
+    return {
+        "user": {"username": user.username, "role": user.role},
+        "model": s.model_name,
+        "key": ctx.keys.status().to_dict(),
+        "quota": {"day": quota.today(), "used": used, "limit": s.quota_tokens_per_day,
+                  "remaining": max(0, s.quota_tokens_per_day - used)},
+        "rate_limit": {"user_per_min": s.rate_limit_user_per_min, "ip_per_min": s.rate_limit_ip_per_min,
+                       "user_remaining": ctx.limiter.remaining(f"user:{user.id}", s.rate_limit_user_per_min)},
+        "limits": {"max_input_chars": s.max_input_chars, "max_output_tokens": s.max_output_tokens},
+    }
+
+
+@router.get("/history")
+def history_list(
+    request: Request,
+    q: str = Query("", max_length=200),
+    status: str = Query("", pattern=r"^(|ok|partial|error)$"),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    user: auth.User = Depends(current_user),
+) -> dict[str, Any]:
+    return history.list_runs(ctx_of(request).db, user.id, q=q, status=status, limit=limit, offset=offset)
+
+
+@router.get("/history/{run_id}")
+def history_get(run_id: str, request: Request, user: auth.User = Depends(current_user)) -> dict[str, Any]:
+    run = history.get(ctx_of(request).db, user.id, run_id)
+    if run is None:
+        raise AppError("validation", NOT_FOUND, http_status=404)
+    return run
+
+
+@router.delete("/history/{run_id}")
+def history_delete(run_id: str, request: Request, user: auth.User = Depends(current_user)) -> dict[str, bool]:
+    if not history.delete(ctx_of(request).db, user.id, run_id):
+        raise AppError("validation", NOT_FOUND, http_status=404)
+    return {"ok": True}
+
+
+@router.post("/run")
+async def run(body: RunIn, request: Request, user: auth.User = Depends(current_user)) -> StreamingResponse:
+    ctx = ctx_of(request)
+    s = ctx.settings
+    if len(body.prompt) > s.max_input_chars:
+        raise AppError("validation", f"ข้อความยาวเกิน {s.max_input_chars} ตัวอักษร — ย่อให้สั้นลง")
+    ctx.limiter.hit(f"user:{user.id}", s.rate_limit_user_per_min)
+    quota.check(ctx.db, user.id, s.quota_tokens_per_day, need=estimate_tokens(body.prompt) + s.max_output_tokens)
+    api_key = ctx.keys.get()
+    require_key(api_key, s.model_base_url)
+    started = time.perf_counter()
+    run_id = history.start(ctx.db, user.id, s.model_name, body.prompt)
+    try:
+        upstream = await open_stream(ctx.http, s, api_key, body.prompt)
+    except Exception as exc:
+        err = from_exception(exc)
+        _finish(ctx, run_id, user.id, StreamResult(), body.prompt, err, started, request.state.request_id)
+        raise err from exc
+    stream = _relay(ctx, run_id, user.id, upstream, body.prompt, started, request.state.request_id)
+    return StreamingResponse(stream, media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+def _sse(event: str, data: dict[str, Any]) -> str:
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+async def _relay(ctx: Context, run_id: str, user_id: int, upstream: httpx.Response, prompt: str,
+                 started: float, request_id: str) -> AsyncIterator[str]:
+    """Forward deltas as SSE. On a mid-stream failure keep what arrived and report a retryable error."""
+    result = StreamResult()
+    err: AppError | None = None
+    completed = False
+    budget_s = max(1.0, ctx.settings.model_timeout_s - (time.perf_counter() - started))
+    yield _sse("start", {"run_id": run_id})
+    try:
+        async with asyncio.timeout(budget_s):  # total time for the whole answer, not just per chunk
+            async for delta in iter_text(upstream, result, ctx.settings.max_output_tokens * 8):
+                yield _sse("delta", {"text": delta})
+        completed = True
+    except Exception as exc:  # network drop, timeout or a bad chunk after streaming began
+        err = from_exception(exc)
+        yield _sse("error", {**err.to_dict(request_id), "partial": bool(result.text)})
+    finally:
+        if not completed and err is None:  # the browser went away before the end
+            err = AppError("unknown", "การเชื่อมต่อถูกปิดก่อนได้คำตอบครบ")
+        usage = _finish(ctx, run_id, user_id, result, prompt, err, started, request_id)
+    if err is None:
+        yield _sse("done", {"run_id": run_id, "truncated": result.truncated, **usage})
+
+
+def _finish(ctx: Context, run_id: str, user_id: int, result: StreamResult, prompt: str,
+            err: AppError | None, started: float, request_id: str) -> dict[str, int]:
+    """Record history, quota and a JSON log line for one run. Returns the token usage."""
+    tokens_in = result.tokens_in or estimate_tokens(prompt)
+    tokens_out = result.tokens_out or estimate_tokens(result.text)
+    if err is None:
+        status = "partial" if result.truncated else "ok"  # cut at the output cap: keep it, but say so
+    else:
+        status = "partial" if result.text else "error"
+    latency_ms = int((time.perf_counter() - started) * 1000)
+    history.finish(ctx.db, run_id, status=status, output=result.text, error_type=err.type if err else None,
+                   tokens_in=tokens_in, tokens_out=tokens_out, latency_ms=latency_ms)
+    if status != "error":
+        quota.record(ctx.db, user_id, tokens_in + tokens_out)
+    log_event("run", ctx.log_stream, request_id=request_id, run_id=run_id, user_id=user_id, status=status,
+              error_type=err.type if err else None, latency_ms=latency_ms, tokens_in=tokens_in,
+              tokens_out=tokens_out, cost_estimate=estimate_cost(tokens_in + tokens_out, ctx.settings.cost_per_1k_tokens))
+    return {"tokens_in": tokens_in, "tokens_out": tokens_out, "latency_ms": latency_ms}
+
+
+# ---------- app wiring ----------
+
+def client_ip(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
+def _check_request(request: Request, ctx: Context) -> None:
+    """Body size, Origin for state-changing calls, and the per-IP rate limit."""
+    if int(request.headers.get("content-length") or 0) > MAX_BODY_BYTES:
+        raise AppError("validation", "ข้อมูลที่ส่งมามีขนาดใหญ่เกินไป", http_status=413)
+    if "content-length" not in request.headers and "transfer-encoding" in request.headers:
+        # A chunked body has no size up front; browsers always send Content-Length for these calls.
+        raise AppError("validation", "ต้องระบุขนาดข้อมูล (Content-Length)", http_status=411)
+    origin = request.headers.get("origin")
+    same = f"{request.url.scheme}://{request.url.netloc}"
+    if request.method in _UNSAFE and origin and origin not in ctx.settings.cors_origins and origin != same:
+        raise AppError("auth", "คำขอนี้มาจากโดเมนที่ไม่ได้รับอนุญาต")
+    if request.url.path != "/api/health":
+        ctx.limiter.hit(f"ip:{client_ip(request)}", ctx.settings.rate_limit_ip_per_min)
+
+
+def _install_middleware(app: FastAPI) -> None:
+    @app.middleware("http")
+    async def observe(request: Request, call_next):  # type: ignore[no-untyped-def]
+        ctx: Context = app.state.ctx
+        incoming = request.headers.get("x-request-id", "")
+        request.state.request_id = incoming if _REQUEST_ID.match(incoming) else secrets.token_hex(8)
+        started = time.perf_counter()
+        try:
+            _check_request(request, ctx)
+            response = await call_next(request)
+        except AppError as err:
+            response = error_response(err, request)
+        except OSError:  # the browser closed the connection; nothing left to send
+            request.state.error_type = "client_disconnect"
+            response = Response(status_code=499)
+        except Exception as exc:  # unexpected: answer here so the request id, CORS and access log still apply
+            log_event("unhandled", ctx.log_stream, request_id=request.state.request_id, exception=type(exc).__name__)
+            response = error_response(AppError("unknown"), request)
+        response.headers["X-Request-ID"] = request.state.request_id
+        log_event("http", ctx.log_stream, request_id=request.state.request_id, method=request.method,
+                  path=request.url.path, status=response.status_code,
+                  latency_ms=int((time.perf_counter() - started) * 1000),
+                  user_id=getattr(request.state, "user_id", None), error_type=getattr(request.state, "error_type", None))
+        return response
+
+
+def _install_handlers(app: FastAPI) -> None:
+    @app.exception_handler(AppError)
+    async def on_app_error(request: Request, err: AppError) -> JSONResponse:
+        return error_response(err, request)
+
+    @app.exception_handler(RequestValidationError)
+    async def on_validation(request: Request, exc: RequestValidationError) -> JSONResponse:
+        errors = exc.errors()
+        if any(e.get("type") == "json_invalid" for e in errors):
+            return error_response(AppError("validation", "รูปแบบ JSON ไม่ถูกต้อง"), request)
+        fields = sorted({str(loc) for e in errors for loc in e.get("loc", ())[-1:] if isinstance(loc, str)})
+        message = f"ข้อมูลไม่ถูกต้องในช่อง: {', '.join(fields)}" if fields else ""
+        return error_response(AppError("validation", message), request)
+
+    @app.exception_handler(Exception)
+    async def on_unknown(request: Request, exc: Exception) -> JSONResponse:
+        log_event("unhandled", app.state.ctx.log_stream, request_id=getattr(request.state, "request_id", ""),
+                  exception=type(exc).__name__)
+        return error_response(AppError("unknown"), request)
+
+
+def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTransport | None = None,
+               log_stream: TextIO | None = None) -> FastAPI:
+    """Build the app. Tests pass `transport` to fake the model and `log_stream` to read logs."""
+    s = settings or load_settings()
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        timeout = httpx.Timeout(s.model_timeout_s, connect=10.0)
+        async with httpx.AsyncClient(timeout=timeout, transport=transport) as client:
+            app.state.ctx = Context(s, Database(s.data_dir / "app.db"), KeyStore(s.model_api_key, s.data_dir),
+                                    RateLimiter(), client, log_stream)
+            yield
+
+    app = FastAPI(title="backend-frontend API", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+    app.include_router(router)
+    _install_handlers(app)
+    _install_middleware(app)
+    app.add_middleware(CORSMiddleware, allow_origins=s.cors_origins, allow_credentials=True,
+                       allow_methods=["GET", "POST", "PUT", "DELETE"], allow_headers=["Content-Type", "X-Request-ID"])
+    return app
+
+
+_app: FastAPI | None = None
+
+
+def __getattr__(name: str) -> Any:
+    """`uvicorn app.main:app` builds the app on first access (once), so importing has no side effects."""
+    global _app
+    if name == "app":
+        if _app is None:
+            _app = create_app()
+        return _app
+    raise AttributeError(name)
