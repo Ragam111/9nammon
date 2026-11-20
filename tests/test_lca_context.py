@@ -94,3 +94,32 @@ class LcaContextTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LcaContextExtraTest(unittest.TestCase):
+    def _report(self, snap):
+        return Analyzer().analyze(snap)
+
+    def test_correlate_has_ollama_running_key(self):
+        out = lca_context.correlate(self._report(_snapshot(20)))
+        self.assertIn("ollama_running", out)
+
+    def test_correlate_has_memory_pressure_key(self):
+        out = lca_context.correlate(self._report(_snapshot(20)))
+        self.assertIn("memory_pressure", out)
+
+    def test_correlate_has_note_key(self):
+        out = lca_context.correlate(self._report(_snapshot(20)))
+        self.assertIn("note", out)
+
+    def test_correlate_has_ollama_rss_key(self):
+        out = lca_context.correlate(self._report(_snapshot(20)))
+        self.assertIn("ollama_rss", out)
+
+    def test_ollama_rss_is_zero_when_no_ollama(self):
+        out = lca_context.correlate(self._report(_snapshot(20)))
+        self.assertEqual(out["ollama_rss"], 0)
+
+    def test_note_is_string(self):
+        out = lca_context.correlate(self._report(_snapshot(20)))
+        self.assertIsInstance(out["note"], str)
