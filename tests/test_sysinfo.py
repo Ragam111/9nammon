@@ -66,5 +66,40 @@ class SystemInfoTest(unittest.TestCase):
             self.assertIn("best-effort", info.gpu_note)
 
 
+class SysinfoExtraTest(unittest.TestCase):
+    def test_get_system_info_returns_systeminfo(self):
+        info = get_system_info()
+        self.assertIsInstance(info, SystemInfo)
+
+    def test_to_dict_has_required_keys(self):
+        d = get_system_info().to_dict()
+        for key in ("cpu", "memory", "gpus"):
+            self.assertIn(key, d)
+
+    def test_cpu_logical_cores_is_int(self):
+        info = get_system_info()
+        self.assertIsInstance(info.cpu.logical_cores, int)
+
+    def test_memory_total_is_positive(self):
+        info = get_system_info()
+        self.assertGreater(info.memory.total, 0)
+
+    def test_human_bytes_zero(self):
+        result = sysinfo._human_bytes(0)
+        self.assertIsInstance(result, str)
+        self.assertGreater(len(result), 0)
+
+    def test_human_bytes_large(self):
+        result = sysinfo._human_bytes(1024 * 1024 * 1024)
+        self.assertIsInstance(result, str)
+
+    def test_detect_gpus_returns_list(self):
+        self.assertIsInstance(sysinfo.detect_gpus(), list)
+
+    def test_guess_compute_capable_returns_bool(self):
+        self.assertIsInstance(sysinfo._guess_compute_capable("RTX 4090"), bool)
+        self.assertIsInstance(sysinfo._guess_compute_capable("unknown GPU"), bool)
+
+
 if __name__ == "__main__":
     unittest.main()
