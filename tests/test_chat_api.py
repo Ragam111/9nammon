@@ -297,5 +297,30 @@ class ChatApiTest(unittest.TestCase):
         self.assertIn("unknown provider", data["error"])
 
 
+class ChatApiExtraTest(unittest.TestCase):
+    def test_provider_network_error_is_exception(self):
+        self.assertTrue(issubclass(ProviderNetworkError, Exception))
+
+    def test_chat_response_is_instance(self):
+        r = _response("hello", "openai", "gpt-4o")
+        self.assertIsInstance(r, ChatResponse)
+
+    def test_usage_input_tokens(self):
+        u = Usage(3, 4, 7, False, "openai")
+        self.assertEqual(u.input_tokens, 3)
+
+    def test_usage_output_tokens(self):
+        u = Usage(3, 4, 7, False, "openai")
+        self.assertEqual(u.output_tokens, 4)
+
+    def test_as_dicts_returns_list(self):
+        result = _as_dicts([{"role": "user", "content": "hi"}])
+        self.assertIsInstance(result, list)
+
+    def test_as_dicts_preserves_role(self):
+        result = _as_dicts([{"role": "assistant", "content": "hello"}])
+        self.assertEqual(result[0]["role"], "assistant")
+
+
 if __name__ == "__main__":
     unittest.main()
