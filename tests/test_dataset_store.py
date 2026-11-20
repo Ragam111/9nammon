@@ -72,5 +72,56 @@ class DatasetStoreTest(unittest.TestCase):
             dataset_store.export_jsonl(self.root, fmt="bogus")
 
 
+class DatasetStoreExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_add_returns_dict(self):
+        result = dataset_store.add_sample(self.root, "prompt", "response")
+        self.assertIsInstance(result, dict)
+
+    def test_add_id_is_int(self):
+        result = dataset_store.add_sample(self.root, "prompt", "response")
+        self.assertIsInstance(result["id"], int)
+
+    def test_count_is_int(self):
+        result = dataset_store.count(self.root)
+        self.assertIsInstance(result, int)
+
+    def test_count_starts_at_zero(self):
+        self.assertEqual(dataset_store.count(self.root), 0)
+
+    def test_list_returns_list(self):
+        result = dataset_store.list_samples(self.root)
+        self.assertIsInstance(result, list)
+
+    def test_valid_formats_set(self):
+        self.assertIn("messages", dataset_store.VALID_FORMATS)
+        self.assertIn("alpaca", dataset_store.VALID_FORMATS)
+
+    def test_add_stores_prompt_and_response(self):
+        s = dataset_store.add_sample(self.root, "my prompt", "my response")
+        self.assertEqual(s["prompt"], "my prompt")
+        self.assertEqual(s["response"], "my response")
+
+    def test_delete_returns_true(self):
+        s = dataset_store.add_sample(self.root, "p", "r")
+        result = dataset_store.delete_sample(self.root, s["id"])
+        self.assertTrue(result)
+
+    def test_delete_missing_returns_false(self):
+        result = dataset_store.delete_sample(self.root, 99999)
+        self.assertFalse(result)
+
+    def test_export_returns_string(self):
+        dataset_store.add_sample(self.root, "p", "r")
+        result = dataset_store.export_jsonl(self.root)
+        self.assertIsInstance(result, str)
+
+
 if __name__ == "__main__":
     unittest.main()

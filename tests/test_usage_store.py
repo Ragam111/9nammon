@@ -71,5 +71,57 @@ class UsageStoreTest(unittest.TestCase):
         self.assertEqual(s["by_key"], [])
 
 
+class UsageStoreExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_record_returns_dict(self):
+        result = usage_store.record_usage(self.root, "k1", "dev", "free")
+        self.assertIsInstance(result, dict)
+
+    def test_record_has_required_keys(self):
+        result = usage_store.record_usage(self.root, "k1", "dev", "free")
+        for key in ("key_id", "units", "endpoint"):
+            self.assertIn(key, result)
+
+    def test_tier_unit_price_exists(self):
+        self.assertIsInstance(usage_store.TIER_UNIT_PRICE, dict)
+        self.assertIn("free", usage_store.TIER_UNIT_PRICE)
+        self.assertIn("paid", usage_store.TIER_UNIT_PRICE)
+
+    def test_free_tier_cost_is_zero(self):
+        self.assertEqual(usage_store.TIER_UNIT_PRICE["free"], 0.0)
+
+    def test_paid_tier_cost_is_positive(self):
+        self.assertGreater(usage_store.TIER_UNIT_PRICE["paid"], 0.0)
+
+    def test_summary_has_required_keys(self):
+        s = usage_store.summary(self.root)
+        for key in ("total_units", "total_cost", "by_tier", "by_key"):
+            self.assertIn(key, s)
+
+    def test_list_returns_list(self):
+        result = usage_store.list_usage(self.root)
+        self.assertIsInstance(result, list)
+
+    def test_record_multiple_accumulates(self):
+        usage_store.record_usage(self.root, "k1", "dev", "paid")
+        usage_store.record_usage(self.root, "k1", "dev", "paid")
+        rows = usage_store.list_usage(self.root, key_id="k1")
+        self.assertEqual(len(rows), 2)
+
+    def test_units_default_is_one(self):
+        rec = usage_store.record_usage(self.root, "k1", "dev", "free")
+        self.assertEqual(rec["units"], 1)
+
+    def test_custom_units_stored(self):
+        rec = usage_store.record_usage(self.root, "k1", "dev", "free", units=5)
+        self.assertEqual(rec["units"], 5)
+
+
 if __name__ == "__main__":
     unittest.main()

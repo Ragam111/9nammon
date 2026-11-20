@@ -74,5 +74,58 @@ class HistoryStoreTest(unittest.TestCase):
         self.assertEqual(errs[0]["message"], "two")
 
 
+class HistoryStoreExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _report(self, cpu=12.0, mem=34.0, verdict="ok", worst="OK"):
+        return {
+            "snapshot": {"cpu": {"percent": cpu}, "memory": {"percent": mem}},
+            "verdict": verdict,
+            "worst_severity": worst,
+        }
+
+    def test_record_snapshot_returns_dict(self):
+        result = history_store.record_snapshot(self.root, self._report())
+        self.assertIsInstance(result, dict)
+
+    def test_record_snapshot_has_required_keys(self):
+        result = history_store.record_snapshot(self.root, self._report())
+        for key in ("cpu_percent", "mem_percent", "verdict"):
+            self.assertIn(key, result)
+
+    def test_list_snapshots_returns_list(self):
+        result = history_store.list_snapshots(self.root)
+        self.assertIsInstance(result, list)
+
+    def test_list_snapshots_empty_initially(self):
+        result = history_store.list_snapshots(self.root)
+        self.assertEqual(len(result), 0)
+
+    def test_log_error_returns_dict(self):
+        result = history_store.log_error(self.root, "info", "source", "message")
+        self.assertIsInstance(result, dict)
+
+    def test_valid_levels_set(self):
+        self.assertIsInstance(history_store.VALID_LEVELS, (set, frozenset))
+        self.assertIn("error", history_store.VALID_LEVELS)
+
+    def test_list_errors_returns_list(self):
+        result = history_store.list_errors(self.root)
+        self.assertIsInstance(result, list)
+
+    def test_cpu_percent_matches_input(self):
+        result = history_store.record_snapshot(self.root, self._report(cpu=55.0))
+        self.assertAlmostEqual(result["cpu_percent"], 55.0)
+
+    def test_mem_percent_matches_input(self):
+        result = history_store.record_snapshot(self.root, self._report(mem=77.0))
+        self.assertAlmostEqual(result["mem_percent"], 77.0)
+
+
 if __name__ == "__main__":
     unittest.main()
