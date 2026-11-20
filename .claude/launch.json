@@ -11,6 +11,12 @@
         "--port", "8431"
       ],
       "port": 8431
+    },
+    {
+      "name": "backend-frontend-showcase",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "apps/backend-frontend/frontend", "run", "dev"],
+      "port": 5173
     }
   ]
 }

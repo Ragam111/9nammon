@@ -1,9 +1,11 @@
 /* Design tokens for the backend-frontend app. Every color, space, radius and motion value
    used by components must come from here. See ../../DESIGN.md for usage rules.
    Light is the default. Dark applies under prefers-color-scheme unless data-theme="light",
-   or when data-theme="dark" is set explicitly. */
+   or when data-theme="dark" is set explicitly. data-theme works on any element, so one
+   page can show a light and a dark panel side by side (the showcase does this). */
 
-:root {
+:root,
+[data-theme="light"] {
   /* Neutral: cool gray-blue, one set only */
   --bg: #f7f8fa;
   --surface: #ffffff;
@@ -89,7 +91,7 @@
   }
 }
 
-:root[data-theme="dark"] {
+[data-theme="dark"] {
   --bg: #0f1419;
   --surface: #171d24;
   --surface-2: #1e2630;

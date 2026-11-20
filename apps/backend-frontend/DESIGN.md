@@ -26,6 +26,7 @@
 ## Theme
 - รองรับ light และ dark ผ่านโทเคนเท่านั้น
 - ค่าเริ่มต้นตาม `prefers-color-scheme`; ผู้ใช้สลับได้ด้วย `data-theme="light"` หรือ `data-theme="dark"` บน `<html>`
+- `data-theme` ใส่บน element ใดก็ได้ เพื่อให้กล่องนั้นและลูกทั้งหมดใช้ theme นั้น (หน้า showcase ใช้วิธีนี้แสดงสองธีมคู่กัน) กล่องนั้นต้องตั้งพื้นหลังเองด้วย `bg-bg text-fg`
 - ห้ามเขียนสีแยกใน dark mode ที่ component
 
 ## Motion
@@ -37,7 +38,39 @@
 - Mobile เริ่มที่ 360px ห้ามมี horizontal scroll
 - Contrast ของ text ต่อพื้นหลังต้องถึง WCAG AA (4.5:1) ทั้งสอง theme
 
-## Component ที่วางแผนไว้ (ยังไม่สร้าง)
-Button (primary, secondary, danger, ghost, loading), Input พร้อม validation, Select, Table (sort, empty state), Badge สถานะ, Card, Dialog, Toast, Tabs, Code block พร้อมปุ่ม copy, Skeleton, Error state (บอกว่าเกิดอะไร และทำอะไรต่อได้)
+## Components
+ทั้งหมดอยู่ใน [frontend/src/components/ui.tsx](frontend/src/components/ui.tsx) ใช้ Tailwind class ที่ map มาจากโทเคน (ดู `@theme inline` ใน `frontend/src/index.css`) ห้ามใช้สี Tailwind ตั้งต้น เช่น `bg-blue-500`
 
-หน้า showcase จะแสดงทุก component ทั้งสอง theme หลังจากสร้าง component เสร็จ (ขั้นที่ 4)
+| Component | ใช้เมื่อ | หมายเหตุ |
+|---|---|---|
+| `Button` | ทุกปุ่ม | `variant`: primary (การกระทำหลักหนึ่งเดียวต่อหน้า), secondary, danger (ลบ/ทำแล้วย้อนไม่ได้), ghost; `loading` ปิดปุ่มและใส่ `aria-busy` |
+| `Input` | ช่องกรอก | ต้องมี `label` เสมอ; `error` ตั้ง `aria-invalid` และผูกข้อความด้วย `aria-describedby` |
+| `Select` | ตัวเลือกจากรายการ | `label` และ `options` |
+| `Badge` | สถานะ | `status`: ok / warn / bad / neutral มีไอคอนและข้อความทุกครั้ง |
+| `Card` | กลุ่มเนื้อหา | `title` และ `actions` ไม่บังคับ |
+| `Dialog` | ยืนยันก่อนทำสิ่งที่ย้อนไม่ได้ | ใช้ `<dialog>` ของ browser ซึ่งจัด focus และปุ่ม Escape ให้ |
+| `ToastProvider` / `useToast` | แจ้งผลสั้น ๆ | `show(status, text)` หายเองใน 4 วินาที อยู่ใน live region |
+| `Tabs` | สลับมุมมองในหน้าเดียว | ลูกศรซ้าย/ขวา, Home, End |
+| `Table` | ข้อมูลแบบแถว | คอลัมน์ `sortable`, `numeric` (ชิดขวา + tabular), `mono`; `empty` แสดงเมื่อไม่มีข้อมูล |
+| `CodeBlock` | โค้ด, log, key ID | ปุ่ม copy; ถ้าใช้ clipboard ไม่ได้จะเลือกข้อความให้กด Ctrl+C |
+| `Skeleton` | ระหว่างโหลด | ซ่อนจาก screen reader |
+| `ErrorState` | เกิดข้อผิดพลาด | บอกว่าเกิดอะไร และมีปุ่มทำต่อ เช่น "ลองใหม่" |
+
+ตัวอย่าง:
+
+```tsx
+<Badge status="warn">เตือน: quota เหลือ 10%</Badge>
+<Button variant="danger" onClick={openConfirm}>ลบประวัติ</Button>
+<ErrorState title="หมดเวลารอคำตอบ" detail="โมเดลไม่ตอบภายใน 30 วินาที" action={{ label: "ลองใหม่", onClick: retry }} />
+```
+
+## Showcase
+หน้า showcase แสดงทุก component ในกล่องธีมสว่างและธีมมืดคู่กัน
+
+```powershell
+cd apps/backend-frontend/frontend
+npm install
+npm run dev
+```
+
+แล้วเปิด http://127.0.0.1:5173
