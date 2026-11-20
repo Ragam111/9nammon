@@ -48,5 +48,37 @@ class FeatureFlagsTest(unittest.TestCase):
         self.assertTrue(cluster_forward.is_enabled(self.root))
 
 
+class FeatureFlagsExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_features_list_is_nonempty(self):
+        self.assertGreater(len(ff.FEATURES), 0)
+
+    def test_each_feature_has_key_field(self):
+        for feat in ff.FEATURES:
+            self.assertIn("key", feat)
+
+    def test_each_feature_has_name_field(self):
+        for feat in ff.FEATURES:
+            self.assertIn("name", feat)
+
+    def test_each_feature_has_desc_field(self):
+        for feat in ff.FEATURES:
+            self.assertIn("desc", feat)
+
+    def test_is_on_unknown_key_returns_false(self):
+        self.assertFalse(ff.is_on(self.root, "no-such-flag-xyz"))
+
+    def test_set_flag_persists_on_repeated_call(self):
+        ff.set_flag(self.root, "watchdog", True)
+        ff.set_flag(self.root, "watchdog", True)
+        self.assertTrue(ff.is_on(self.root, "watchdog"))
+
+
 if __name__ == "__main__":
     unittest.main()
