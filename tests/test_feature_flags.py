@@ -48,5 +48,37 @@ class FeatureFlagsTest(unittest.TestCase):
         self.assertTrue(cluster_forward.is_enabled(self.root))
 
 
+class FeatureFlagsExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_features_is_list(self):
+        self.assertIsInstance(ff.FEATURES, list)
+
+    def test_features_not_empty(self):
+        self.assertGreater(len(ff.FEATURES), 0)
+
+    def test_is_on_returns_bool(self):
+        key = ff.FEATURES[0]["key"]
+        result = ff.is_on(self.root, key)
+        self.assertIsInstance(result, bool)
+
+    def test_status_returns_list(self):
+        result = ff.status(self.root)
+        self.assertIsInstance(result, list)
+
+    def test_status_items_have_key_field(self):
+        for item in ff.status(self.root):
+            self.assertIn("key", item)
+
+    def test_features_have_desc(self):
+        for feature in ff.FEATURES:
+            self.assertIn("desc", feature, f"feature {feature} missing 'desc'")
+
+
 if __name__ == "__main__":
     unittest.main()

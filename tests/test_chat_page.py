@@ -39,5 +39,32 @@ class ChatPageBudgetTest(unittest.TestCase):
         self.assertNotIn("vue", js.lower())
 
 
+class ChatPageExtraTest(unittest.TestCase):
+    def test_chat_html_exists(self):
+        self.assertTrue((ROOT / "app" / "chat.html").is_file())
+
+    def test_chat_html_has_charset(self):
+        html = (ROOT / "app" / "chat.html").read_text(encoding="utf-8")
+        self.assertIn("utf-8", html.lower())
+
+    def test_chat_html_has_title(self):
+        html = (ROOT / "app" / "chat.html").read_text(encoding="utf-8")
+        self.assertIn("<title>", html)
+
+    def test_chat_css_no_banned_cdn(self):
+        css = (ROOT / "app" / "chat.css").read_text(encoding="utf-8")
+        for banned in ("fonts.googleapis", "cdn.jsdelivr", "unpkg.com", "cdnjs."):
+            self.assertNotIn(banned, css, f"CSS must not reference {banned}")
+
+    def test_font_regular_woff2_exists(self):
+        self.assertTrue(
+            (ROOT / "app" / "fonts" / "IBMPlexSansThai-Regular.sub.woff2").is_file()
+        )
+
+    def test_ofl_mentions_ibm(self):
+        ofl = (ROOT / "app" / "fonts" / "OFL.txt").read_text(encoding="utf-8")
+        self.assertIn("IBM", ofl)
+
+
 if __name__ == "__main__":
     unittest.main()

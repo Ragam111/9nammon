@@ -46,5 +46,42 @@ class RateLimiterTest(unittest.TestCase):
         self.assertTrue(rl.allow("ip1", now=0))
 
 
+class RateLimiterExtraTest(unittest.TestCase):
+    def test_allow_returns_bool(self):
+        rl = RateLimiter(max_requests=10, window_seconds=60)
+        result = rl.allow("ip1", now=0)
+        self.assertIsInstance(result, bool)
+
+    def test_negative_max_requests_disables(self):
+        rl = RateLimiter(max_requests=-1, window_seconds=60)
+        for i in range(100):
+            self.assertTrue(rl.allow("ip1", now=i))
+
+    def test_window_one_second_expires(self):
+        rl = RateLimiter(max_requests=1, window_seconds=1)
+        self.assertTrue(rl.allow("ip1", now=0))
+        self.assertFalse(rl.allow("ip1", now=0))
+        self.assertTrue(rl.allow("ip1", now=2))  # window expired
+
+    def test_many_independent_clients_first_request(self):
+        rl = RateLimiter(max_requests=1, window_seconds=60)
+        for i in range(50):
+            self.assertTrue(rl.allow(f"client-{i}", now=0))
+
+    def test_reset_only_clears_one_client(self):
+        rl = RateLimiter(max_requests=1, window_seconds=60)
+        rl.allow("ip1", now=0)
+        rl.allow("ip2", now=0)
+        rl.reset("ip1")
+        self.assertTrue(rl.allow("ip1", now=0))   # ip1 cleared
+        self.assertFalse(rl.allow("ip2", now=0))  # ip2 still blocked
+
+    def test_allow_exactly_max_requests(self):
+        rl = RateLimiter(max_requests=4, window_seconds=60)
+        for i in range(4):
+            self.assertTrue(rl.allow("ip1", now=i))
+        self.assertFalse(rl.allow("ip1", now=4))
+
+
 if __name__ == "__main__":
     unittest.main()
