@@ -89,5 +89,52 @@ class FormatResultsTest(unittest.TestCase):
         self.assertIn("Tavily", out)
 
 
+class TavilySearchExtraTest(unittest.TestCase):
+    def test_max_results_constant_is_five(self):
+        self.assertEqual(tavily_search.MAX_RESULTS, 5)
+
+    def test_max_results_is_positive_int(self):
+        self.assertIsInstance(tavily_search.MAX_RESULTS, int)
+        self.assertGreater(tavily_search.MAX_RESULTS, 0)
+
+    @patch("urllib.request.urlopen")
+    @patch("app.tavily_search.get_key", return_value="key")
+    def test_result_has_snippet_key(self, _mock_key, mock_urlopen):
+        resp_data = {"results": [{"title": "T", "url": "u", "content": "c"}]}
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = json.dumps(resp_data).encode("utf-8")
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_resp
+        results = tavily_search.search_web("q", Path("/tmp"))
+        self.assertIn("snippet", results[0])
+
+    @patch("urllib.request.urlopen")
+    @patch("app.tavily_search.get_key", return_value="key")
+    def test_result_title_preserved(self, _mock_key, mock_urlopen):
+        resp_data = {"results": [{"title": "MyTitle", "url": "u", "content": "c"}]}
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = json.dumps(resp_data).encode("utf-8")
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_resp
+        results = tavily_search.search_web("q", Path("/tmp"))
+        self.assertEqual(results[0]["title"], "MyTitle")
+
+    def test_format_returns_string(self):
+        results = [{"title": "T", "url": "u", "snippet": "s"}]
+        self.assertIsInstance(tavily_search.format_results_for_context(results), str)
+
+    def test_format_empty_returns_nonempty_string(self):
+        out = tavily_search.format_results_for_context([])
+        self.assertIsInstance(out, str)
+        self.assertGreater(len(out), 0)
+
+    def test_format_contains_tavily_label(self):
+        results = [{"title": "A", "url": "u", "snippet": "s"}]
+        out = tavily_search.format_results_for_context(results)
+        self.assertIn("Tavily", out)
+
+
 if __name__ == "__main__":
     unittest.main()

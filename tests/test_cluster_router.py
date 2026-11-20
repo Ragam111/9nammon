@@ -72,5 +72,35 @@ class RoutePreviewTest(unittest.TestCase):
         self.assertEqual(p["candidates"], 0)
 
 
+class ClusterRouterExtraTest(unittest.TestCase):
+    def test_pick_node_returns_dict(self):
+        r = cr.pick_node([])
+        self.assertIsInstance(r, dict)
+
+    def test_pick_node_has_node_key(self):
+        r = cr.pick_node([])
+        self.assertIn("node", r)
+
+    def test_pick_node_has_rr_index_key(self):
+        r = cr.pick_node([_node("a")])
+        self.assertIn("rr_index", r)
+
+    def test_pick_node_has_reason_key(self):
+        r = cr.pick_node([_node("a")])
+        self.assertIn("reason", r)
+
+    def test_route_preview_returns_dict(self):
+        p = cr.route_preview({"nodes": []})
+        self.assertIsInstance(p, dict)
+
+    def test_route_preview_has_candidates_key(self):
+        p = cr.route_preview({"nodes": [_node("a")]})
+        self.assertIn("candidates", p)
+
+    def test_route_preview_has_target_key(self):
+        p = cr.route_preview({"nodes": [_node("a")]})
+        self.assertIn("target", p)
+
+
 if __name__ == "__main__":
     unittest.main()
