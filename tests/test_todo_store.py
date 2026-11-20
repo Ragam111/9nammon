@@ -70,5 +70,39 @@ class TodoStoreTest(unittest.TestCase):
         self.assertEqual(todos, [])
 
 
+class TodoStoreExtraTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+
+    def test_add_returns_dict_with_id(self):
+        result = todo_store.add_todo(self.tmp, "New task")
+        self.assertIsInstance(result, dict)
+        self.assertIn("id", result)
+
+    def test_load_returns_list_type(self):
+        result = todo_store.load_todos(self.tmp)
+        self.assertIsInstance(result, list)
+
+    def test_new_todo_done_is_false(self):
+        todo_store.add_todo(self.tmp, "Fresh")
+        todos = todo_store.load_todos(self.tmp)
+        self.assertFalse(todos[0]["done"])
+
+    def test_toggle_unknown_id_no_error(self):
+        todo_store.toggle_todo(self.tmp, 999999)
+
+    def test_add_then_delete_leaves_empty(self):
+        t1 = todo_store.add_todo(self.tmp, "a")
+        t2 = todo_store.add_todo(self.tmp, "b")
+        todo_store.delete_todo(self.tmp, t1["id"])
+        todo_store.delete_todo(self.tmp, t2["id"])
+        self.assertEqual(todo_store.load_todos(self.tmp), [])
+
+    def test_text_field_stored_correctly(self):
+        todo_store.add_todo(self.tmp, "exact text check")
+        todos = todo_store.load_todos(self.tmp)
+        self.assertEqual(todos[0]["text"], "exact text check")
+
+
 if __name__ == "__main__":
     unittest.main()
