@@ -104,5 +104,43 @@ class FinanceLedgerTest(unittest.TestCase):
         self.assertEqual(s["count"], 0)
 
 
+class FinanceLedgerExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_record_entry_returns_dict_with_id(self):
+        rec = finance_ledger.record_entry(self.root, 500, "in")
+        self.assertIsInstance(rec, dict)
+        self.assertIn("id", rec)
+
+    def test_get_entry_returns_none_for_missing(self):
+        result = finance_ledger.get_entry(self.root, 99999)
+        self.assertIsNone(result)
+
+    def test_list_entries_empty_initially(self):
+        rows = finance_ledger.list_entries(self.root)
+        self.assertEqual(rows, [])
+
+    def test_delete_nonexistent_returns_false(self):
+        result = finance_ledger.delete_entry(self.root, 99999)
+        self.assertFalse(result)
+
+    def test_out_entry_defaults_to_pending(self):
+        rec = finance_ledger.record_entry(self.root, 200, "out")
+        self.assertEqual(rec["status"], "pending")
+
+    def test_summary_pending_in_excludes_received(self):
+        a = finance_ledger.record_entry(self.root, 300, "in")
+        finance_ledger.set_status(self.root, a["id"], "received")
+        finance_ledger.record_entry(self.root, 100, "in")  # pending
+        s = finance_ledger.summary(self.root)
+        self.assertEqual(s["pending_in"], 100.0)
+        self.assertEqual(s["received_in"], 300.0)
+
+
 if __name__ == "__main__":
     unittest.main()
