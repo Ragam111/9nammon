@@ -1,0 +1,15 @@
+line-length = 120
+target-version = "py312"
+extend-exclude = [".venv", "data", "data-dev"]
+
+[lint]
+# pycodestyle, pyflakes, import order, bugbear, pyupgrade, bandit-style security checks
+select = ["E", "F", "I", "B", "UP", "S"]
+ignore = [
+    "B008",  # FastAPI declares dependencies as Depends(...) defaults by design
+    "S101",  # assert is fine in tests
+    "S104",  # dev servers bind to 127.0.0.1 explicitly; this rule only flags 0.0.0.0 strings
+]
+
+[lint.per-file-ignores]
+"tests/**" = ["S105", "S106"]  # fixed test passwords and fake keys

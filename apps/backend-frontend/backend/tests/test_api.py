@@ -126,7 +126,7 @@ class RunTest(unittest.TestCase):
             detail = client.get(f"/api/history/{run_id}").json()
             self.assertEqual((detail["status"], detail["output"], detail["tokens_out"]), ("ok", "สวัสดี", 2))
             self.assertEqual(client.get("/api/settings").json()["quota"]["used"], 5)
-            run_log = [json.loads(l) for l in logs.getvalue().splitlines() if '"event": "run"' in l][0]
+            run_log = [json.loads(line) for line in logs.getvalue().splitlines() if '"event": "run"' in line][0]
             self.assertEqual(run_log["tokens_in"] + run_log["tokens_out"], 5)
             self.assertIn("cost_estimate", run_log)
             self.assertNotIn("ทักทาย", logs.getvalue())
@@ -222,7 +222,8 @@ class RunTest(unittest.TestCase):
             started = time.monotonic()
             events = parse_sse(client.post("/api/run", json={"prompt": "hi"}).text)
             self.assertLess(time.monotonic() - started, 4)
-            self.assertEqual((events[-1][0], events[-1][1]["type"], events[-1][1]["partial"]), ("error", "timeout", True))
+            last_name, last = events[-1]
+            self.assertEqual((last_name, last["type"], last["partial"]), ("error", "timeout", True))
 
     def test_user_rate_limit(self) -> None:
         with client_for(FakeModel([ok_stream(["x"])]), rate_limit_user_per_min=1) as (client, _):

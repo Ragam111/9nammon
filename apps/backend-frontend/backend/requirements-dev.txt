@@ -1,0 +1,2 @@
+# Development tools, pinned. Install with: uv pip install --exclude-newer 2026-11-06 -r requirements-dev.txt
+ruff==0.17.4

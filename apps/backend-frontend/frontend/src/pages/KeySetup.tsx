@@ -9,7 +9,8 @@ export function KeyStatusLine({ status }: { status: KeyStatus }) {
   return (
     <span className="flex flex-wrap items-center gap-2">
       <Badge status="ok">ตั้งค่าแล้ว</Badge>
-      <span className="mono text-sm" aria-label={`API key ลงท้ายด้วย ${status.last4}`}>••••{status.last4}</span>
+      <span className="mono text-sm" aria-hidden="true">••••{status.last4}</span>
+      <span className="sr-only">API key ลงท้ายด้วย {status.last4}</span>
       <span className="text-sm text-muted">{source}</span>
     </span>
   );

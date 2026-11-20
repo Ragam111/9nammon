@@ -140,9 +140,13 @@ body {
     --motion-fast: 0ms;
     --motion-base: 0ms;
   }
+  /* !important is deliberate: the user's reduced-motion setting must win over any component animation. */
   *, *::before, *::after {
+    /* biome-ignore lint/complexity/noImportantStyles: reduced-motion override must win */
     animation-duration: 0.01ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: reduced-motion override must win */
     animation-iteration-count: 1 !important;
+    /* biome-ignore lint/complexity/noImportantStyles: reduced-motion override must win */
     transition-duration: 0.01ms !important;
   }
 }

@@ -249,9 +249,10 @@ def _finish(ctx: Context, run_id: str, user_id: int, result: StreamResult, promp
                    tokens_in=tokens_in, tokens_out=tokens_out, latency_ms=latency_ms)
     if status != "error":
         quota.record(ctx.db, user_id, tokens_in + tokens_out)
+    cost = estimate_cost(tokens_in + tokens_out, ctx.settings.cost_per_1k_tokens)
     log_event("run", ctx.log_stream, request_id=request_id, run_id=run_id, user_id=user_id, status=status,
               error_type=err.type if err else None, latency_ms=latency_ms, tokens_in=tokens_in,
-              tokens_out=tokens_out, cost_estimate=estimate_cost(tokens_in + tokens_out, ctx.settings.cost_per_1k_tokens))
+              tokens_out=tokens_out, cost_estimate=cost)
     return {"tokens_in": tokens_in, "tokens_out": tokens_out, "latency_ms": latency_ms}
 
 
@@ -298,7 +299,8 @@ def _install_middleware(app: FastAPI) -> None:
         log_event("http", ctx.log_stream, request_id=request.state.request_id, method=request.method,
                   path=request.url.path, status=response.status_code,
                   latency_ms=int((time.perf_counter() - started) * 1000),
-                  user_id=getattr(request.state, "user_id", None), error_type=getattr(request.state, "error_type", None))
+                  user_id=getattr(request.state, "user_id", None),
+                  error_type=getattr(request.state, "error_type", None))
         return response
 
 

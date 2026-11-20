@@ -8,7 +8,10 @@ from typing import Any
 from .db import Database
 
 STATUSES = ("ok", "partial", "error")
-_LIST_FIELDS = "id, model, substr(prompt, 1, 160) AS prompt_preview, status, error_type, tokens_in, tokens_out, latency_ms, created_at"
+_LIST_FIELDS = (
+    "id, model, substr(prompt, 1, 160) AS prompt_preview, status, error_type, "
+    "tokens_in, tokens_out, latency_ms, created_at"
+)
 
 
 def start(db: Database, user_id: int, model: str, prompt: str) -> str:
@@ -32,7 +35,9 @@ def finish(db: Database, run_id: str, *, status: str, output: str, error_type: s
         )
 
 
-def list_runs(db: Database, user_id: int, *, q: str = "", status: str = "", limit: int = 20, offset: int = 0) -> dict[str, Any]:
+def list_runs(
+    db: Database, user_id: int, *, q: str = "", status: str = "", limit: int = 20, offset: int = 0
+) -> dict[str, Any]:
     """Search prompt/output text, filter by status, newest first. Returns items and the total."""
     where, args = ["user_id = ?"], [user_id]
     if q:
@@ -42,13 +47,13 @@ def list_runs(db: Database, user_id: int, *, q: str = "", status: str = "", limi
     if status in STATUSES:
         where.append("status = ?")
         args.append(status)
+    # `clause` joins only the fixed strings above; every user value goes through `args` as a bound parameter.
     clause = " AND ".join(where)
+    count_sql = f"SELECT COUNT(*) FROM runs WHERE {clause}"  # noqa: S608
+    page_sql = f"SELECT {_LIST_FIELDS} FROM runs WHERE {clause} ORDER BY created_at DESC, rowid DESC LIMIT ? OFFSET ?"  # noqa: S608, E501
     with db.session() as conn:
-        total = conn.execute(f"SELECT COUNT(*) FROM runs WHERE {clause}", args).fetchone()[0]
-        rows = conn.execute(
-            f"SELECT {_LIST_FIELDS} FROM runs WHERE {clause} ORDER BY created_at DESC, rowid DESC LIMIT ? OFFSET ?",
-            [*args, limit, offset],
-        ).fetchall()
+        total = conn.execute(count_sql, args).fetchone()[0]
+        rows = conn.execute(page_sql, [*args, limit, offset]).fetchall()
     return {"items": [dict(r) for r in rows], "total": int(total)}
 
 

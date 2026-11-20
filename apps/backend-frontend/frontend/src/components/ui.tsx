@@ -274,6 +274,7 @@ export function Tabs({ tabs, label }: { tabs: Tab[]; label: string }) {
         {tabs.map((t, i) => (
           <button
             key={t.id}
+            type="button"
             ref={(el) => { refs.current[t.id] = el; }}
             role="tab"
             id={`${baseId}-tab-${t.id}`}
@@ -384,8 +385,12 @@ export function CodeBlock({ code, label }: { code: string; label: string }) {
   const text = state === "copied" ? "คัดลอกแล้ว" : state === "manual" ? "กด Ctrl+C" : "คัดลอก";
   return (
     <div className="flex items-start gap-2 rounded-md border border-line bg-surface-2 p-3">
-      <pre ref={preRef} aria-label={label} className="mono min-w-0 flex-1 overflow-x-auto text-sm text-fg">{code}</pre>
-      <Button variant="ghost" onClick={copy} aria-live="polite">{text}</Button>
+      <section aria-label={label} className="min-w-0 flex-1">
+        {/* biome-ignore lint/a11y/noNoninteractiveTabindex: wide code must be scrollable by keyboard (axe scrollable-region-focusable) */}
+        <pre ref={preRef} tabIndex={0} className="mono overflow-x-auto text-sm text-fg">{code}</pre>
+      </section>
+      <Button variant="ghost" onClick={copy}>{text}</Button>
+      <span role="status" className="sr-only">{state === "idle" ? "" : text}</span>
     </div>
   );
 }

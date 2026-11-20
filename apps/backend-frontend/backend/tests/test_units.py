@@ -10,8 +10,8 @@ import unittest
 import httpx
 
 from app import quota
-from app.db import Database
 from app.auth import create_user
+from app.db import Database
 from app.errors import AppError, from_exception, from_upstream_status, is_retryable_exception
 from app.keystore import KeyStore
 from app.logging_json import log_event

@@ -119,12 +119,13 @@ export async function streamRun(prompt: string, h: RunHandlers): Promise<RunDone
       const { value, done } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
-      let cut: number;
-      while ((cut = buffer.indexOf("\n\n")) >= 0) {
+      let cut = buffer.indexOf("\n\n");
+      while (cut >= 0) {
         const ev = parseBlock(buffer.slice(0, cut));
         buffer = buffer.slice(cut + 2);
         const finished = ev ? handleEvent(ev, h, state) : null;
         if (finished) return finished;
+        cut = buffer.indexOf("\n\n");
       }
     }
   } catch (err) {

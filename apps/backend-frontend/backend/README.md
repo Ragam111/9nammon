@@ -78,8 +78,27 @@ API โหมด dev รันที่ port 8010 และ Vite ส่งต่
 
 ทุก request เขียน log เป็น JSON หนึ่งบรรทัด (request id, method, path, status, latency, error type) และทุกการรันโมเดลเขียนเพิ่ม (token, ค่าใช้จ่ายโดยประมาณ) ห้าม log prompt, ผลลัพธ์, key, cookie หรือรหัสผ่าน
 
-## Test
+## Test และ lint
 
 ```powershell
 .venv\Scripts\python.exe -m unittest discover -s tests -t .
+.venv\Scripts\python.exe -m ruff check .
+```
+
+Eval set (ชุดคำถามคงที่ใน `evals/cases.json`) รันได้ด้วยคำสั่งเดียว:
+
+```powershell
+.venv\Scripts\python.exe -m scripts.run_eval --fake
+.venv\Scripts\python.exe -m scripts.run_eval --out eval-report.json
+```
+
+`--fake` ใช้คำตอบอ้างอิงของแต่ละข้อ ใช้ตรวจว่าระบบทดสอบทำงานถูกต้อง ไม่ได้วัดโมเดล ส่วนการรันโดยไม่มี `--fake` เรียกโมเดลที่ตั้งใน `.env` และ exit 1 ถ้าผ่านต่ำกว่า `--min-pass` (ค่าเริ่มต้น 0.8)
+
+## E2E (Playwright)
+
+รันจากโฟลเดอร์ frontend ไม่ต้องเปิด server เอง ระบบจะเปิดโมเดลจำลอง, API และ Vite บน port 9101, 8011 และ 5174 ด้วยฐานข้อมูลใหม่ทุกครั้ง และใช้ Microsoft Edge ที่ติดตั้งอยู่แล้ว
+
+```powershell
+cd ..\frontend
+npx playwright test
 ```

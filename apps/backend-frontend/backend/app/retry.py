@@ -4,9 +4,6 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from typing import TypeVar
-
-T = TypeVar("T")
 
 MAX_DELAY_S = 8.0
 
@@ -18,7 +15,7 @@ def backoff_delay(attempt: int, base_s: float) -> float:
     return min(MAX_DELAY_S, base_s * (2 ** (attempt - 1)))
 
 
-async def with_retry(
+async def with_retry[T](
     call: Callable[[], Awaitable[T]],
     *,
     max_retries: int,

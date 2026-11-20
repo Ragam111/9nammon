@@ -21,7 +21,7 @@ CHUNK_DELAY_S = 0.05
 
 
 def _chunk(text: str) -> bytes:
-    return f"data: {json.dumps({'choices': [{'delta': {'content': text}}]}, ensure_ascii=False)}\n\n".encode("utf-8")
+    return f"data: {json.dumps({'choices': [{'delta': {'content': text}}]}, ensure_ascii=False)}\n\n".encode()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -37,6 +37,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
+
+    def do_GET(self) -> None:  # readiness check for test runners (GET /v1/models)
+        self._json(200, {"data": [{"id": "fake-model"}]})
 
     def do_POST(self) -> None:
         if not self.path.endswith("/chat/completions"):
@@ -67,7 +70,8 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.flush()
             time.sleep(CHUNK_DELAY_S)
         usage = {"prompt_tokens": max(1, len(prompt) // 4), "completion_tokens": len(words)}
-        self.wfile.write(f"data: {json.dumps({'choices': [{'delta': {}, 'finish_reason': 'stop'}], 'usage': usage})}\n\n".encode())
+        final = {"choices": [{"delta": {}, "finish_reason": "stop"}], "usage": usage}
+        self.wfile.write(f"data: {json.dumps(final)}\n\n".encode())
         self.wfile.write(b"data: [DONE]\n\n")
 
 
