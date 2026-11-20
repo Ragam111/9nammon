@@ -76,5 +76,45 @@ class JobQueueTest(unittest.TestCase):
         self.assertFalse(job_queue.delete_job(self.root, job["id"]))
 
 
+class JobQueueExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_enqueue_returns_dict(self):
+        job = job_queue.enqueue(self.root, "task")
+        self.assertIsInstance(job, dict)
+
+    def test_enqueue_has_required_keys(self):
+        job = job_queue.enqueue(self.root, "task")
+        for key in ("id", "name", "status"):
+            self.assertIn(key, job)
+
+    def test_enqueue_initial_status_is_pending(self):
+        job = job_queue.enqueue(self.root, "task")
+        self.assertEqual(job["status"], "pending")
+
+    def test_get_job_returns_none_for_missing(self):
+        self.assertIsNone(job_queue.get_job(self.root, 99999))
+
+    def test_list_returns_list(self):
+        self.assertIsInstance(job_queue.list_jobs(self.root), list)
+
+    def test_multiple_enqueue_accumulates(self):
+        for i in range(3):
+            job_queue.enqueue(self.root, f"task{i}")
+        self.assertEqual(len(job_queue.list_jobs(self.root)), 3)
+
+    def test_set_status_valid_values(self):
+        job = job_queue.enqueue(self.root, "a")
+        for status in ("running", "done", "error"):
+            job_queue.enqueue(self.root, "b")
+        # set to running succeeds and returns True
+        self.assertTrue(job_queue.set_status(self.root, job["id"], "running"))
+
+
 if __name__ == "__main__":
     unittest.main()

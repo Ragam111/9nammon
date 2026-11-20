@@ -78,5 +78,39 @@ class MeasureAllTest(unittest.TestCase):
         self.assertIn(r["bottleneck"], text)
 
 
+class MemHierarchyExtraTest(unittest.TestCase):
+    def test_mb_constant_positive(self):
+        self.assertGreater(mh.MB, 0)
+
+    def test_mb_constant_is_one_megabyte(self):
+        self.assertEqual(mh.MB, 1024 * 1024)
+
+    def test_mbps_returns_float(self):
+        result = mh._mbps(mh.MB, 1.0)
+        self.assertIsInstance(result, float)
+
+    def test_bench_disk_returns_dict(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = mh.bench_disk(d, size_mb=2)
+        self.assertIsInstance(r, dict)
+
+    def test_bench_disk_has_write_and_read_keys(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = mh.bench_disk(d, size_mb=2)
+        self.assertIn("write_mbps", r)
+        self.assertIn("read_mbps", r)
+
+    def test_format_report_returns_string(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = mh.measure_all(target_dir=d, size_mb=4)
+        text = mh.format_report(r)
+        self.assertIsInstance(text, str)
+        self.assertGreater(len(text), 0)
+
+    def test_bench_ram_returns_float(self):
+        result = mh.bench_ram(size_mb=4, repeat=1)
+        self.assertIsInstance(result, float)
+
+
 if __name__ == "__main__":
     unittest.main()
