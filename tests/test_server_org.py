@@ -198,17 +198,29 @@ class ServerOrgTest(unittest.TestCase):
             self.assertIn(k, info)
 
     def test_index_page_served_has_ux(self):
+        # `/` เป็นหน้าแรกที่พาไป Chat Hub; เครื่องมือเดิม (แชทสั้น/โมเดล/todo) อยู่ที่ /classic
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
         conn.request("GET", "/")
+        resp = conn.getresponse()
+        home = resp.read().decode("utf-8")
+        conn.close()
+        self.assertEqual(resp.status, 200)
+        self.assertIn('href="/app.css"', home)
+        self.assertIn('lang="th"', home)
+        self.assertIn('href="/chat"', home)
+        self.assertIn('href="/classic"', home)
+        self.assertIn('id="lca-status"', home)
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("GET", "/classic")
         resp = conn.getresponse()
         body = resp.read().decode("utf-8")
         conn.close()
         self.assertEqual(resp.status, 200)
-        # ใช้ design system กลาง (app.css) + ยังมี marker UX เดิมในมาร์กอัป
         self.assertIn('href="/app.css"', body)
         self.assertIn('class="page-chat"', body)
         self.assertIn('id="sidebar-toggle"', body)
         self.assertIn('id="todo-msg"', body)
+        self.assertIn('id="lca-status"', body)
 
     def test_dev_page_served(self):
         # ตั้ง master token ไว้ (ไม่ใช่โหมด local) → /dev ต้องมีสิทธิ์ ADMIN ขึ้นไปถึงได้หน้า

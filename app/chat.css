@@ -1,29 +1,4 @@
-/* Chat hub page. Tokens come from app.css. Fonts are local files (offline). */
-@font-face {
-  font-family: "LCA Sans";
-  src: url(/fonts/IBMPlexSansThai-Regular.sub.woff2) format("woff2");
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: "LCA Sans";
-  src: url(/fonts/IBMPlexSansThai-SemiBold.sub.woff2) format("woff2");
-  font-weight: 600;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: "LCA Mono";
-  src: url(/fonts/IBMPlexMono-Regular.sub.woff2) format("woff2");
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-:root {
-  --lca-sans: "LCA Sans", "Leelawadee UI", "Segoe UI", "Noto Sans Thai", Tahoma, system-ui, sans-serif;
-  --lca-mono: "LCA Mono", "Cascadia Mono", Consolas, ui-monospace, "LCA Sans", monospace;
-}
+/* Chat hub page. Tokens and @font-face live in app.css (local woff2, offline). */
 body.page-hub {
   margin: 0;
   font: 400 16px/1.7 var(--lca-sans);
@@ -74,10 +49,12 @@ button { cursor: pointer; }
   display: flex;
   gap: 8px;
   align-items: center;
+  flex-wrap: wrap;
   padding: 10px 12px;
   border-bottom: 1px solid var(--lca-line);
   background: var(--lca-surface);
 }
+.head .chip { margin-left: auto; }
 .head select, .head button, .head input {
   border: 1px solid var(--lca-line);
   background: var(--lca-surface);
