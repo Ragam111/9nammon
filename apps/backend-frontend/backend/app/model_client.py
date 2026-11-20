@@ -119,7 +119,8 @@ async def iter_text(response: httpx.Response, result: StreamResult, max_chars: i
         raise AppError("upstream", "โมเดลไม่ส่งข้อความกลับมา — ลองใหม่ หรือตรวจ MODEL_NAME")
 
 
-LOCAL_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+# host.docker.internal is the host machine seen from inside Docker (e.g. a local Ollama), so no key is needed.
+LOCAL_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "host.docker.internal"})
 
 
 def require_key(api_key: str, base_url: str) -> None:

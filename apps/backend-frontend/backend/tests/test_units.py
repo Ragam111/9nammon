@@ -180,6 +180,21 @@ class RetryTest(unittest.TestCase):
         self.assertEqual((slept, calls), ([], 1))
 
 
+class RequireKeyTest(unittest.TestCase):
+    def test_local_hosts_need_no_key(self) -> None:
+        from app.model_client import require_key
+
+        for url in ("http://127.0.0.1:11434/v1", "http://localhost:11434/v1", "http://host.docker.internal:11434/v1"):
+            require_key("", url)  # must not raise
+
+    def test_remote_host_needs_a_key(self) -> None:
+        from app.model_client import require_key
+
+        with self.assertRaises(AppError):
+            require_key("", "https://api.example.com/v1")
+        require_key("sk-x", "https://api.example.com/v1")
+
+
 class KeyStoreTest(unittest.TestCase):
     def test_env_key_wins_and_only_last4_is_exposed(self) -> None:
         store = KeyStore("sk-env-abcd9876", make_settings().data_dir)

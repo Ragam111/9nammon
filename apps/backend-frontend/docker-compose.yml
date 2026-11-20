@@ -1,0 +1,43 @@
+# Run the whole app with one command:  docker compose up --build
+# Open http://localhost:8080 . The API is not published to the host; only the web port is.
+# Settings come from backend/.env when that file exists (copy ../.env.example to backend/.env first).
+
+name: backend-frontend
+
+services:
+  api:
+    build:
+      context: ./backend
+    env_file:
+      - path: ./backend/.env
+        required: false
+    environment:
+      DATA_DIR: /data
+      # Ollama on the host by default. Change to your model server if it is elsewhere.
+      MODEL_BASE_URL: ${MODEL_BASE_URL:-http://host.docker.internal:11434/v1}
+      CORS_ORIGINS: http://localhost:8080,http://127.0.0.1:8080
+      COOKIE_SECURE: "false"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - bf-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=2).status == 200 else 1)"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  web:
+    build:
+      context: ./frontend
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8080:80"
+    restart: unless-stopped
+
+volumes:
+  bf-data:
