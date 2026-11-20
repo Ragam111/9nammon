@@ -123,5 +123,94 @@ class RateLimitDisabledTest(unittest.TestCase):
             self.assertNotEqual(st, 429, f"ครั้งที่ {i+1}: rate limit ถูก disable แต่ได้ 429")
 
 
+class RateLimitExtraTest(unittest.TestCase):
+    """ทดสอบ rate limit behaviors เพิ่มเติม (window, limit=1, response shape)"""
+
+    def _make(self, rate_limit_max=3, window=60.0):
+        tmp = tempfile.TemporaryDirectory()
+        root = Path(tmp.name)
+        handler = server.make_handler(root, None,
+                                      rate_limit_max=rate_limit_max,
+                                      rate_limit_window=window)
+        httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        port = httpd.server_address[1]
+        t = threading.Thread(target=httpd.serve_forever, daemon=True)
+        t.start()
+        return httpd, port, handler.session_token, tmp
+
+    def _get(self, port, path, token=None):
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        hdrs = {}
+        if token:
+            hdrs["X-Auth-Token"] = token
+        conn.request("GET", path, headers=hdrs)
+        resp = conn.getresponse()
+        body = resp.read().decode("utf-8")
+        conn.close()
+        try:
+            data = json.loads(body) if body else {}
+        except json.JSONDecodeError:
+            data = {}
+        return resp.status, data
+
+    def test_limit_one_blocks_on_second_request(self):
+        httpd, port, token, tmp = self._make(rate_limit_max=1)
+        try:
+            st1, _ = self._get(port, "/api/health")
+            self.assertEqual(st1, 200)
+            st2, _ = self._get(port, "/api/health")
+            self.assertEqual(st2, 429)
+        finally:
+            httpd.shutdown(); httpd.server_close(); tmp.cleanup()
+
+    def test_larger_limit_allows_more(self):
+        httpd, port, token, tmp = self._make(rate_limit_max=10)
+        try:
+            for i in range(10):
+                st, _ = self._get(port, "/api/health")
+                self.assertEqual(st, 200, f"request {i+1} ต้องได้ 200")
+        finally:
+            httpd.shutdown(); httpd.server_close(); tmp.cleanup()
+
+    def test_429_body_has_error_key(self):
+        httpd, port, token, tmp = self._make(rate_limit_max=1)
+        try:
+            self._get(port, "/api/health")
+            _, data = self._get(port, "/api/health")
+            self.assertIn("error", data)
+        finally:
+            httpd.shutdown(); httpd.server_close(); tmp.cleanup()
+
+    def test_rate_limit_max_configurable_to_five(self):
+        httpd, port, token, tmp = self._make(rate_limit_max=5)
+        try:
+            statuses = [self._get(port, "/api/health")[0] for _ in range(6)]
+            self.assertEqual(statuses[:5], [200] * 5)
+            self.assertEqual(statuses[5], 429)
+        finally:
+            httpd.shutdown(); httpd.server_close(); tmp.cleanup()
+
+    def test_chat_js_not_rate_limited(self):
+        httpd, port, token, tmp = self._make(rate_limit_max=2)
+        try:
+            for _ in range(3):
+                self._get(port, "/api/health")
+            st, _ = self._get(port, "/chat.js")
+            self.assertNotEqual(st, 429)
+        finally:
+            httpd.shutdown(); httpd.server_close(); tmp.cleanup()
+
+    def test_multiple_api_paths_share_quota(self):
+        httpd, port, token, tmp = self._make(rate_limit_max=3)
+        try:
+            self._get(port, "/api/health")
+            self._get(port, "/api/health")
+            self._get(port, "/api/health")
+            st, _ = self._get(port, "/api/version")
+            self.assertEqual(st, 429)
+        finally:
+            httpd.shutdown(); httpd.server_close(); tmp.cleanup()
+
+
 if __name__ == "__main__":
     unittest.main()
