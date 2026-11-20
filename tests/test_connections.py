@@ -136,5 +136,38 @@ class ConnectionsTest(unittest.TestCase):
             connections.chat(self.root, rec["id"], [{"role": "user", "content": "hi"}])
 
 
+class ConnectionsExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self._orig_backend_for = connections._backend_for
+
+    def tearDown(self):
+        connections._backend_for = self._orig_backend_for
+        self._tmp.cleanup()
+
+    def test_list_empty_initially(self):
+        self.assertEqual(connections.list_connections(self.root), [])
+
+    def test_add_ollama_no_base_url_needed(self):
+        rec = connections.add(self.root, "LocalBrain", "ollama")
+        self.assertIn("id", rec)
+
+    def test_add_enabled_by_default(self):
+        rec = connections.add(self.root, "Brain", "ollama")
+        listed = connections.list_connections(self.root)
+        self.assertTrue(listed[0]["enabled"])
+
+    def test_add_id_starts_with_con(self):
+        rec = connections.add(self.root, "Brain", "ollama")
+        self.assertTrue(rec["id"].startswith("con-"))
+
+    def test_connection_error_is_exception(self):
+        self.assertTrue(issubclass(connections.ConnectionError, Exception))
+
+    def test_remove_nonexistent_returns_false(self):
+        self.assertFalse(connections.remove(self.root, "con-does-not-exist"))
+
+
 if __name__ == "__main__":
     unittest.main()
