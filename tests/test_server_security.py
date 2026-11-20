@@ -119,5 +119,50 @@ class RequestBodySizeLimitTest(unittest.TestCase):
                             "payload ภายใน limit ต้องไม่ถูกปฏิเสธด้วย body size")
 
 
+# ---------------------------------------------------------------------------
+# ServerSecurityExtraTest
+# ---------------------------------------------------------------------------
+
+class ServerSecurityExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        handler = server.make_handler(Path(self._tmp.name), MASTER_TOKEN)
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        self.port = self.httpd.server_address[1]
+        self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
+        self.thread.start()
+
+    def tearDown(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        self._tmp.cleanup()
+
+    def _get(self, path, headers=None):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("GET", path, headers=headers or {})
+        resp = conn.getresponse()
+        resp.read()
+        conn.close()
+        return resp.status
+
+    def test_correct_token_ok(self):
+        self.assertEqual(self._get("/api/me", {"X-Auth-Token": MASTER_TOKEN}), 200)
+
+    def test_wrong_token_rejected(self):
+        self.assertEqual(self._get("/api/me", {"X-Auth-Token": "bad-token"}), 401)
+
+    def test_no_token_rejected(self):
+        self.assertEqual(self._get("/api/me", {}), 401)
+
+    def test_make_handler_is_callable(self):
+        self.assertTrue(callable(server.make_handler))
+
+    def test_health_returns_200(self):
+        self.assertEqual(self._get("/api/health"), 200)
+
+    def test_root_returns_200(self):
+        self.assertEqual(self._get("/"), 200)
+
+
 if __name__ == "__main__":
     unittest.main()

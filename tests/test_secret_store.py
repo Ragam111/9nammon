@@ -428,5 +428,29 @@ class StdlibSecretsNotShadowedTest(unittest.TestCase):
         self.assertEqual(out.stdout.strip(), "secret_store")
 
 
+# ---------------------------------------------------------------------------
+# SecretStoreExtraTest
+# ---------------------------------------------------------------------------
+
+class SecretStoreExtraTest(unittest.TestCase):
+    def test_secret_error_is_exception(self):
+        self.assertTrue(issubclass(secrets.SecretError, Exception))
+
+    def test_openai_api_key_is_secret(self):
+        self.assertTrue(secrets.is_secret_name("OPENAI_API_KEY"))
+
+    def test_model_backend_not_secret(self):
+        self.assertFalse(secrets.is_secret_name("MODEL_BACKEND"))
+
+    def test_is_snapshot_entry_matches_key(self):
+        self.assertTrue(secrets.is_snapshot_entry_for_key("snapshot:v1:A_TOKEN", "A_TOKEN"))
+
+    def test_config_prefix_not_snapshot_entry(self):
+        self.assertFalse(secrets.is_snapshot_entry_for_key("config:A_TOKEN", "A_TOKEN"))
+
+    def test_keyring_not_dependency_by_default(self):
+        self.assertFalse(secrets.keyring_is_dependency())
+
+
 if __name__ == "__main__":
     unittest.main()

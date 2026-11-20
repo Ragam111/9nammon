@@ -223,5 +223,38 @@ class StatusTest(unittest.TestCase):
             self.assertIn("ปิดตามตารางเวลา", info["message"])
 
 
+# ---------------------------------------------------------------------------
+# ScheduleGateExtraTest
+# ---------------------------------------------------------------------------
+
+class ScheduleGateExtraTest(unittest.TestCase):
+    def setUp(self):
+        schedule_gate.invalidate_cache()
+
+    def test_default_open_hour_is_int(self):
+        self.assertIsInstance(schedule_gate.DEFAULT_OPEN_HOUR, int)
+
+    def test_default_close_hour_is_int(self):
+        self.assertIsInstance(schedule_gate.DEFAULT_CLOSE_HOUR, int)
+
+    def test_is_open_returns_bool_type(self):
+        now = datetime(2026, 10, 29, 5, 0, tzinfo=timezone.utc)  # 12:00 TH
+        result = schedule_gate.is_open(now, 6, 20)
+        self.assertIsInstance(result, bool)
+
+    def test_next_window_has_state_key(self):
+        now = datetime(2026, 10, 29, 5, 0, tzinfo=timezone.utc)
+        info = schedule_gate.next_window(now, 6, 20)
+        self.assertIn("state", info)
+
+    def test_clamp_hour_zero_is_valid(self):
+        self.assertEqual(schedule_gate._clamp_hour(0, 7), 0)
+
+    def test_status_disabled_state_is_open(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            info = schedule_gate.status(Path(tmp))
+            self.assertEqual(info["state"], "open")
+
+
 if __name__ == "__main__":
     unittest.main()

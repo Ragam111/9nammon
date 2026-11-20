@@ -235,6 +235,32 @@ class TestGetStatsReturnType(_TmpPathMixin):
         self.assertIsInstance(get_stats(self.tmp_path)["by_endpoint"], list)
 
 
+# ---------------------------------------------------------------------------
+# StatsStoreExtraTest
+# ---------------------------------------------------------------------------
+
+class StatsStoreExtraTest(_TmpPathMixin):
+    def test_get_stats_returns_dict(self):
+        self.assertIsInstance(get_stats(self.tmp_path), dict)
+
+    def test_initial_total_requests_zero(self):
+        self.assertEqual(get_stats(self.tmp_path)["total_requests"], 0)
+
+    def test_record_one_increases_total_to_one(self):
+        record(self.tmp_path, "/api/test", 200)
+        self.assertEqual(get_stats(self.tmp_path)["total_requests"], 1)
+
+    def test_error_rate_is_float_type(self):
+        self.assertIsInstance(get_stats(self.tmp_path)["error_rate"], float)
+
+    def test_by_endpoint_is_list_type(self):
+        self.assertIsInstance(get_stats(self.tmp_path)["by_endpoint"], list)
+
+    def test_status_400_is_error(self):
+        record(self.tmp_path, "/api/x", 400)
+        self.assertEqual(get_stats(self.tmp_path)["total_errors"], 1)
+
+
 if __name__ == "__main__":
     unittest.main()
 
