@@ -70,5 +70,50 @@ class TodoStoreTest(unittest.TestCase):
         self.assertEqual(todos, [])
 
 
+# ---------------------------------------------------------------------------
+# TodoStoreExtraTest
+# ---------------------------------------------------------------------------
+
+class TodoStoreExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_load_empty_initially(self):
+        self.assertEqual(todo_store.load_todos(self.tmp), [])
+
+    def test_add_todo_has_text_field(self):
+        todo_store.add_todo(self.tmp, "Test item")
+        todos = todo_store.load_todos(self.tmp)
+        self.assertEqual(todos[0]["text"], "Test item")
+
+    def test_add_todo_done_is_false(self):
+        todo_store.add_todo(self.tmp, "New task")
+        todos = todo_store.load_todos(self.tmp)
+        self.assertFalse(todos[0]["done"])
+
+    def test_toggle_changes_done_state(self):
+        todo_store.add_todo(self.tmp, "Toggle test")
+        todos = todo_store.load_todos(self.tmp)
+        tid = todos[0]["id"]
+        todo_store.toggle_todo(self.tmp, tid)
+        todos = todo_store.load_todos(self.tmp)
+        self.assertTrue(todos[0]["done"])
+
+    def test_delete_removes_item(self):
+        todo_store.add_todo(self.tmp, "To delete")
+        todos = todo_store.load_todos(self.tmp)
+        tid = todos[0]["id"]
+        todo_store.delete_todo(self.tmp, tid)
+        self.assertEqual(len(todo_store.load_todos(self.tmp)), 0)
+
+    def test_corrupted_json_returns_empty_list(self):
+        (self.tmp / "todos.json").write_text("{bad json", encoding="utf-8")
+        self.assertEqual(todo_store.load_todos(self.tmp), [])
+
+
 if __name__ == "__main__":
     unittest.main()
