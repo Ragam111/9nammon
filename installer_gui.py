@@ -5,8 +5,8 @@ r"""installer_gui.py — ตัวติดตั้ง LCA แบบ GUI ไฟ
   กด "ติดตั้ง" → ดาวน์โหลด+แตก+คัดลอก (แถบวิ่งขึ้นจนเขียวเต็มหลอด) → กด Close พร้อมใช้งาน
 
 stdlib ล้วน: tkinter (GUI), urllib (ดาวน์โหลด), hashlib (SHA-256), zipfile, shutil, threading.
-ดาวน์โหลดซอร์สที่ปัก commit ไว้จาก GitHub (ไม่ใช้ main.zip — URL แบบ latest ไม่มี hash คงที่)
-แล้วตรวจ SHA-256 ก่อนแตกไฟล์.
+ดาวน์โหลด lca-source.zip จาก GitHub Release ล่าสุด แล้วตรวจ SHA-256 กับ
+lca-source.zip.sha256 ของ Release เดียวกันก่อนแตกไฟล์.
 
 แพ็กเป็น .exe (บน Windows):
   pip install pyinstaller
@@ -28,16 +28,20 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-# แหล่งซอร์สที่ตัวติดตั้งดึงมา. refs/heads/main.zip เป็น URL แบบ "latest":
-# ไบต์เปลี่ยนทุกครั้งที่ main ขยับ และ GitHub ไม่ได้เผยแพร่ไฟล์ .sha256 ของ source archive
-# — จึงปัก commit แทนการเดา hash. ถ้าจะขยับพิน ต้องเปลี่ยน PINNED_COMMIT กับ ZIP_SHA256 คู่กัน
-# หลังจากดาวน์โหลด URL ใหม่แล้วคำนวณเองเท่านั้น (ห้ามใส่ค่าที่ไม่ได้วัดจากไฟล์จริง).
-#
-# ZIP_SHA256 มาจากการดาวน์โหลด ZIP_URL จริงเมื่อ 2026-11-03 (curl สองครั้งได้ digest เดียวกัน
-# d03326ba…ef8d, ขนาด 518881 ไบต์). ไม่ใช่ checksum ที่ upstream ประกาศ — GitHub ไม่มีให้.
-PINNED_COMMIT = "93f1ca8de37543af528b33c8620347cf10865c5c"
-ZIP_URL = f"https://github.com/Ragam111/9nammon/archive/{PINNED_COMMIT}.zip"
-ZIP_SHA256 = "d03326baa16f1555b1d0089e46884a0f0ddf249e3b2b4976f77854313fe5ef8d"
+# แหล่งซอร์ส = asset ของ GitHub Release ล่าสุด (ไม่ปัก commit ในโค้ดอีกแล้ว)
+# - .github/workflows/build-exe.yml (ตอน push tag v*) สร้าง lca-source.zip ด้วย `git archive`
+#   แล้วคำนวณ lca-source.zip.sha256 แนบเข้า Release เดียวกัน
+# - ตัวติดตั้ง/อัปเดตโหลด .sha256 ก่อน → โหลด zip → เทียบ SHA-256 → ไม่ตรง = ลบทิ้ง ไม่แตกไฟล์
+# hash มาจาก Release เดียวกับ zip: กันไฟล์โหลดไม่ครบ/เพี้ยน/cache เก่า (TLS กันคนกลางอยู่แล้ว)
+# ไม่ได้กันกรณีบัญชี GitHub ของ repo ถูกยึด — ข้อจำกัดเดียวกับการเชื่อ Release นั้นเอง
+# LCA_RELEASE_URL = โฟลเดอร์ดาวน์โหลดอื่น (เช่น tag เฉพาะ .../releases/download/v0.2.0) ถ้าต้องการ
+RELEASE_URL = os.environ.get(
+    "LCA_RELEASE_URL",
+    "https://github.com/Ragam111/9nammon/releases/latest/download",
+).rstrip("/")
+ZIP_NAME = "lca-source.zip"
+ZIP_URL = f"{RELEASE_URL}/{ZIP_NAME}"
+SHA256_URL = f"{ZIP_URL}.sha256"
 _HASH_CHUNK = 64 * 1024
 APP_NAME = "Local Code Assistant"
 # ขนาดดิสก์ขั้นต่ำที่ต้องมีก่อนติดตั้ง (bytes) — zip ~2 MB + extracted ~30 MB + buffer
@@ -45,10 +49,11 @@ APP_NAME = "Local Code Assistant"
 # ตอน extract บน Desktop ที่เต็ม — fail-fast ที่นี่แทนให้ user เจอกลางคัน)
 MIN_FREE_DISK_BYTES = 300 * 1024 * 1024
 # ของที่ต้องคัดลอกจากซอร์สที่แตกออกมาไปยังโฟลเดอร์ติดตั้ง
-COPY_DIRS = ("app", "sysmanager")
-COPY_FILES = ("server.py", "local_coder.py", "lca.bat", "start-lca.bat",
-              "lca-desktop.bat", "lca-tray.bat", "lca-tray.ps1",
-              "install.ps1", "requirements.txt", "README.md")
+COPY_DIRS = ("app", "sysmanager", "scripts")
+COPY_FILES = ("server.py", "local_coder.py", "lca_app.py", "lca.bat", "start-lca.bat",
+              "lca-desktop.bat", "lca-tray.bat", "lca-tray.ps1", "lca-update.bat",
+              "install.ps1", "update.ps1", "uninstall.ps1",
+              "requirements.txt", "README.md", "VERSION")
 
 
 def default_install_dir() -> str:
@@ -168,7 +173,43 @@ def _stream_download(url: str, dest: Path, chunk_size: int = _HASH_CHUNK) -> str
     return hasher.hexdigest()
 
 
-def _download_zip(url: str, dest: Path, expected_sha256: str = ZIP_SHA256) -> str:
+def _network_error(err) -> RuntimeError:
+    return RuntimeError(
+        f"ดาวน์โหลดไม่สำเร็จ: {err}\n\n"
+        f"วิธีแก้: (1) ติดตั้ง Python ใหม่จาก python.org (จะได้ CA bundle ล่าสุด) "
+        f"หรือ (2) รัน `pip install --upgrade certifi` ใน PowerShell")
+
+
+def _fetch_text(url: str, limit: int = 4096) -> str:
+    """โหลดไฟล์ข้อความเล็กๆ (เช่น .sha256) — urllib ก่อน แล้ว curl.exe ถ้า SSL ของ Python พัง"""
+    try:
+        with urllib.request.urlopen(url, timeout=60) as resp:
+            return resp.read(limit).decode("utf-8", "replace")
+    except Exception as e:
+        err = e
+    curl = shutil.which("curl") or (r"C:\Windows\System32\curl.exe"
+                                    if sys.platform == "win32" else None)
+    if curl and Path(curl).exists():
+        try:
+            res = subprocess.run([curl, "-fsSL", url], capture_output=True, timeout=60)
+            if res.returncode == 0 and res.stdout:
+                return res.stdout[:limit].decode("utf-8", "replace")
+        except (OSError, subprocess.SubprocessError):
+            pass
+    raise _network_error(err)
+
+
+def parse_sha256_file(text: str) -> str:
+    """อ่านรูปแบบ `sha256sum` (`<hex>  lca-source.zip`) หรือ hex เปล่า → hex ตัวเล็ก 64 ตัว"""
+    token = (text or "").strip().split()[0] if (text or "").strip() else ""
+    return _normalize_sha256(token)
+
+
+def fetch_expected_sha256(url: str = SHA256_URL) -> str:
+    return parse_sha256_file(_fetch_text(url))
+
+
+def _download_zip(url: str, dest: Path, expected_sha256: str | None = None) -> str:
     """ดาวน์โหลด zip แล้วตรวจ SHA-256 ก่อนคืน method ("urllib"/"curl").
 
     bug fix v0.1.2: user เจอ SSL cert verify failed บน Windows ที่ CA bundle ของ
@@ -178,6 +219,9 @@ def _download_zip(url: str, dest: Path, expected_sha256: str = ZIP_SHA256) -> st
     hash ไม่ตรงไม่ถือเป็นเหตุให้ลองช่องทางที่สอง: เนื้อหา URL เดียวกัน ลบไฟล์แล้วหยุด.
     ทั้งสองช่องทางล้มเรื่องเครือข่าย → RuntimeError + วิธีแก้ (certifi / ติดตั้ง Python ใหม่).
     """
+    if expected_sha256 is None:
+        # ค่าที่คาดไว้ = ไฟล์ <url>.sha256 ที่แนบมากับ Release เดียวกัน
+        expected_sha256 = fetch_expected_sha256(url + ".sha256")
     expected = _normalize_sha256(expected_sha256)
     try:
         digest = _stream_download(url, dest)
@@ -204,10 +248,7 @@ def _download_zip(url: str, dest: Path, expected_sha256: str = ZIP_SHA256) -> st
         except (OSError, subprocess.SubprocessError):
             pass
         _discard(dest)
-    raise RuntimeError(
-        f"ดาวน์โหลดไม่สำเร็จ: {err_urllib}\n\n"
-        f"วิธีแก้: (1) ติดตั้ง Python ใหม่จาก python.org (จะได้ CA bundle ล่าสุด) "
-        f"หรือ (2) รัน `pip install --upgrade certifi` ใน PowerShell")
+    raise _network_error(err_urllib)
 
 
 def _find_src_root(extract_dir: Path) -> Path:
@@ -236,7 +277,7 @@ def do_install(install_dir: str, make_desktop_icon: bool, progress_cb,
         tmp = Path(tmp)
         zip_path = tmp / "lca.zip"
         progress_cb(10, "กำลังดาวน์โหลดจาก GitHub...")
-        # expected hash คือ ZIP_SHA256 (ค่า default) — ไม่ผ่านจะไม่แตกไฟล์
+        # expected hash = lca-source.zip.sha256 ของ Release เดียวกัน — ไม่ผ่านจะไม่แตกไฟล์
         method = _download_zip(ZIP_URL, zip_path)
         if method != "urllib":
             progress_cb(42, f"ดาวน์โหลดสำเร็จ (ผ่าน {method}) — กำลังแตกไฟล์...")
@@ -254,6 +295,9 @@ def do_install(install_dir: str, make_desktop_icon: bool, progress_cb,
             s = src / f
             if s.exists():
                 shutil.copy2(s, install_path / f)
+        version = (src / "VERSION").read_text(encoding="utf-8").strip() if (src / "VERSION").exists() else ""
+        if version:
+            (install_path / "version.txt").write_text(version + "\n", encoding="utf-8")
         progress_cb(85, "ตั้งค่า launcher...")
         _ensure_start_launcher(install_path)
         if make_desktop_icon:

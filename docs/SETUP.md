@@ -286,6 +286,8 @@ pyinstaller --onefile --windowed --name LCA-Desktop \
 pyinstaller --onefile --windowed --name TokenLCAlimit installer_gui.py
 ```
 
+ตอนรันจะโหลด `lca-source.zip` ของ Release ล่าสุด แล้วตรวจกับ `lca-source.zip.sha256` ก่อนแตกไฟล์.
+
 ## เทียบตรงๆ
 
 | จุด | LCA-Desktop.exe | TokenLCAlimit.exe |
@@ -323,8 +325,8 @@ pyinstaller --onefile --windowed --name TokenLCAlimit installer_gui.py
 
 # ตัวติดตั้ง GUI — TokenLCAlimit.exe
 
-`installer_gui.py` (Python stdlib: tkinter + urllib + zipfile)
-- ดาวน์โหลดซอร์สที่ปัก commit ไว้ → ตรวจ SHA-256 → คัดลอกลงโฟลเดอร์ที่เลือก
+`installer_gui.py` (Python stdlib: tkinter + urllib + zipfile + shutil + threading)
+- ดาวน์โหลด `lca-source.zip` + `lca-source.zip.sha256` จาก GitHub Release ล่าสุด (`releases/latest/download/`) → ตรวจ SHA-256 ก่อนแตก → คัดลอก `app/`, `sysmanager/`, `scripts/`, `server.py` และ launcher ลงโฟลเดอร์ที่เลือก. hash ไม่ตรงจะลบไฟล์ทิ้งแล้วหยุด. สร้างแพ็กเกจด้วย `python scripts/release_assets.py --upload v<VERSION>`. ตั้ง `LCA_RELEASE_URL` เพื่อชี้ Release อื่น
 - สร้าง `start-lca.bat`
 - แถบ progress เป็น **สีเขียว** เมื่อ 100%
 

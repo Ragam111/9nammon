@@ -1,0 +1,8 @@
+# git archive (lca-source.zip ของ Release) ไม่ต้องมีไฟล์สำหรับนักพัฒนา
+tests/ export-ignore
+.github/ export-ignore
+.vscode/ export-ignore
+.gitattributes export-ignore
+
+# cmd.exe อ่าน .bat ที่เป็น LF ล้วนเพี้ยนได้ (label/บรรทัดยาว) — checkout และ git archive ให้เป็น CRLF
+*.bat text eol=crlf

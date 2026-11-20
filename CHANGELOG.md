@@ -4,6 +4,16 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+### ติดตั้งและอัปเดตคำสั่งเดียว (PR #112)
+
+บันทึกฟีเจอร์ที่เขียนไว้ตอนโปรเจกต์เป็น v0.2.0 เข้ากับ `VERSION` 0.3.4 ของ main.
+
+- ไม่ปัก commit ในตัวติดตั้ง. `python scripts/release_assets.py --upload v<VERSION>` สร้าง `lca-source.zip` ด้วย `git archive` พร้อม `lca-source.zip.sha256` แล้วแนบเข้า GitHub Release (ปฏิเสธถ้า tag ไม่ตรง `VERSION`). `install.ps1`, `update.ps1` และ `TokenLCAlimit.exe` โหลดจาก `releases/latest/download/` แล้วตรวจ SHA-256 ก่อนแตก — ไม่ตรงจะลบไฟล์ทิ้งและหยุด. ตั้ง `LCA_RELEASE_URL` เพื่อชี้ไป Release หรือ mirror อื่น.
+- `install.ps1` ใช้เป็น one-liner (`irm … | iex`) ได้: โหลด Release ก่อนแล้วค่อยติดตั้ง. มี `-InstallDir`, `-Model`, `-Yes`, `-TuneOllama`, `-Update`. อ่านเลขเวอร์ชันจาก `VERSION`, ติดตั้ง `requirements.txt`, และคัดลอก `lca_app.py`, `VERSION`, `scripts\`.
+- `update.ps1` / `lca-update`: หาโฟลเดอร์ติดตั้ง → โหลดและตรวจ SHA-256 → ปิด LCA ที่รันจากโฟลเดอร์นั้น → `install.ps1 -Update` (เก็บโมเดลที่เลือกไว้) → `scripts/migrate.py` → เปิด launcher เดิม. ไม่แตะ `<InstallDir>\data` และไฟล์ในโปรเจกต์. `-Package` ใช้แพ็กเกจที่แตกไว้, `-Force` ติดตั้งซ้ำเวอร์ชันเดิม.
+- `scripts/setup-ollama.ps1` (ตัวเลือก) จูน Ollama สำหรับเครื่อง RAM น้อย. ตัวติดตั้งถามเมื่อ RAM ≤ 12GB หรือเมื่อสั่ง `-TuneOllama`.
+- `python server.py` ใช้ `project_dir` เป็นโฟลเดอร์ปัจจุบันเมื่อไม่ได้ส่งค่า และพิมพ์ลิงก์ `http://127.0.0.1:8420/chat#lca_token=…`. ตอนติดตั้งคอมไพล์ `.pyc` ล่วงหน้า.
+
 ## [0.3.4] — 2026-11-05 (Test Coverage — router unit tests)
 
 ### Added
