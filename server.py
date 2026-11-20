@@ -2283,7 +2283,12 @@ def find_free_port(preferred: int, host: str = "127.0.0.1", tries: int = 20) -> 
     หา tries พอร์ตไม่เจอ → สุดท้ายให้ OS เลือกพอร์ตว่างเอง (port 0)"""
     for p in range(preferred, preferred + tries):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            # Windows SO_REUSEADDR lets us bind a port another process is listening on,
+            # so the probe would report a busy port as free. Use exclusive bind there.
+            if os.name == "nt" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+            else:
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
                 s.bind((host, p))
                 return p
