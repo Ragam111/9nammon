@@ -4,6 +4,17 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [0.3.5] — 2026-11-05 (Test Coverage — usage_store extended tests)
+
+### Added
+- `tests/test_usage_store.py` — expanded from 6 to 31 tests: `_unit_price`
+  (known/unknown/None/empty-string tiers), `record_usage` return shape (all 7 fields,
+  default units/endpoint, custom units, None key_id/tier), `list_usage` (limit param,
+  no-match filter returns [], ordering), `summary` shape (all 5 top-level keys,
+  currency, by_tier entry fields), cost formula, unknown-tier bucketed as "unknown",
+  by_key ordering by units DESC
+- Test suite: 1273 → 1298 tests total
+
 ## [0.3.4] — 2026-11-05 (Test Coverage — router unit tests)
 
 ### Added
