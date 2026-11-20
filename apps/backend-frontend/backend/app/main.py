@@ -23,6 +23,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from . import auth, history, quota
+from .clientip import parse_networks, resolve_client_ip
 from .config import Settings, load_settings
 from .db import Database
 from .errors import AppError, from_exception
@@ -259,7 +260,9 @@ def _finish(ctx: Context, run_id: str, user_id: int, result: StreamResult, promp
 # ---------- app wiring ----------
 
 def client_ip(request: Request) -> str:
-    return request.client.host if request.client else "unknown"
+    """The rate-limit identity of the caller. See clientip.py for when forwarded headers count."""
+    peer = request.client.host if request.client else None
+    return resolve_client_ip(peer, request.headers, request.app.state.trusted_nets)
 
 
 def _check_request(request: Request, ctx: Context) -> None:
@@ -339,6 +342,7 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
             yield
 
     app = FastAPI(title="backend-frontend API", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+    app.state.trusted_nets = parse_networks(s.trusted_proxies)
     app.include_router(router)
     _install_handlers(app)
     _install_middleware(app)

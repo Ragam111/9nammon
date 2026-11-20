@@ -180,6 +180,40 @@ class RetryTest(unittest.TestCase):
         self.assertEqual((slept, calls), ([], 1))
 
 
+class ClientIpTest(unittest.TestCase):
+    def setUp(self) -> None:
+        from app.clientip import parse_networks
+
+        self.proxy = parse_networks(["172.28.0.10/32"])
+
+    def test_untrusted_peer_cannot_spoof_its_ip(self) -> None:
+        from app.clientip import resolve_client_ip
+
+        self.assertEqual(resolve_client_ip("203.0.113.5", {"x-real-ip": "10.9.9.9"}, self.proxy), "203.0.113.5")
+
+    def test_trusted_proxy_passes_the_real_client(self) -> None:
+        from app.clientip import resolve_client_ip
+
+        self.assertEqual(resolve_client_ip("172.28.0.10", {"x-real-ip": "203.0.113.5"}, self.proxy), "203.0.113.5")
+
+    def test_trusted_proxy_with_bad_header_falls_back_to_peer(self) -> None:
+        from app.clientip import resolve_client_ip
+
+        self.assertEqual(resolve_client_ip("172.28.0.10", {"x-real-ip": "not-an-ip"}, self.proxy), "172.28.0.10")
+        self.assertEqual(resolve_client_ip("172.28.0.10", {}, self.proxy), "172.28.0.10")
+
+    def test_no_peer_and_non_ip_peer(self) -> None:
+        from app.clientip import resolve_client_ip
+
+        self.assertEqual(resolve_client_ip(None, {}, self.proxy), "unknown")
+        self.assertEqual(resolve_client_ip("testclient", {}, self.proxy), "testclient")
+
+    def test_default_trusts_nobody(self) -> None:
+        from app.clientip import resolve_client_ip
+
+        self.assertEqual(resolve_client_ip("172.28.0.10", {"x-real-ip": "203.0.113.5"}, []), "172.28.0.10")
+
+
 class RequireKeyTest(unittest.TestCase):
     def test_local_hosts_need_no_key(self) -> None:
         from app.model_client import require_key
