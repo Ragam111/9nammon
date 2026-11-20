@@ -123,3 +123,37 @@ class FindFreePortTest(unittest.TestCase):
             self.assertNotEqual(p, busy)
         finally:
             s.close()
+
+
+class AgentApprovalsExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_kind_write_is_string(self):
+        self.assertIsInstance(approvals.KIND_WRITE, str)
+
+    def test_request_returns_dict(self):
+        rec = approvals.request(self.root, approvals.KIND_WRITE, str(self.root),
+                                {"path": "z.txt", "content": ""})
+        self.assertIsInstance(rec, dict)
+
+    def test_request_has_id_field(self):
+        rec = approvals.request(self.root, approvals.KIND_WRITE, str(self.root),
+                                {"path": "z.txt", "content": ""})
+        self.assertIn("id", rec)
+
+    def test_list_pending_returns_list(self):
+        self.assertIsInstance(approvals.list_pending(self.root), list)
+
+    def test_list_pending_initially_empty(self):
+        self.assertEqual(approvals.list_pending(self.root), [])
+
+    def test_approve_status_is_approved(self):
+        rec = approvals.request(self.root, approvals.KIND_WRITE, str(self.root),
+                                {"path": "z.txt", "content": "hi"})
+        res = approvals.decide(self.root, rec["id"], "approve")
+        self.assertEqual(res["status"], "approved")

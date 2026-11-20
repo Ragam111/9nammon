@@ -84,5 +84,26 @@ class HarnessTest(unittest.TestCase):
         self.assertIn("Carmack-lens", self.calls[-1]["system"])
 
 
+class AgentExtraTest(unittest.TestCase):
+    def test_list_personas_returns_list(self):
+        self.assertIsInstance(personas.list_personas(), list)
+
+    def test_each_persona_has_id_key(self):
+        for p in personas.list_personas():
+            self.assertIn("id", p)
+
+    def test_get_known_persona_returns_dict(self):
+        self.assertIsInstance(personas.get("elon"), dict)
+
+    def test_get_persona_id_matches(self):
+        self.assertEqual(personas.get("ceo")["id"], "ceo")
+
+    def test_system_prompt_returns_string(self):
+        self.assertIsInstance(personas.system_prompt("jobs"), str)
+
+    def test_chair_id_is_string(self):
+        self.assertIsInstance(personas.CHAIR_ID, str)
+
+
 if __name__ == "__main__":
     unittest.main()

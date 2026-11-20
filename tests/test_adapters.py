@@ -202,5 +202,39 @@ class NotifierAdapterTest(unittest.TestCase):
         self.assertEqual(n.channels, ("discord",))
 
 
+class AdaptersExtraTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_storage_error_is_exception(self):
+        self.assertTrue(issubclass(sb.StorageError, Exception))
+
+    def test_memory_overwrite_returns_latest(self):
+        s = sb.MemoryStorageBackend()
+        s.write_text("k.txt", "first")
+        s.write_text("k.txt", "second")
+        self.assertEqual(s.read_text("k.txt"), "second")
+
+    def test_memory_delete_missing_returns_false(self):
+        s = sb.MemoryStorageBackend()
+        self.assertFalse(s.delete("does_not_exist.txt"))
+
+    def test_null_notifier_sent_is_list(self):
+        self.assertIsInstance(nf.NullNotifier().sent, list)
+
+    def test_null_notifier_records_event_key(self):
+        n = nf.NullNotifier()
+        n.send("TEST_EVENT", "payload")
+        self.assertEqual(n.sent[0]["event"], "TEST_EVENT")
+
+    def test_local_auth_master_role_is_ceo(self):
+        b = ab.LocalAuthBackend(self.root, "my-secret")
+        self.assertEqual(b.authenticate("my-secret")["role"], "CEO")
+
+
 if __name__ == "__main__":
     unittest.main()
