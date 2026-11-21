@@ -138,7 +138,9 @@ def load_tasks(path: Path) -> list[Task]:
 def kill_tree(proc: subprocess.Popen[bytes]) -> None:
     """Stop a process and, on Windows, every child it started (npm, node, playwright)."""
     if sys.platform == "win32":
-        subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True, check=False)
+        # taskkill is a fixed Windows system tool; the PID comes from our own child process.
+        cmd = ["taskkill", "/T", "/F", "/PID", str(proc.pid)]  # noqa: S607
+        subprocess.run(cmd, capture_output=True, check=False)  # noqa: S603
     else:
         proc.kill()
 
@@ -175,8 +177,10 @@ def run_task(task: Task, log_dir: Path, gate_wait_s: float) -> Result:
         reason = f"low memory: {free} MB free, needs {task.min_free_mb} MB"
         return Result(task.name, "skipped", None, 0.0, 0, free, str(log_path), reason)
     total = 0.0
-    status, code, attempts = "failed", None, 0
-    for attempts in range(1, task.retries + 2):
+    attempts = 0
+    status, code = "failed", None
+    while attempts <= task.retries:
+        attempts += 1
         status, code, seconds = run_once(task, log_path)
         total += seconds
         if status == "passed":

@@ -59,7 +59,7 @@ class Settings:
     cost_per_1k_tokens: float
     # Proxies whose X-Real-IP header is trusted for rate limits (e.g. the nginx container). Empty = trust none.
     trusted_proxies: list[str] = field(default_factory=list)
-    # Login attempts per client IP and per username, per minute. The E2E server raises them; keep defaults in production.
+    # Logins per client IP and per username, per minute. The E2E server raises them; keep defaults in production.
     login_per_ip_per_min: int = 10
     login_per_user_per_min: int = 5
 
