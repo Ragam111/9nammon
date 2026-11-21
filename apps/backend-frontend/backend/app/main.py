@@ -189,8 +189,11 @@ def oauth_start(provider: str, request: Request, link: str = "") -> RedirectResp
     ctx = ctx_of(request)
     spec, client_id, _ = _oauth_client(ctx, provider)
     linking = link == "1"
-    if linking:  # only a signed-in user can link a provider; this raises 401 otherwise
-        auth.user_for_token(ctx.db, request.cookies.get(auth.SESSION_COOKIE))
+    if linking:  # only a signed-in user can link a provider; send anyone else to the login page
+        try:
+            auth.user_for_token(ctx.db, request.cookies.get(auth.SESSION_COOKIE))
+        except AppError:
+            return RedirectResponse("/#/login?error=session", status_code=302)
     state = oauth.new_state()
     target = oauth.authorize_url(spec, client_id, oauth.redirect_uri(ctx.settings.public_base_url, provider), state)
     response = RedirectResponse(target, status_code=302)
@@ -201,6 +204,8 @@ def oauth_start(provider: str, request: Request, link: str = "") -> RedirectResp
     if linking:
         response.set_cookie(oauth.LINK_COOKIE, "1", httponly=True, samesite="lax",
                             secure=ctx.settings.cookie_secure, max_age=600, path=oauth.STATE_COOKIE_PATH)
+    else:  # a link attempt that was abandoned must not turn the next normal sign-in into a link
+        response.delete_cookie(oauth.LINK_COOKIE, path=oauth.STATE_COOKIE_PATH)
     return response
 
 

@@ -11,6 +11,7 @@ export function Login({ onLogin }: { onLogin: (user: User) => void }) {
   const [error, setError] = useState<ApiError | null>(null);
   const [providers, setProviders] = useState<string[]>([]);
   const oauthFailed = window.location.hash.includes("error=oauth");
+  const sessionMissing = window.location.hash.includes("error=session");
 
   useEffect(() => {
     api<{ providers: string[] }>("/api/auth/oauth/providers").then((r) => setProviders(r.providers)).catch(() => undefined);
@@ -47,6 +48,7 @@ export function Login({ onLogin }: { onLogin: (user: User) => void }) {
         </Card>
       )}
       {oauthFailed && <ErrorState title="เข้าสู่ระบบด้วยผู้ให้บริการไม่สำเร็จ" detail="ลองอีกครั้ง หรือใช้ชื่อผู้ใช้และรหัสผ่าน" />}
+      {sessionMissing && <ErrorState title="ต้องเข้าสู่ระบบก่อนผูกบัญชี" detail="เข้าสู่ระบบแล้วกลับไปที่หน้าตั้งค่าเพื่อผูกวิธีอื่น" />}
       <Card>
         <form onSubmit={submit} className="flex flex-col gap-3" noValidate>
           <Input label="ชื่อผู้ใช้" autoComplete="username" value={username} required
