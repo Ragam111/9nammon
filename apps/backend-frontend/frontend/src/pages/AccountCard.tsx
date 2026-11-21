@@ -17,9 +17,11 @@ const PROVIDER_LABEL: Record<string, string> = { google: "Google", github: "GitH
 /** Notice shown after returning from a link attempt, read from the hash (e.g. #/settings?linked=github). */
 function linkNotice(): string {
   const hash = window.location.hash;
-  if (hash.includes("link=error")) return "ผูกบัญชีไม่สำเร็จ ลองใหม่อีกครั้ง";
   const match = /linked=(google|github)/.exec(hash);
-  return match ? `ผูกกับ ${PROVIDER_LABEL[match[1]]} แล้ว` : "";
+  if (match) return `ผูกกับ ${PROVIDER_LABEL[match[1]]} แล้ว`;
+  if (!hash.includes("link=error")) return "";
+  const msg = new URLSearchParams(hash.split("?")[1] ?? "").get("msg");
+  return msg ? `ผูกไม่สำเร็จ: ${msg}` : "ผูกบัญชีไม่สำเร็จ ลองใหม่อีกครั้ง";
 }
 
 export function AccountCard({ onLogout, onAuthLost }: { onLogout: () => void; onAuthLost: () => void }) {

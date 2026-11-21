@@ -14,6 +14,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, TextIO
+from urllib.parse import quote
 
 import httpx
 from fastapi import APIRouter, Depends, FastAPI, Query, Request, Response
@@ -225,7 +226,10 @@ async def oauth_callback(provider: str, request: Request, code: str = "", state:
     except AppError as exc:
         log_event("oauth", ctx.log_stream, request_id=request.state.request_id, provider=provider,
                   status="failed", error_type=exc.type, linking=linking)
-        response = RedirectResponse("/#/settings?link=error" if linking else "/#/login?error=oauth", status_code=302)
+        if linking:  # the reason is shown on the Settings page, so the user can act on it
+            response = RedirectResponse("/#/settings?link=error&msg=" + quote(exc.user_message), status_code=302)
+        else:
+            response = RedirectResponse("/#/login?error=oauth", status_code=302)
     else:
         if linking:
             response = RedirectResponse(f"/#/settings?linked={provider}", status_code=302)
