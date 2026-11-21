@@ -34,6 +34,12 @@ def provider_transport(seen: list[httpx.Request], token_ok: bool = True) -> http
             if request.headers.get("authorization") != "Bearer tok-1":
                 return httpx.Response(401, json={})
             return httpx.Response(200, json={"id": 42, "login": "octo"})
+        if request.url.host == "oauth2.googleapis.com" and request.url.path == "/token":
+            return httpx.Response(200, json={"access_token": "tok-g"})
+        if request.url.host == "openidconnect.googleapis.com" and request.url.path == "/v1/userinfo":
+            if request.headers.get("authorization") != "Bearer tok-g":
+                return httpx.Response(401, json={})
+            return httpx.Response(200, json={"sub": "g-777", "email": "octo@example.test"})
         return httpx.Response(404, json={})
 
     return httpx.MockTransport(handler)
@@ -135,3 +141,75 @@ class OAuthAccountTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AccountTest(unittest.TestCase):
+    """Linking, unlinking and deleting accounts, through the same API the Settings page uses."""
+
+    def client(self) -> TestClient:
+        settings = make_settings(
+            oauth_github_client_id=GH_ID,
+            oauth_github_client_secret=GH_SECRET,
+            oauth_google_client_id="google-client-id",
+            oauth_google_client_secret="google-client-secret",
+            public_base_url="http://127.0.0.1:8000",
+        )
+        app = create_app(settings, provider_transport([]), io.StringIO())
+        return TestClient(app, base_url="http://127.0.0.1:8000")
+
+    def _sign_in(self, client: TestClient, provider: str) -> None:
+        start = client.get(f"/api/auth/oauth/{provider}/start", follow_redirects=False)
+        state = parse_qs(urlparse(start.headers["location"]).query)["state"][0]
+        client.get(f"/api/auth/oauth/{provider}/callback?code=abc&state={state}", follow_redirects=False)
+
+    def _link(self, client: TestClient, provider: str) -> str:
+        start = client.get(f"/api/auth/oauth/{provider}/start?link=1", follow_redirects=False)
+        state = parse_qs(urlparse(start.headers["location"]).query)["state"][0]
+        return client.get(f"/api/auth/oauth/{provider}/callback?code=abc&state={state}",
+                          follow_redirects=False).headers["location"]
+
+    def test_linking_needs_a_session(self) -> None:
+        with self.client() as client:
+            res = client.get("/api/auth/oauth/google/start?link=1", follow_redirects=False)
+            self.assertEqual(res.status_code, 401)
+
+    def test_link_adds_a_second_provider_to_the_same_account(self) -> None:
+        with self.client() as client:
+            self._sign_in(client, "github")
+            self.assertEqual(self._link(client, "google"), "/#/settings?linked=google")
+            account = client.get("/api/account").json()
+            self.assertEqual(account["providers"], ["github", "google"])
+            self.assertFalse(account["password"])
+
+    def test_cannot_unlink_the_last_way_to_sign_in(self) -> None:
+        with self.client() as client:
+            self._sign_in(client, "github")
+            res = client.post("/api/account/unlink/github")
+            self.assertEqual(res.status_code, 422)
+            self.assertEqual(res.json()["error"]["type"], "validation")
+
+    def test_unlink_is_allowed_when_another_method_remains(self) -> None:
+        with self.client() as client:
+            self._sign_in(client, "github")
+            self._link(client, "google")
+            self.assertEqual(client.post("/api/account/unlink/github").json()["providers"], ["google"])
+
+    def test_delete_needs_the_exact_username_then_signs_out(self) -> None:
+        with self.client() as client:
+            self._sign_in(client, "github")
+            self.assertEqual(client.request("DELETE", "/api/account", json={"confirm": "wrong"}).status_code, 422)
+            self.assertEqual(client.request("DELETE", "/api/account", json={"confirm": "github:octo"}).status_code, 200)
+            self.assertEqual(client.get("/api/auth/me").status_code, 401)
+
+
+class LinkOwnershipTest(unittest.TestCase):
+    def test_identity_owned_by_another_account_cannot_be_linked(self) -> None:
+        db = Database(make_settings().data_dir / "app.db")
+        first = auth.login_oauth(db, "github", "42", "octo", 1)
+        second_token = auth.login_oauth(db, "github", "99", "other", 1)
+        owner = auth.user_for_token(db, first).id
+        other = auth.user_for_token(db, second_token).id
+        self.assertNotEqual(owner, other)
+        with self.assertRaises(AppError):
+            auth.link_oauth(db, other, "github", "42")
+        auth.link_oauth(db, owner, "github", "42")  # the owner re-linking the same identity is a no-op
