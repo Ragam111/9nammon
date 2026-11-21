@@ -62,7 +62,8 @@ class AuthEverywhereTest(unittest.TestCase):
         with client:
             found = set(endpoints(client.app))
         self.assertTrue(PUBLIC <= found)
-        self.assertEqual(len(found), 12, "new endpoint added: add it to PUBLIC or check its auth here")
+        # 13 = 3 public + 10 that need login (GET /api/models added: it lists the server's real models).
+        self.assertEqual(len(found), 13, "new endpoint added: add it to PUBLIC or check its auth here")
 
     def test_admin_only_endpoints_refuse_normal_users(self) -> None:
         client, _ = build()

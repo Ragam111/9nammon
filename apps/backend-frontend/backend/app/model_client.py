@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 import httpx
 
 from .config import Settings
-from .errors import AppError, is_retryable_exception
+from .errors import AppError, from_exception, from_upstream_status, is_retryable_exception
 from .retry import with_retry
 
 
@@ -128,3 +128,27 @@ def require_key(api_key: str, base_url: str) -> None:
     local = (urlparse(base_url).hostname or "") in LOCAL_HOSTS
     if not api_key and not local:
         raise AppError("upstream", "ยังไม่ได้ตั้งค่า API key ของโมเดล — ไปที่หน้า Settings เพื่อตั้งค่า")
+
+
+async def list_models(client: httpx.AsyncClient, settings: Settings, api_key: str) -> list[str]:
+    """Return the model ids the configured server really has (GET {base}/models), sorted.
+
+    Raises AppError when the server is unreachable, rejects the key, or does not answer in the OpenAI format.
+    """
+    require_key(api_key, settings.model_base_url)
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    try:
+        response = await client.get(f"{settings.model_base_url}/models", headers=headers,
+                                    timeout=settings.model_timeout_s)
+    except httpx.HTTPError as exc:
+        raise from_exception(exc) from exc
+    if not 200 <= response.status_code < 300:
+        raise from_upstream_status(response.status_code)
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise AppError("upstream", "โมเดลตอบกลับมาไม่ถูกรูปแบบ") from exc
+    items = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(items, list):
+        raise AppError("upstream", "โมเดลตอบกลับมาไม่ถูกรูปแบบ")
+    return sorted({str(m["id"]) for m in items if isinstance(m, dict) and m.get("id")})

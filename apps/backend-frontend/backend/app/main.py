@@ -29,7 +29,7 @@ from .db import Database
 from .errors import AppError, from_exception
 from .keystore import KeyStore
 from .logging_json import estimate_cost, log_event
-from .model_client import StreamResult, estimate_tokens, iter_text, open_stream, require_key
+from .model_client import StreamResult, estimate_tokens, iter_text, list_models, open_stream, require_key
 from .ratelimit import RateLimiter
 
 MAX_BODY_BYTES = 256 * 1024
@@ -154,6 +154,14 @@ def settings_view(request: Request, user: auth.User = Depends(current_user)) -> 
                        "user_remaining": ctx.limiter.remaining(f"user:{user.id}", s.rate_limit_user_per_min)},
         "limits": {"max_input_chars": s.max_input_chars, "max_output_tokens": s.max_output_tokens},
     }
+
+
+@router.get("/models")
+async def models(request: Request, _: auth.User = Depends(current_user)) -> dict[str, Any]:
+    """Models the configured server really has, so the UI never shows a made-up list."""
+    ctx = ctx_of(request)
+    names = await list_models(ctx.http, ctx.settings, ctx.keys.get())
+    return {"current": ctx.settings.model_name, "available": names}
 
 
 @router.get("/history")
