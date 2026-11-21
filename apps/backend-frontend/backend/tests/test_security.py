@@ -18,7 +18,14 @@ from app.db import Database
 from app.main import create_app
 from tests.helpers import FakeModel, make_settings, ok_stream
 
-PUBLIC = {("GET", "/api/health"), ("POST", "/api/auth/login"), ("POST", "/api/auth/logout")}
+PUBLIC = {
+    ("GET", "/api/health"),
+    ("POST", "/api/auth/login"),
+    ("POST", "/api/auth/logout"),
+    ("GET", "/api/auth/oauth/providers"),
+    ("GET", "/api/auth/oauth/{provider}/start"),
+    ("GET", "/api/auth/oauth/{provider}/callback"),
+}
 PASSWORD = "correct-horse-battery"
 SECRET = "sk-SECRETKEY-9999-do-not-leak"
 FRONTEND_SRC = pathlib.Path(__file__).resolve().parents[1] / ".." / "frontend" / "src"
@@ -62,8 +69,8 @@ class AuthEverywhereTest(unittest.TestCase):
         with client:
             found = set(endpoints(client.app))
         self.assertTrue(PUBLIC <= found)
-        # 13 = 3 public + 10 that need login (GET /api/models added: it lists the server's real models).
-        self.assertEqual(len(found), 13, "new endpoint added: add it to PUBLIC or check its auth here")
+        # 16 = 6 public (health, login, logout, and the 3 OAuth routes) + 10 that need login.
+        self.assertEqual(len(found), 16, "new endpoint added: add it to PUBLIC or check its auth here")
 
     def test_admin_only_endpoints_refuse_normal_users(self) -> None:
         client, _ = build()

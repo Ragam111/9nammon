@@ -75,14 +75,42 @@ def login(db: Database, username: str, password: str, ttl_hours: int) -> str:
     stored = row["password_hash"] if row else _dummy_hash
     if not verify_password(password, stored) or row is None:
         raise AppError("auth", "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง")
+    return _issue_session(db, row["id"], ttl_hours)
+
+
+def _issue_session(db: Database, user_id: int, ttl_hours: int) -> str:
     token = secrets.token_urlsafe(32)
     with db.session() as conn:
         conn.execute("DELETE FROM sessions WHERE expires_at < ?", (time.time(),))
         conn.execute(
             "INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)",
-            (_token_hash(token), row["id"], time.time() + ttl_hours * 3600),
+            (_token_hash(token), user_id, time.time() + ttl_hours * 3600),
         )
     return token
+
+
+def login_oauth(db: Database, provider: str, subject: str, display: str, ttl_hours: int) -> str:
+    """Sign in with a provider identity. The first sign-in creates a user with no usable password."""
+    with db.session() as conn:
+        row = conn.execute(
+            "SELECT user_id FROM oauth_identities WHERE provider = ? AND subject = ?", (provider, subject)
+        ).fetchone()
+        if row is not None:
+            user_id = int(row["user_id"])
+        else:
+            candidate = f"{provider}:{display or subject}"
+            taken = conn.execute("SELECT 1 FROM users WHERE username = ?", (candidate,)).fetchone()
+            username = f"{provider}:{subject}" if taken else candidate
+            cur = conn.execute(
+                "INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'user')",
+                (username, hash_password(secrets.token_urlsafe(32))),
+            )
+            user_id = int(cur.lastrowid or 0)
+            conn.execute(
+                "INSERT INTO oauth_identities (provider, subject, user_id) VALUES (?, ?, ?)",
+                (provider, subject, user_id),
+            )
+    return _issue_session(db, user_id, ttl_hours)
 
 
 def user_for_token(db: Database, token: str | None) -> User:
