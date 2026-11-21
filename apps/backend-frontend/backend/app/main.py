@@ -19,10 +19,10 @@ import httpx
 from fastapi import APIRouter, Depends, FastAPI, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from . import auth, history, quota
+from . import auth, history, oauth, quota
 from .clientip import parse_networks, resolve_client_ip
 from .config import Settings, load_settings
 from .db import Database
@@ -165,6 +165,63 @@ async def models(request: Request, _: auth.User = Depends(current_user)) -> dict
     ctx = ctx_of(request)
     names = await list_models(ctx.http, ctx.settings, ctx.keys.get())
     return {"current": ctx.settings.model_name, "available": names}
+
+
+def _oauth_client(ctx: Context, provider: str) -> tuple[oauth.Provider, str, str]:
+    """The provider and its credentials, or a 404 when the provider is unknown or not configured."""
+    spec = oauth.PROVIDERS.get(provider)
+    pair = ctx.settings.oauth_client(provider) if spec else None
+    if spec is None or pair is None:
+        raise AppError("validation", "ยังไม่ได้เปิดใช้การเข้าสู่ระบบด้วยผู้ให้บริการนี้", http_status=404)
+    return spec, pair[0], pair[1]
+
+
+@router.get("/auth/oauth/providers")
+def oauth_providers(request: Request) -> dict[str, Any]:
+    """Only the providers that have credentials configured. Never returns the secrets."""
+    ctx = ctx_of(request)
+    return {"providers": [name for name in oauth.PROVIDERS if ctx.settings.oauth_client(name)]}
+
+
+@router.get("/auth/oauth/{provider}/start")
+def oauth_start(provider: str, request: Request) -> RedirectResponse:
+    ctx = ctx_of(request)
+    spec, client_id, _ = _oauth_client(ctx, provider)
+    state = oauth.new_state()
+    target = oauth.authorize_url(spec, client_id, oauth.redirect_uri(ctx.settings.public_base_url, provider), state)
+    response = RedirectResponse(target, status_code=302)
+    response.set_cookie(
+        oauth.STATE_COOKIE, state, httponly=True, samesite="lax", secure=ctx.settings.cookie_secure,
+        max_age=600, path=oauth.STATE_COOKIE_PATH,
+    )
+    return response
+
+
+@router.get("/auth/oauth/{provider}/callback")
+async def oauth_callback(provider: str, request: Request, code: str = "", state: str = "") -> RedirectResponse:
+    """Finish the sign-in. Any failure sends the browser back to the login page with a flag, not an API error."""
+    ctx = ctx_of(request)
+    s = ctx.settings
+    try:
+        spec, client_id, client_secret = _oauth_client(ctx, provider)
+        if not code or not oauth.states_match(request.cookies.get(oauth.STATE_COOKIE), state):
+            raise AppError("auth", "คำขอเข้าสู่ระบบไม่ถูกต้องหรือหมดอายุ")
+        subject, display = await oauth.fetch_profile(
+            ctx.http, spec, client_id, client_secret, code, oauth.redirect_uri(s.public_base_url, provider),
+        )
+        token = auth.login_oauth(ctx.db, provider, subject, display, s.session_ttl_hours)
+    except AppError as exc:
+        log_event("oauth", ctx.log_stream, request_id=request.state.request_id, provider=provider,
+                  status="failed", error_type=exc.type)
+        response = RedirectResponse("/#/login?error=oauth", status_code=302)
+    else:
+        response = RedirectResponse("/#/", status_code=302)
+        response.set_cookie(
+            auth.SESSION_COOKIE, token, httponly=True, samesite="lax", secure=s.cookie_secure,
+            max_age=s.session_ttl_hours * 3600, path="/",
+        )
+    response.delete_cookie(oauth.STATE_COOKIE, path=oauth.STATE_COOKIE_PATH)
+    return response
 
 
 @router.get("/history")

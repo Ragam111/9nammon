@@ -66,6 +66,21 @@ class Settings:
     quota_tokens_weekly: int = 5_000_000
     quota_tokens_heavy_weekly: int = 1_000_000
     heavy_models: list[str] = field(default_factory=list)
+    # Public address of the site, used to build OAuth redirect URLs (no trailing slash)
+    public_base_url: str = "http://127.0.0.1:8080"
+    oauth_google_client_id: str = ""
+    oauth_google_client_secret: str = field(default="", repr=False)
+    oauth_github_client_id: str = ""
+    oauth_github_client_secret: str = field(default="", repr=False)
+
+    def oauth_client(self, provider: str) -> tuple[str, str] | None:
+        """(client id, client secret) when the provider is fully configured, else None."""
+        pairs = {
+            "google": (self.oauth_google_client_id, self.oauth_google_client_secret),
+            "github": (self.oauth_github_client_id, self.oauth_github_client_secret),
+        }
+        pair = pairs.get(provider)
+        return pair if pair and pair[0] and pair[1] else None
 
 
 def load_env_file(path: Path) -> None:
@@ -112,4 +127,9 @@ def load_settings() -> Settings:
         quota_tokens_weekly=_int("QUOTA_TOKENS_WEEKLY", 5_000_000),
         quota_tokens_heavy_weekly=_int("QUOTA_TOKENS_HEAVY_WEEKLY", 1_000_000),
         heavy_models=_list("HEAVY_MODELS", []),
+        public_base_url=os.environ.get("PUBLIC_BASE_URL", "http://127.0.0.1:8080"),
+        oauth_google_client_id=os.environ.get("OAUTH_GOOGLE_CLIENT_ID", ""),
+        oauth_google_client_secret=os.environ.get("OAUTH_GOOGLE_CLIENT_SECRET", ""),
+        oauth_github_client_id=os.environ.get("OAUTH_GITHUB_CLIENT_ID", ""),
+        oauth_github_client_secret=os.environ.get("OAUTH_GITHUB_CLIENT_SECRET", ""),
     )
