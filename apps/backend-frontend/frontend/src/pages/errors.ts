@@ -2,7 +2,7 @@ import type { ApiError, ErrorType } from "../api";
 
 const TITLES: Record<ErrorType, string> = {
   auth: "ต้องเข้าสู่ระบบใหม่",
-  quota: "โควตาวันนี้เต็มแล้ว",
+  quota: "โควตารอบ 5 ชั่วโมงเต็มแล้ว",
   rate_limit: "ส่งคำขอถี่เกินไป",
   timeout: "หมดเวลารอคำตอบ",
   validation: "ข้อมูลไม่ถูกต้อง",

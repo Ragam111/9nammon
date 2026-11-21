@@ -23,7 +23,7 @@ def make_settings(**overrides: object) -> Settings:
         retry_base_delay_s=0.0,
         max_input_chars=200,
         max_output_tokens=64,
-        quota_tokens_per_day=1000,
+        quota_tokens_per_window=1000,
         rate_limit_user_per_min=100,
         rate_limit_ip_per_min=1000,
         session_ttl_hours=1,

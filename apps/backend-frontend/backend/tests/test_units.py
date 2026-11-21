@@ -26,16 +26,16 @@ class QuotaTest(unittest.TestCase):
         self.uid = create_user(self.db, "alice", "correct-horse-1").id
 
     def test_record_accumulates_per_day(self) -> None:
-        quota.record(self.db, self.uid, 300, day="2026-11-20")
-        quota.record(self.db, self.uid, 200, day="2026-11-20")
-        quota.record(self.db, self.uid, 999, day="2026-11-21")
-        self.assertEqual(quota.used(self.db, self.uid, "2026-11-20"), 500)
-        self.assertEqual(quota.remaining(self.db, self.uid, 1000, "2026-11-20"), 500)
+        quota.record(self.db, self.uid, 300, window="2026-11-20T05")
+        quota.record(self.db, self.uid, 200, window="2026-11-20T05")
+        quota.record(self.db, self.uid, 999, window="2026-11-20T10")
+        self.assertEqual(quota.used(self.db, self.uid, "2026-11-20T05"), 500)
+        self.assertEqual(quota.remaining(self.db, self.uid, 1000, "2026-11-20T05"), 500)
 
     def test_check_raises_quota_when_used_up(self) -> None:
-        quota.record(self.db, self.uid, 1000, day="2026-11-20")
+        quota.record(self.db, self.uid, 1000, window="2026-11-20T05")
         with self.assertRaises(AppError) as ctx:
-            quota.check(self.db, self.uid, 1000, day="2026-11-20")
+            quota.check(self.db, self.uid, 1000, window="2026-11-20T05")
         self.assertEqual(ctx.exception.type, "quota")
         self.assertFalse(ctx.exception.retryable)
 
@@ -46,7 +46,7 @@ class QuotaTest(unittest.TestCase):
 
     def test_users_are_counted_separately(self) -> None:
         other = create_user(self.db, "bob", "correct-horse-2").id
-        quota.record(self.db, self.uid, 700, day="d")
+        quota.record(self.db, self.uid, 700, window="d")
         self.assertEqual(quota.used(self.db, other, "d"), 0)
 
 
@@ -85,9 +85,9 @@ class RateLimitTest(unittest.TestCase):
     def test_quota_need_larger_than_remaining(self) -> None:
         db = Database(make_settings().data_dir / "app.db")
         uid = create_user(db, "carol", "correct-horse-3").id
-        quota.record(db, uid, 950, day="d")
+        quota.record(db, uid, 950, window="d")
         with self.assertRaises(AppError) as ctx:
-            quota.check(db, uid, 1000, day="d", need=100)
+            quota.check(db, uid, 1000, window="d", need=100)
         self.assertIn("50", ctx.exception.user_message)
 
 
