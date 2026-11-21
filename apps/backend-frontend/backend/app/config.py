@@ -50,7 +50,7 @@ class Settings:
     retry_base_delay_s: float
     max_input_chars: int
     max_output_tokens: int
-    quota_tokens_per_day: int
+    quota_tokens_per_window: int
     rate_limit_user_per_min: int
     rate_limit_ip_per_min: int
     session_ttl_hours: int
@@ -95,7 +95,7 @@ def load_settings() -> Settings:
         retry_base_delay_s=_float("RETRY_BASE_DELAY_S", 0.5),
         max_input_chars=_int("MAX_INPUT_CHARS", 8000),
         max_output_tokens=_int("MAX_OUTPUT_TOKENS", 1024),
-        quota_tokens_per_day=_int("QUOTA_TOKENS_PER_DAY", 50000),
+        quota_tokens_per_window=_int("QUOTA_TOKENS_PER_WINDOW", 1_000_000),
         rate_limit_user_per_min=_int("RATE_LIMIT_USER_PER_MIN", 20),
         rate_limit_ip_per_min=_int("RATE_LIMIT_IP_PER_MIN", 60),
         session_ttl_hours=_int("SESSION_TTL_HOURS", 24),

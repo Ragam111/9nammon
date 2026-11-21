@@ -159,7 +159,7 @@ class RunTest(unittest.TestCase):
 
     def test_quota_full_blocks_run(self) -> None:
         model = FakeModel([ok_stream(["x"], usage={"prompt_tokens": 10, "completion_tokens": 60})])
-        with client_for(model, quota_tokens_per_day=100) as (client, _):
+        with client_for(model, quota_tokens_per_window=100) as (client, _):
             login(client)
             self.assertEqual(parse_sse(client.post("/api/run", json={"prompt": "hello there"}).text)[-1][0], "done")
             res = client.post("/api/run", json={"prompt": "again"})  # 30 left < prompt + 64 output cap

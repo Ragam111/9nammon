@@ -77,7 +77,7 @@ export function Workbench({ onAuthLost }: { onAuthLost: () => void }) {
         <h1 className="text-2xl font-semibold">หน้าทำงาน</h1>
         {settings && (
           <p className="text-sm text-muted">
-            โมเดล <span className="mono">{settings.model}</span> · token เหลือวันนี้{" "}
+            โมเดล <span className="mono">{settings.model}</span> · token เหลือรอบนี้{" "}
             <span className="tabular">{settings.quota.remaining.toLocaleString("th-TH")}</span>
           </p>
         )}

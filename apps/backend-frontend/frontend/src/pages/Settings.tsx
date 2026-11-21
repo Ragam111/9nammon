@@ -31,16 +31,17 @@ export function Settings({ onLogout, onAuthLost }: { onLogout: () => void; onAut
       <Card title="API key ของโมเดล">
         <KeySetup status={view.key} isAdmin={view.user.role === "admin"} onChange={(key) => setView({ ...view, key })} />
       </Card>
-      <Card title="Quota และการใช้งานวันนี้">
+      <Card title="Quota และการใช้งานรอบนี้">
         <p className="text-sm">
           ใช้ไป <span className="tabular">{fmt(view.quota.used)}</span> จาก <span className="tabular">{fmt(view.quota.limit)}</span> token
           (เหลือ <span className="tabular">{fmt(view.quota.remaining)}</span>)
         </p>
-        <div role="progressbar" aria-label="การใช้ quota วันนี้" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}
+        <div role="progressbar" aria-label="การใช้ quota รอบนี้" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}
           className="mt-2 h-2 w-full overflow-hidden rounded-sm bg-surface-2">
           <div className={`h-full ${pct >= 90 ? "bg-bad" : pct >= 70 ? "bg-warn" : "bg-accent"}`} style={{ width: `${pct}%` }} />
         </div>
-        <p className="mt-1 text-xs text-muted">รีเซ็ตทุกวัน (เวลา UTC) · วันที่ {view.quota.day}</p>
+        <p className="mt-1 text-xs text-muted">รีเซ็ตทุก {view.quota.window_hours} ชั่วโมง (เวลาไทย) · รอบถัดไปเริ่ม{" "}
+          {new Date(view.quota.resets_at).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</p>
       </Card>
       <Card title="Rate limit">
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">

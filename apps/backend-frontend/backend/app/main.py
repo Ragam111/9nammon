@@ -150,8 +150,9 @@ def settings_view(request: Request, user: auth.User = Depends(current_user)) -> 
         "user": {"username": user.username, "role": user.role},
         "model": s.model_name,
         "key": ctx.keys.status().to_dict(),
-        "quota": {"day": quota.today(), "used": used, "limit": s.quota_tokens_per_day,
-                  "remaining": max(0, s.quota_tokens_per_day - used)},
+        "quota": {"window": quota.current_window(), "resets_at": quota.window_resets_at(),
+                  "window_hours": quota.WINDOW_HOURS, "used": used, "limit": s.quota_tokens_per_window,
+                  "remaining": max(0, s.quota_tokens_per_window - used)},
         "rate_limit": {"user_per_min": s.rate_limit_user_per_min, "ip_per_min": s.rate_limit_ip_per_min,
                        "user_remaining": ctx.limiter.remaining(f"user:{user.id}", s.rate_limit_user_per_min)},
         "limits": {"max_input_chars": s.max_input_chars, "max_output_tokens": s.max_output_tokens},
@@ -212,7 +213,7 @@ async def run(body: RunIn, request: Request, user: auth.User = Depends(current_u
         raise AppError("validation", f"ความยาวคำตอบสูงสุดคือ {s.max_output_tokens} token")
     cap = body.max_output_tokens or s.max_output_tokens
     ctx.limiter.hit(f"user:{user.id}", s.rate_limit_user_per_min)
-    quota.check(ctx.db, user.id, s.quota_tokens_per_day, need=estimate_tokens(body.prompt) + cap)
+    quota.check(ctx.db, user.id, s.quota_tokens_per_window, need=estimate_tokens(body.prompt) + cap)
     api_key = ctx.keys.get()
     require_key(api_key, s.model_base_url)
     model = await _check_model(ctx, body.model, api_key)

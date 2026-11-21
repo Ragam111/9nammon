@@ -11,7 +11,7 @@ ERROR_TYPES = ("auth", "quota", "rate_limit", "timeout", "validation", "upstream
 # type -> (http status, user message, retryable)
 _CATALOG: dict[str, tuple[int, str, bool]] = {
     "auth": (401, "ต้องเข้าสู่ระบบก่อน หรือ session หมดอายุ — เข้าสู่ระบบใหม่", False),
-    "quota": (429, "ใช้ token ครบโควตาของวันนี้แล้ว — รอวันใหม่หรือติดต่อผู้ดูแลเพื่อเพิ่มโควตา", False),
+    "quota": (429, "ใช้ token ครบโควตาของรอบนี้แล้ว — รอรอบถัดไปหรือติดต่อผู้ดูแลเพื่อเพิ่มโควตา", False),
     "rate_limit": (429, "ส่งคำขอถี่เกินไป — รอสักครู่แล้วลองใหม่", True),
     "timeout": (504, "โมเดลตอบช้าเกินเวลาที่กำหนด — ลองใหม่ หรือย่อข้อความให้สั้นลง", True),
     "validation": (422, "ข้อมูลที่ส่งมาไม่ถูกต้อง — ตรวจสอบแล้วลองใหม่", False),
