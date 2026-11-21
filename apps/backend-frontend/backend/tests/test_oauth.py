@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import io
 import unittest
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 import httpx
 from fastapi.testclient import TestClient
@@ -187,6 +187,15 @@ class AccountTest(unittest.TestCase):
             res = client.post("/api/account/unlink/github")
             self.assertEqual(res.status_code, 422)
             self.assertEqual(res.json()["error"]["type"], "validation")
+
+    def test_linking_a_provider_owned_elsewhere_says_why(self) -> None:
+        with self.client() as client:
+            self._sign_in(client, "google")  # one account owns the Google identity
+            client.post("/api/auth/logout")
+            self._sign_in(client, "github")  # a different account
+            location = self._link(client, "google")
+            self.assertTrue(location.startswith("/#/settings?link=error&msg="), location)
+            self.assertIn("ถูกผูกกับบัญชีอื่น", unquote(location))
 
     def test_unlink_is_allowed_when_another_method_remains(self) -> None:
         with self.client() as client:
