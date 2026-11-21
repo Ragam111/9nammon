@@ -125,3 +125,18 @@ test.describe("quality", () => {
     }
   });
 });
+
+test.describe("choices", () => {
+  test("model and speed choices: the speed sets the answer cap, the default model is sent as none", async ({ page }) => {
+    await login(page);
+    await page.goto("/#/");
+    await expect(page.getByLabel("โมเดล", { exact: true })).toContainText("ค่าเริ่มต้น");
+    await page.getByLabel("ความเร็วคำตอบ").selectOption("fast");
+    const sent = page.waitForRequest((r) => r.url().endsWith("/api/run") && r.method() === "POST");
+    await send(page, "สั้นๆ");
+    const body = (await sent).postDataJSON() as Record<string, unknown>;
+    expect(body.max_output_tokens).toBe(256);
+    expect(body.model).toBeUndefined();
+    await expect(page.getByText(/^สำเร็จ · /)).toBeVisible();
+  });
+});

@@ -1,11 +1,25 @@
 // Main job: send a prompt, watch the answer stream in, keep partial output when something breaks.
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { ApiError, api, streamRun, type RunDone, type SettingsView } from "../api";
-import { Badge, Button, Card, ErrorState, Textarea } from "../components/ui";
+import { ApiError, api, streamRun, type ModelList, type RunDone, type SettingsView } from "../api";
+import { Badge, Button, Card, ErrorState, Select, Textarea } from "../components/ui";
 import { navigate } from "../router";
 import { errorDetail, errorTitle, isKeyProblem } from "./errors";
 
 type Phase = "idle" | "streaming" | "done" | "error";
+type Speed = "fast" | "balanced" | "detailed";
+
+const SPEEDS: { value: Speed; label: string }[] = [
+  { value: "fast", label: "เร็ว (คำตอบสั้น)" },
+  { value: "balanced", label: "สมดุล" },
+  { value: "detailed", label: "ละเอียด (ยาวสุดของระบบ)" },
+];
+
+/** Speed here means the answer length cap; it does not change how fast the model itself runs. */
+function capFor(speed: Speed, max: number): number {
+  if (speed === "fast") return Math.min(256, max);
+  if (speed === "balanced") return Math.min(1024, max);
+  return max;
+}
 
 export function Workbench({ onAuthLost }: { onAuthLost: () => void }) {
   const [prompt, setPrompt] = useState("");
@@ -14,6 +28,10 @@ export function Workbench({ onAuthLost }: { onAuthLost: () => void }) {
   const [error, setError] = useState<ApiError | null>(null);
   const [done, setDone] = useState<RunDone | null>(null);
   const [settings, setSettings] = useState<SettingsView | null>(null);
+  const [models, setModels] = useState<ModelList | null>(null);
+  const [modelsFailed, setModelsFailed] = useState(false);
+  const [model, setModel] = useState("");
+  const [speed, setSpeed] = useState<Speed>("balanced");
   const abort = useRef<AbortController | null>(null);
   const maxChars = settings?.limits.max_input_chars ?? 8000;
   const tooLong = prompt.length > maxChars;
@@ -22,13 +40,18 @@ export function Workbench({ onAuthLost }: { onAuthLost: () => void }) {
     api<SettingsView>("/api/settings").then(setSettings).catch(() => undefined);
   }, []);
   useEffect(refresh, [refresh]);
+  useEffect(() => {
+    api<ModelList>("/api/models").then(setModels).catch(() => setModelsFailed(true));
+  }, []);
   useEffect(() => () => abort.current?.abort(), []);
 
   const run = useCallback(async (text: string) => {
     abort.current = new AbortController();
     setPhase("streaming"); setOutput(""); setError(null); setDone(null);
     try {
-      const result = await streamRun(text, { onDelta: (d) => setOutput((o) => o + d), signal: abort.current.signal });
+      const cap = capFor(speed, settings?.limits.max_output_tokens ?? 1024);
+      const result = await streamRun(text, { onDelta: (d) => setOutput((o) => o + d), signal: abort.current.signal },
+        { model: model || undefined, maxOutputTokens: cap });
       setDone(result); setPhase("done");
     } catch (err) {
       const e = err instanceof ApiError ? err : new ApiError("unknown", "เกิดข้อผิดพลาด", false);
@@ -38,7 +61,7 @@ export function Workbench({ onAuthLost }: { onAuthLost: () => void }) {
       abort.current = null;
       refresh();
     }
-  }, [onAuthLost, refresh]);
+  }, [onAuthLost, refresh, model, speed, settings]);
 
   const submit = (e?: FormEvent) => {
     e?.preventDefault();
@@ -64,6 +87,14 @@ export function Workbench({ onAuthLost }: { onAuthLost: () => void }) {
           <Textarea label="คำสั่งถึงโมเดล" rows={5} value={prompt} onChange={(e) => setPrompt(e.target.value)} onKeyDown={onKeyDown}
             hint={`${prompt.length.toLocaleString("th-TH")} / ${maxChars.toLocaleString("th-TH")} ตัวอักษร · Ctrl+Enter เพื่อส่ง`}
             error={tooLong ? `ยาวเกิน ${maxChars.toLocaleString("th-TH")} ตัวอักษร — ย่อให้สั้นลง` : undefined} />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Select label="โมเดล" value={model} onChange={(e) => setModel(e.target.value)}
+              hint={modelsFailed ? "โหลดรายชื่อโมเดลไม่ได้ ใช้ค่าเริ่มต้นของระบบ" : "รายการจากเซิร์ฟเวอร์จริง"}
+              options={[{ value: "", label: `ค่าเริ่มต้น (${models?.current ?? settings?.model ?? "…"})` },
+                ...(models?.available ?? []).filter((m) => m !== models?.current).map((m) => ({ value: m, label: m }))]} />
+            <Select label="ความเร็วคำตอบ" value={speed} onChange={(e) => setSpeed(e.target.value as Speed)}
+              options={SPEEDS} hint="จำกัดความยาวคำตอบ" />
+          </div>
           <div className="flex flex-wrap gap-2">
             <Button type="submit" variant="primary" loading={phase === "streaming"} disabled={!prompt.trim() || tooLong}>ส่ง</Button>
             {phase === "streaming" && <Button onClick={() => abort.current?.abort()}>หยุด</Button>}
