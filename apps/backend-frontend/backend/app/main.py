@@ -23,7 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from . import auth, history, oauth, quota
+from . import admin, auth, history, oauth, quota
 from .clientip import parse_networks, resolve_client_ip
 from .config import Settings, load_settings
 from .db import Database
@@ -484,6 +484,7 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
     app = FastAPI(title="backend-frontend API", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.trusted_nets = parse_networks(s.trusted_proxies)
     app.include_router(router)
+    app.include_router(admin.router)  # /api/admin/*: admin role required (see admin.py)
     _install_handlers(app)
     _install_middleware(app)
     app.add_middleware(CORSMiddleware, allow_origins=s.cors_origins, allow_credentials=True,

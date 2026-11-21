@@ -32,11 +32,12 @@ FRONTEND_SRC = pathlib.Path(__file__).resolve().parents[1] / ".." / "frontend" /
 
 
 def endpoints(app: Any) -> list[tuple[str, str]]:
-    """Every (method, path) the API exposes, read from the router."""
+    """Every (method, path) the API exposes, read from every included router (api and admin)."""
     found = []
-    for route in app.routes[0].original_router.routes:
-        for method in sorted(route.methods):
-            found.append((method, route.path))
+    for included in app.routes:
+        for route in included.original_router.routes:
+            for method in sorted(route.methods):
+                found.append((method, route.path))
     return found
 
 
@@ -69,8 +70,9 @@ class AuthEverywhereTest(unittest.TestCase):
         with client:
             found = set(endpoints(client.app))
         self.assertTrue(PUBLIC <= found)
-        # 19 = 6 public (health, login, logout, and the 3 OAuth routes) + 13 that need login (incl. 3 account routes).
-        self.assertEqual(len(found), 19, "new endpoint added: add it to PUBLIC or check its auth here")
+        # 22 = 6 public (health, login, logout, and the 3 OAuth routes) + 16 that need login
+        # (incl. 3 account routes and 3 admin routes in admin.py, which also need the admin role).
+        self.assertEqual(len(found), 22, "new endpoint added: add it to PUBLIC or check its auth here")
 
     def test_admin_only_endpoints_refuse_normal_users(self) -> None:
         client, _ = build()

@@ -29,6 +29,20 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "apps/backend-frontend/frontend", "run", "dev"],
       "port": 5173
+    },
+    {
+      "name": "bf-admin-api",
+      "runtimeExecutable": "apps/backend-frontend/backend/.venv/Scripts/python.exe",
+      "runtimeArgs": ["apps/backend-frontend/backend/scripts/e2e_server.py"],
+      "env": { "E2E_PASSWORD": "local-demo-only-pass-123", "E2E_API_PORT": "8011" },
+      "port": 8011
+    },
+    {
+      "name": "bf-admin-ui",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "apps/backend-frontend/admin-ui-v2", "run", "dev"],
+      "env": { "API_TARGET": "http://127.0.0.1:8011" },
+      "port": 5174
     }
   ]
 }
