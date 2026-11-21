@@ -1,0 +1,69 @@
+{
+  "title": "ม้วนสตูดิโอเว็บ Token LCA 2026-11-22",
+  "source": "studio",
+  "space": "studio",
+  "skill": "rapid-iteration-ecosystem",
+  "version": "0.1.0",
+  "company": "Token LCA",
+  "token": "T-LCA",
+  "loop": ["Read", "Re-check", "Fix", "Report"],
+  "note": "สตูดิโอห้าห้องเดินสัญญาเดิมอีกรอบ แขกอยู่แค่หน้า บัญชีแยกถัง แทปสตูดิโอไม่หัก T-LCA หักเฉพาะข้อความแชทหรือมติสภาที่เก็บ สมองบนเว็บคือแผนที่ไฟล์ ไม่แทน server.py และไม่ย้ายตัวติดตั้ง Windows. T-LCA นับมือ ไม่ใช่เหรียญซื้อขาย.",
+  "steps": [
+    {
+      "at": "2026-11-22T05:20:00.000Z",
+      "layer": "core",
+      "file": "skills/rapid-iteration-ecosystem/SKILL.md",
+      "action": "รับโจทย์",
+      "detail": "Read สกิลก่อนอัดเซสชันเป็นไฟล์ แล้วเดินแปดสเต็ปจนเป็นแอป"
+    },
+    {
+      "at": "2026-11-22T05:20:00.040Z",
+      "layer": "frontend",
+      "file": "app/",
+      "action": "ห้าห้อง",
+      "detail": "สตูดิโอ แชท ไฟล์ ติดตั้ง คอนโซล แสดงชั้นและหน้าที่ไฟล์ทำ"
+    },
+    {
+      "at": "2026-11-22T05:20:00.080Z",
+      "layer": "backend",
+      "file": "server.py",
+      "action": "หลังบ้าน",
+      "detail": "ชีพจรหนึ่งข้อความเดิน server.py → auth_backend → space_store → admission → context_manager → model_backend → history_store"
+    },
+    {
+      "at": "2026-11-22T05:20:00.120Z",
+      "layer": "backend",
+      "file": "app/space_store.py",
+      "action": "แยกถัง",
+      "detail": "แขกอยู่แค่หน้า บัญชีแยกถังส่วนตัวกับถังบริษัท ของแขกไม่ถูกยกเข้าบัญชีที่หลัง"
+    },
+    {
+      "at": "2026-11-22T05:20:00.160Z",
+      "layer": "backend",
+      "file": "app/usage_store.py",
+      "action": "หัก T-LCA",
+      "detail": "เริ่ม 8000 หัก 1 เมื่อเก็บบทแชทหรือมติสภา ไม่หักเทปสตูดิโอ หมดแล้วปฏิเสธ ของเก่ายังอยู่"
+    },
+    {
+      "at": "2026-11-22T05:20:00.200Z",
+      "layer": "core",
+      "file": "app/model_backend.py",
+      "action": "สมองบนเว็บ",
+      "detail": "สมองบนเว็บยังเป็นแผนที่ไฟล์ ไม่ใช่ Ollama คลาวด์จริงยังผ่าน connections.py บนเดสก์ท็อป"
+    },
+    {
+      "at": "2026-11-22T05:20:00.240Z",
+      "layer": "core",
+      "file": "app/agent/core.py",
+      "action": "สภา",
+      "detail": "สี่คนในทีม มติไปเทปของตัวเอง ไม่ปนช่องแชท"
+    },
+    {
+      "at": "2026-11-22T05:20:00.280Z",
+      "layer": "core",
+      "file": "install/pack.json",
+      "action": "แพ็กเปิดตัว",
+      "detail": "ใบแพ็กดาวน์โหลดได้จากห้องติดตั้ง ตัวติดตั้ง LCA-Desktop.exe ยังอยู่ที่รีโป"
+    }
+  ]
+}
