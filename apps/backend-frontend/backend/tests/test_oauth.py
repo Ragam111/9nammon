@@ -171,7 +171,15 @@ class AccountTest(unittest.TestCase):
     def test_linking_needs_a_session(self) -> None:
         with self.client() as client:
             res = client.get("/api/auth/oauth/google/start?link=1", follow_redirects=False)
-            self.assertEqual(res.status_code, 401)
+            self.assertEqual(res.status_code, 302)
+            self.assertEqual(res.headers["location"], "/#/login?error=session")
+
+    def test_abandoned_link_does_not_break_the_next_sign_in(self) -> None:
+        with self.client() as client:
+            self._sign_in(client, "github")
+            client.get("/api/auth/oauth/google/start?link=1", follow_redirects=False)  # user closes the provider page
+            self._sign_in(client, "github")  # a normal sign-in must still be a sign-in
+            self.assertEqual(client.get("/api/auth/me").json()["user"]["username"], "github:octo")
 
     def test_link_adds_a_second_provider_to_the_same_account(self) -> None:
         with self.client() as client:
