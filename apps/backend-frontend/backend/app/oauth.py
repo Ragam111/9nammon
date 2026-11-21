@@ -64,6 +64,9 @@ def authorize_url(provider: Provider, client_id: str, redirect: str, state: str)
         "scope": provider.scope,
         "state": state,
     }
+    if provider.name == "google":
+        # Google otherwise reuses the only signed-in Google account, so "log out, then log in" bounces straight back in
+        query["prompt"] = "select_account"
     return f"{provider.authorize_url}?{urlencode(query)}"
 
 
