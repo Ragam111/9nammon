@@ -85,6 +85,8 @@ class KeyIn(BaseModel):
 
 class RunIn(BaseModel):
     prompt: str = Field(min_length=1, max_length=100_000)
+    model: str | None = Field(default=None, min_length=1, max_length=120, pattern=r"^[A-Za-z0-9._:/-]+$")
+    max_output_tokens: int | None = Field(default=None, ge=1, le=100_000)
 
 
 # ---------- routes ----------
@@ -191,25 +193,38 @@ def history_delete(run_id: str, request: Request, user: auth.User = Depends(curr
     return {"ok": True}
 
 
+async def _check_model(ctx: Context, requested: str | None, api_key: str) -> str:
+    """Use the requested model only when the server really lists it; otherwise the configured one."""
+    if not requested or requested == ctx.settings.model_name:
+        return ctx.settings.model_name
+    if requested not in await list_models(ctx.http, ctx.settings, api_key):
+        raise AppError("validation", "ไม่พบโมเดลนี้บนเซิร์ฟเวอร์ — เลือกใหม่จากรายการ")
+    return requested
+
+
 @router.post("/run")
 async def run(body: RunIn, request: Request, user: auth.User = Depends(current_user)) -> StreamingResponse:
     ctx = ctx_of(request)
     s = ctx.settings
     if len(body.prompt) > s.max_input_chars:
         raise AppError("validation", f"ข้อความยาวเกิน {s.max_input_chars} ตัวอักษร — ย่อให้สั้นลง")
+    if body.max_output_tokens is not None and body.max_output_tokens > s.max_output_tokens:
+        raise AppError("validation", f"ความยาวคำตอบสูงสุดคือ {s.max_output_tokens} token")
+    cap = body.max_output_tokens or s.max_output_tokens
     ctx.limiter.hit(f"user:{user.id}", s.rate_limit_user_per_min)
-    quota.check(ctx.db, user.id, s.quota_tokens_per_day, need=estimate_tokens(body.prompt) + s.max_output_tokens)
+    quota.check(ctx.db, user.id, s.quota_tokens_per_day, need=estimate_tokens(body.prompt) + cap)
     api_key = ctx.keys.get()
     require_key(api_key, s.model_base_url)
+    model = await _check_model(ctx, body.model, api_key)
     started = time.perf_counter()
-    run_id = history.start(ctx.db, user.id, s.model_name, body.prompt)
+    run_id = history.start(ctx.db, user.id, model, body.prompt)
     try:
-        upstream = await open_stream(ctx.http, s, api_key, body.prompt)
+        upstream = await open_stream(ctx.http, s, api_key, body.prompt, model=model, max_tokens=cap)
     except Exception as exc:
         err = from_exception(exc)
         _finish(ctx, run_id, user.id, StreamResult(), body.prompt, err, started, request.state.request_id)
         raise err from exc
-    stream = _relay(ctx, run_id, user.id, upstream, body.prompt, started, request.state.request_id)
+    stream = _relay(ctx, run_id, user.id, upstream, body.prompt, started, request.state.request_id, cap)
     return StreamingResponse(stream, media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
@@ -219,7 +234,7 @@ def _sse(event: str, data: dict[str, Any]) -> str:
 
 
 async def _relay(ctx: Context, run_id: str, user_id: int, upstream: httpx.Response, prompt: str,
-                 started: float, request_id: str) -> AsyncIterator[str]:
+                 started: float, request_id: str, max_tokens: int) -> AsyncIterator[str]:
     """Forward deltas as SSE. On a mid-stream failure keep what arrived and report a retryable error."""
     result = StreamResult()
     err: AppError | None = None
@@ -228,7 +243,7 @@ async def _relay(ctx: Context, run_id: str, user_id: int, upstream: httpx.Respon
     yield _sse("start", {"run_id": run_id})
     try:
         async with asyncio.timeout(budget_s):  # total time for the whole answer, not just per chunk
-            async for delta in iter_text(upstream, result, ctx.settings.max_output_tokens * 8):
+            async for delta in iter_text(upstream, result, max_tokens * 8):
                 yield _sse("delta", {"text": delta})
         completed = True
     except Exception as exc:  # network drop, timeout or a bad chunk after streaming began

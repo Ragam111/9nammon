@@ -280,3 +280,52 @@ class HistoryTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _models_response(*ids: str) -> httpx.Response:
+    return httpx.Response(200, json={"object": "list", "data": [{"id": i} for i in ids]})
+
+
+class ModelChoiceTest(unittest.TestCase):
+    def test_default_model_needs_no_listing_call(self) -> None:
+        model = FakeModel([ok_stream(["hi"])])
+        with client_for(model) as (client, _):
+            login(client)
+            res = client.post("/api/run", json={"prompt": "hello"})
+            self.assertEqual(res.status_code, 200)
+            self.assertEqual(len(model.requests), 1)
+            self.assertEqual(json.loads(model.requests[0].content)["model"], "test-model")
+
+    def test_listed_model_and_output_cap_are_sent_upstream(self) -> None:
+        model = FakeModel([_models_response("test-model", "other-model"), ok_stream(["hi"])])
+        with client_for(model, max_output_tokens=256) as (client, _):
+            login(client)
+            res = client.post("/api/run", json={"prompt": "hello", "model": "other-model", "max_output_tokens": 128})
+            self.assertEqual(res.status_code, 200, res.text)
+            sent = json.loads(model.requests[-1].content)
+            self.assertEqual((sent["model"], sent["max_tokens"]), ("other-model", 128))
+
+    def test_model_not_on_the_server_is_refused_before_streaming(self) -> None:
+        model = FakeModel([_models_response("test-model"), ok_stream(["hi"])])
+        with client_for(model) as (client, _):
+            login(client)
+            res = client.post("/api/run", json={"prompt": "hello", "model": "ghost-model"})
+            self.assertEqual(res.status_code, 422)
+            self.assertEqual(res.json()["error"]["type"], "validation")
+            self.assertEqual(len(model.requests), 1)  # only the listing call, never the chat call
+
+    def test_output_cap_above_the_limit_is_refused(self) -> None:
+        model = FakeModel([ok_stream(["hi"])])
+        with client_for(model, max_output_tokens=64) as (client, _):
+            login(client)
+            res = client.post("/api/run", json={"prompt": "hello", "max_output_tokens": 65})
+            self.assertEqual(res.json()["error"]["type"], "validation")
+            self.assertEqual(model.requests, [])
+
+    def test_model_name_must_be_a_plain_identifier(self) -> None:
+        model = FakeModel([ok_stream(["hi"])])
+        with client_for(model) as (client, _):
+            login(client)
+            res = client.post("/api/run", json={"prompt": "hello", "model": "x; rm -rf /"})
+            self.assertEqual(res.status_code, 422)
+            self.assertEqual(model.requests, [])

@@ -36,23 +36,25 @@ def estimate_tokens(text: str) -> int:
     return math.ceil(len(text) / 4) if text else 0
 
 
-def _payload(settings: Settings, prompt: str) -> dict[str, object]:
+def _payload(settings: Settings, prompt: str, model: str | None = None,
+             max_tokens: int | None = None) -> dict[str, object]:
     return {
-        "model": settings.model_name,
+        "model": model or settings.model_name,
         "messages": [{"role": "user", "content": prompt}],
         "stream": True,
-        "max_tokens": settings.max_output_tokens,
+        "max_tokens": max_tokens or settings.max_output_tokens,
         "stream_options": {"include_usage": True},
     }
 
 
-async def open_stream(client: httpx.AsyncClient, settings: Settings, api_key: str, prompt: str) -> httpx.Response:
+async def open_stream(client: httpx.AsyncClient, settings: Settings, api_key: str, prompt: str,
+                      model: str | None = None, max_tokens: int | None = None) -> httpx.Response:
     """Send the request and return an open streaming response, retrying transient failures."""
 
     async def attempt() -> httpx.Response:
         request = client.build_request(
             "POST", f"{settings.model_base_url}/chat/completions",
-            json=_payload(settings, prompt),
+            json=_payload(settings, prompt, model, max_tokens),
             headers={"Authorization": f"Bearer {api_key}"} if api_key else {},
         )
         response = await client.send(request, stream=True)

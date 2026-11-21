@@ -35,6 +35,7 @@ export type RunSummary = {
 };
 export type RunDetail = Omit<RunSummary, "prompt_preview"> & { prompt: string; output: string };
 export type HistoryPage = { items: RunSummary[]; total: number };
+export type ModelList = { current: string; available: string[] };
 export type Health = { status: string; model: string; model_key_configured: boolean };
 
 const NETWORK_MSG = "เชื่อมต่อ server ไม่ได้ — ตรวจอินเทอร์เน็ตหรือว่า server เปิดอยู่ แล้วลองใหม่";
@@ -107,8 +108,16 @@ function handleEvent(ev: SseEvent, h: RunHandlers, state: { runId: string; gotTe
 }
 
 /** POST /api/run and read the SSE stream. Throws ApiError; `partial` is true when some text arrived. */
-export async function streamRun(prompt: string, h: RunHandlers): Promise<RunDone> {
-  const res = await send("/api/run", { ...json("POST", { prompt }), signal: h.signal });
+/** Optional per-run choices. Omit both to use the server defaults. */
+export type RunOptions = { model?: string; maxOutputTokens?: number };
+
+export async function streamRun(prompt: string, h: RunHandlers, opts: RunOptions = {}): Promise<RunDone> {
+  const body = {
+    prompt,
+    ...(opts.model ? { model: opts.model } : {}),
+    ...(opts.maxOutputTokens ? { max_output_tokens: opts.maxOutputTokens } : {}),
+  };
+  const res = await send("/api/run", { ...json("POST", body), signal: h.signal });
   const reader = res.body?.getReader();
   if (!reader) throw new ApiError("unknown", "browser นี้อ่านคำตอบแบบ streaming ไม่ได้", false);
   const decoder = new TextDecoder();
