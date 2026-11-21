@@ -76,6 +76,14 @@ class OAuthRoutesTest(unittest.TestCase):
             self.assertIn("bf_oauth_state=", res.headers["set-cookie"])
             self.assertNotIn(GH_SECRET, res.headers["location"] + res.headers["set-cookie"])
 
+    def test_google_always_asks_which_account_to_use(self) -> None:
+        settings = make_settings(oauth_google_client_id="google-client-id", oauth_google_client_secret="s",
+                                 public_base_url="http://127.0.0.1:8000")
+        app = create_app(settings, provider_transport([]), io.StringIO())
+        with TestClient(app, base_url="http://127.0.0.1:8000") as client:
+            res = client.get("/api/auth/oauth/google/start", follow_redirects=False)
+            self.assertEqual(parse_qs(urlparse(res.headers["location"]).query)["prompt"], ["select_account"])
+
     def test_unconfigured_or_unknown_provider_is_404(self) -> None:
         with self.client() as client:
             self.assertEqual(client.get("/api/auth/oauth/google/start", follow_redirects=False).status_code, 404)
