@@ -125,7 +125,7 @@ class RunTest(unittest.TestCase):
             run_id = events[0][1]["run_id"]
             detail = client.get(f"/api/history/{run_id}").json()
             self.assertEqual((detail["status"], detail["output"], detail["tokens_out"]), ("ok", "สวัสดี", 2))
-            self.assertEqual(client.get("/api/settings").json()["quota"]["used"], 5)
+            self.assertEqual(client.get("/api/settings").json()["quota"]["buckets"][0]["used"], 5)
             run_log = [json.loads(line) for line in logs.getvalue().splitlines() if '"event": "run"' in line][0]
             self.assertEqual(run_log["tokens_in"] + run_log["tokens_out"], 5)
             self.assertIn("cost_estimate", run_log)
@@ -180,7 +180,7 @@ class RunTest(unittest.TestCase):
             self.assertEqual([e[0] for e in events], ["start", "error"])
             self.assertFalse(events[-1][1]["partial"])
             self.assertEqual(client.get("/api/history").json()["items"][0]["status"], "error")
-            self.assertEqual(client.get("/api/settings").json()["quota"]["used"], 0)
+            self.assertEqual(client.get("/api/settings").json()["quota"]["buckets"][0]["used"], 0)
 
     def test_error_object_inside_stream(self) -> None:
         body = b'data: {"choices":[{"delta":{"content":"a"}}]}\n\ndata: {"error":{"message":"overloaded"}}\n\n'

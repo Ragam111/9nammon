@@ -35,6 +35,8 @@ export function Workbench({ onAuthLost }: { onAuthLost: () => void }) {
   const abort = useRef<AbortController | null>(null);
   const maxChars = settings?.limits.max_input_chars ?? 8000;
   const tooLong = prompt.length > maxChars;
+  const fiveHour = settings?.quota.buckets.find((b) => b.name === "five_hour");
+  const fiveHourLeft = Math.max(0, (fiveHour?.limit ?? 0) - (fiveHour?.used ?? 0));
 
   const refresh = useCallback(() => {
     api<SettingsView>("/api/settings").then(setSettings).catch(() => undefined);
@@ -78,7 +80,7 @@ export function Workbench({ onAuthLost }: { onAuthLost: () => void }) {
         {settings && (
           <p className="text-sm text-muted">
             โมเดล <span className="mono">{settings.model}</span> · token เหลือรอบนี้{" "}
-            <span className="tabular">{settings.quota.remaining.toLocaleString("th-TH")}</span>
+            <span className="tabular">{fiveHourLeft.toLocaleString("th-TH")}</span>
           </p>
         )}
       </div>

@@ -145,14 +145,14 @@ def clear_key(request: Request, _: auth.User = Depends(admin_user)) -> dict[str,
 def settings_view(request: Request, user: auth.User = Depends(current_user)) -> dict[str, Any]:
     ctx = ctx_of(request)
     s = ctx.settings
-    used = quota.used(ctx.db, user.id)
     return {
         "user": {"username": user.username, "role": user.role},
         "model": s.model_name,
         "key": ctx.keys.status().to_dict(),
-        "quota": {"window": quota.current_window(), "resets_at": quota.window_resets_at(),
-                  "window_hours": quota.WINDOW_HOURS, "used": used, "limit": s.quota_tokens_per_window,
-                  "remaining": max(0, s.quota_tokens_per_window - used)},
+        "quota": {"window_hours": quota.WINDOW_HOURS, "buckets": [
+            {"name": b.name, "used": quota.used(ctx.db, user.id, b.key), "limit": b.limit, "resets_at": b.resets_at}
+            for b in quota.plan(s, heavy=bool(s.heavy_models))
+        ]},
         "rate_limit": {"user_per_min": s.rate_limit_user_per_min, "ip_per_min": s.rate_limit_ip_per_min,
                        "user_remaining": ctx.limiter.remaining(f"user:{user.id}", s.rate_limit_user_per_min)},
         "limits": {"max_input_chars": s.max_input_chars, "max_output_tokens": s.max_output_tokens},
@@ -213,19 +213,20 @@ async def run(body: RunIn, request: Request, user: auth.User = Depends(current_u
         raise AppError("validation", f"ความยาวคำตอบสูงสุดคือ {s.max_output_tokens} token")
     cap = body.max_output_tokens or s.max_output_tokens
     ctx.limiter.hit(f"user:{user.id}", s.rate_limit_user_per_min)
-    quota.check(ctx.db, user.id, s.quota_tokens_per_window, need=estimate_tokens(body.prompt) + cap)
     api_key = ctx.keys.get()
     require_key(api_key, s.model_base_url)
     model = await _check_model(ctx, body.model, api_key)
+    buckets = quota.plan(s, heavy=model in s.heavy_models)
+    quota.check_all(ctx.db, user.id, buckets, need=estimate_tokens(body.prompt) + cap)
     started = time.perf_counter()
     run_id = history.start(ctx.db, user.id, model, body.prompt)
     try:
         upstream = await open_stream(ctx.http, s, api_key, body.prompt, model=model, max_tokens=cap)
     except Exception as exc:
         err = from_exception(exc)
-        _finish(ctx, run_id, user.id, StreamResult(), body.prompt, err, started, request.state.request_id)
+        _finish(ctx, run_id, user.id, StreamResult(), body.prompt, err, started, request.state.request_id, buckets)
         raise err from exc
-    stream = _relay(ctx, run_id, user.id, upstream, body.prompt, started, request.state.request_id, cap)
+    stream = _relay(ctx, run_id, user.id, upstream, body.prompt, started, request.state.request_id, cap, buckets)
     return StreamingResponse(stream, media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
@@ -235,7 +236,7 @@ def _sse(event: str, data: dict[str, Any]) -> str:
 
 
 async def _relay(ctx: Context, run_id: str, user_id: int, upstream: httpx.Response, prompt: str,
-                 started: float, request_id: str, max_tokens: int) -> AsyncIterator[str]:
+                 started: float, request_id: str, max_tokens: int, buckets: list[quota.Bucket]) -> AsyncIterator[str]:
     """Forward deltas as SSE. On a mid-stream failure keep what arrived and report a retryable error."""
     result = StreamResult()
     err: AppError | None = None
@@ -253,13 +254,13 @@ async def _relay(ctx: Context, run_id: str, user_id: int, upstream: httpx.Respon
     finally:
         if not completed and err is None:  # the browser went away before the end
             err = AppError("unknown", "การเชื่อมต่อถูกปิดก่อนได้คำตอบครบ")
-        usage = _finish(ctx, run_id, user_id, result, prompt, err, started, request_id)
+        usage = _finish(ctx, run_id, user_id, result, prompt, err, started, request_id, buckets)
     if err is None:
         yield _sse("done", {"run_id": run_id, "truncated": result.truncated, **usage})
 
 
 def _finish(ctx: Context, run_id: str, user_id: int, result: StreamResult, prompt: str,
-            err: AppError | None, started: float, request_id: str) -> dict[str, int]:
+            err: AppError | None, started: float, request_id: str, buckets: list[quota.Bucket]) -> dict[str, int]:
     """Record history, quota and a JSON log line for one run. Returns the token usage."""
     tokens_in = result.tokens_in or estimate_tokens(prompt)
     tokens_out = result.tokens_out or estimate_tokens(result.text)
@@ -271,7 +272,7 @@ def _finish(ctx: Context, run_id: str, user_id: int, result: StreamResult, promp
     history.finish(ctx.db, run_id, status=status, output=result.text, error_type=err.type if err else None,
                    tokens_in=tokens_in, tokens_out=tokens_out, latency_ms=latency_ms)
     if status != "error":
-        quota.record(ctx.db, user_id, tokens_in + tokens_out)
+        quota.record_all(ctx.db, user_id, buckets, tokens_in + tokens_out)
     cost = estimate_cost(tokens_in + tokens_out, ctx.settings.cost_per_1k_tokens)
     log_event("run", ctx.log_stream, request_id=request_id, run_id=run_id, user_id=user_id, status=status,
               error_type=err.type if err else None, latency_ms=latency_ms, tokens_in=tokens_in,
