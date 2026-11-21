@@ -184,9 +184,12 @@ def oauth_providers(request: Request) -> dict[str, Any]:
 
 
 @router.get("/auth/oauth/{provider}/start")
-def oauth_start(provider: str, request: Request) -> RedirectResponse:
+def oauth_start(provider: str, request: Request, link: str = "") -> RedirectResponse:
     ctx = ctx_of(request)
     spec, client_id, _ = _oauth_client(ctx, provider)
+    linking = link == "1"
+    if linking:  # only a signed-in user can link a provider; this raises 401 otherwise
+        auth.user_for_token(ctx.db, request.cookies.get(auth.SESSION_COOKIE))
     state = oauth.new_state()
     target = oauth.authorize_url(spec, client_id, oauth.redirect_uri(ctx.settings.public_base_url, provider), state)
     response = RedirectResponse(target, status_code=302)
@@ -194,6 +197,9 @@ def oauth_start(provider: str, request: Request) -> RedirectResponse:
         oauth.STATE_COOKIE, state, httponly=True, samesite="lax", secure=ctx.settings.cookie_secure,
         max_age=600, path=oauth.STATE_COOKIE_PATH,
     )
+    if linking:
+        response.set_cookie(oauth.LINK_COOKIE, "1", httponly=True, samesite="lax",
+                            secure=ctx.settings.cookie_secure, max_age=600, path=oauth.STATE_COOKIE_PATH)
     return response
 
 
@@ -202,6 +208,8 @@ async def oauth_callback(provider: str, request: Request, code: str = "", state:
     """Finish the sign-in. Any failure sends the browser back to the login page with a flag, not an API error."""
     ctx = ctx_of(request)
     s = ctx.settings
+    linking = request.cookies.get(oauth.LINK_COOKIE) == "1"
+    token = None
     try:
         spec, client_id, client_secret = _oauth_client(ctx, provider)
         if not code or not oauth.states_match(request.cookies.get(oauth.STATE_COOKIE), state):
@@ -209,19 +217,62 @@ async def oauth_callback(provider: str, request: Request, code: str = "", state:
         subject, display = await oauth.fetch_profile(
             ctx.http, spec, client_id, client_secret, code, oauth.redirect_uri(s.public_base_url, provider),
         )
-        token = auth.login_oauth(ctx.db, provider, subject, display, s.session_ttl_hours)
+        if linking:
+            me = auth.user_for_token(ctx.db, request.cookies.get(auth.SESSION_COOKIE))
+            auth.link_oauth(ctx.db, me.id, provider, subject)
+        else:
+            token = auth.login_oauth(ctx.db, provider, subject, display, s.session_ttl_hours)
     except AppError as exc:
         log_event("oauth", ctx.log_stream, request_id=request.state.request_id, provider=provider,
-                  status="failed", error_type=exc.type)
-        response = RedirectResponse("/#/login?error=oauth", status_code=302)
+                  status="failed", error_type=exc.type, linking=linking)
+        response = RedirectResponse("/#/settings?link=error" if linking else "/#/login?error=oauth", status_code=302)
     else:
-        response = RedirectResponse("/#/", status_code=302)
-        response.set_cookie(
-            auth.SESSION_COOKIE, token, httponly=True, samesite="lax", secure=s.cookie_secure,
-            max_age=s.session_ttl_hours * 3600, path="/",
-        )
+        if linking:
+            response = RedirectResponse(f"/#/settings?linked={provider}", status_code=302)
+        else:
+            response = RedirectResponse("/#/", status_code=302)
+            response.set_cookie(
+                auth.SESSION_COOKIE, token, httponly=True, samesite="lax", secure=s.cookie_secure,
+                max_age=s.session_ttl_hours * 3600, path="/",
+            )
     response.delete_cookie(oauth.STATE_COOKIE, path=oauth.STATE_COOKIE_PATH)
+    response.delete_cookie(oauth.LINK_COOKIE, path=oauth.STATE_COOKIE_PATH)
     return response
+
+
+class DeleteAccountIn(BaseModel):
+    confirm: str = Field(max_length=120)
+
+
+@router.get("/account")
+def account(request: Request, user: auth.User = Depends(current_user)) -> dict[str, Any]:
+    ctx = ctx_of(request)
+    return {
+        "username": user.username,
+        "role": user.role,
+        "password": auth.has_password(ctx.db, user.id),
+        "providers": auth.linked_providers(ctx.db, user.id),
+        "available_providers": [name for name in oauth.PROVIDERS if ctx.settings.oauth_client(name)],
+    }
+
+
+@router.post("/account/unlink/{provider}")
+def unlink_provider(provider: str, request: Request, user: auth.User = Depends(current_user)) -> dict[str, Any]:
+    ctx = ctx_of(request)
+    auth.unlink_oauth(ctx.db, user.id, provider)
+    return {"providers": auth.linked_providers(ctx.db, user.id)}
+
+
+@router.delete("/account")
+def delete_account(body: DeleteAccountIn, request: Request, response: Response,
+                   user: auth.User = Depends(current_user)) -> dict[str, bool]:
+    """Permanently delete the signed-in account. The user must type the username to confirm."""
+    if body.confirm != user.username:
+        raise AppError("validation", "พิมพ์ชื่อผู้ใช้ให้ตรงทุกตัวอักษรเพื่อยืนยันการลบบัญชี")
+    ctx = ctx_of(request)
+    auth.delete_user(ctx.db, user.id)
+    response.delete_cookie(auth.SESSION_COOKIE, path="/")
+    return {"deleted": True}
 
 
 @router.get("/history")

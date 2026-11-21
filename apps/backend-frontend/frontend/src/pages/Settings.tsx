@@ -1,8 +1,9 @@
 // Settings: key status, quota and usage, rate limits, account and logout.
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, api, type SettingsView } from "../api";
-import { Button, Card, ErrorState, Skeleton } from "../components/ui";
+import { Card, ErrorState, Skeleton } from "../components/ui";
 import { errorDetail, errorTitle } from "./errors";
+import { AccountCard } from "./AccountCard";
 import { KeySetup } from "./KeySetup";
 
 const fmt = (n: number) => n.toLocaleString("th-TH");
@@ -43,10 +44,7 @@ export function Settings({ onLogout, onAuthLost }: { onLogout: () => void; onAut
           <dt className="text-muted">คำตอบ</dt><dd className="tabular">ไม่เกิน {fmt(view.limits.max_output_tokens)} token</dd>
         </dl>
       </Card>
-      <Card title="บัญชี">
-        <p className="mb-3 text-sm">{view.user.username} <span className="text-muted">({view.user.role === "admin" ? "ผู้ดูแลระบบ" : "ผู้ใช้"})</span></p>
-        <Button variant="secondary" onClick={onLogout}>ออกจากระบบ</Button>
-      </Card>
+      <AccountCard onLogout={onLogout} onAuthLost={onAuthLost} />
     </div>
   );
 }

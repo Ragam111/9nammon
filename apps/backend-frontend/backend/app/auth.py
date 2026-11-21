@@ -89,6 +89,61 @@ def _issue_session(db: Database, user_id: int, ttl_hours: int) -> str:
     return token
 
 
+NO_PASSWORD = "!no-password"  # noqa: S105 - a marker, not a password; never a valid scrypt hash
+
+
+def has_password(db: Database, user_id: int) -> bool:
+    with db.session() as conn:
+        row = conn.execute("SELECT password_hash FROM users WHERE id = ?", (user_id,)).fetchone()
+    return bool(row) and str(row["password_hash"]).startswith("scrypt$")
+
+
+def linked_providers(db: Database, user_id: int) -> list[str]:
+    with db.session() as conn:
+        rows = conn.execute(
+            "SELECT provider FROM oauth_identities WHERE user_id = ? ORDER BY provider", (user_id,)
+        ).fetchall()
+    return [str(r["provider"]) for r in rows]
+
+
+def link_oauth(db: Database, user_id: int, provider: str, subject: str) -> None:
+    """Attach a provider identity to a signed-in user. One identity per provider per user."""
+    with db.session() as conn:
+        owner = conn.execute(
+            "SELECT user_id FROM oauth_identities WHERE provider = ? AND subject = ?", (provider, subject)
+        ).fetchone()
+        if owner is not None:
+            if int(owner["user_id"]) == user_id:
+                return
+            raise AppError("validation", f"บัญชี {provider} นี้ถูกผูกกับบัญชีอื่นแล้ว")
+        same = conn.execute(
+            "SELECT 1 FROM oauth_identities WHERE user_id = ? AND provider = ?", (user_id, provider)
+        ).fetchone()
+        if same is not None:
+            raise AppError("validation", f"บัญชีนี้ผูกกับ {provider} อยู่แล้ว ถอดการผูกเดิมก่อนจึงจะเปลี่ยนได้")
+        conn.execute(
+            "INSERT INTO oauth_identities (provider, subject, user_id) VALUES (?, ?, ?)",
+            (provider, subject, user_id),
+        )
+
+
+def unlink_oauth(db: Database, user_id: int, provider: str) -> None:
+    """Remove a provider identity, but never the last way to sign in."""
+    linked = linked_providers(db, user_id)
+    if provider not in linked:
+        raise AppError("validation", "ยังไม่ได้ผูกผู้ให้บริการนี้")
+    if len(linked) == 1 and not has_password(db, user_id):
+        raise AppError("validation", "ต้องมีวิธีเข้าสู่ระบบอย่างน้อยหนึ่งวิธี ผูกวิธีอื่นก่อนแล้วค่อยถอดวิธีนี้")
+    with db.session() as conn:
+        conn.execute("DELETE FROM oauth_identities WHERE user_id = ? AND provider = ?", (user_id, provider))
+
+
+def delete_user(db: Database, user_id: int) -> None:
+    """Delete the account. Sessions, usage, runs and identities go with it (ON DELETE CASCADE)."""
+    with db.session() as conn:
+        conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+
+
 def login_oauth(db: Database, provider: str, subject: str, display: str, ttl_hours: int) -> str:
     """Sign in with a provider identity. The first sign-in creates a user with no usable password."""
     with db.session() as conn:
@@ -103,7 +158,7 @@ def login_oauth(db: Database, provider: str, subject: str, display: str, ttl_hou
             username = f"{provider}:{subject}" if taken else candidate
             cur = conn.execute(
                 "INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'user')",
-                (username, hash_password(secrets.token_urlsafe(32))),
+                (username, NO_PASSWORD),
             )
             user_id = int(cur.lastrowid or 0)
             conn.execute(

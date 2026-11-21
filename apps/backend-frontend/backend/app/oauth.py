@@ -17,6 +17,7 @@ import httpx
 from .errors import AppError
 
 STATE_COOKIE = "bf_oauth_state"
+LINK_COOKIE = "bf_oauth_link"  # set when a signed-in user is linking a provider, not signing in
 STATE_COOKIE_PATH = "/api/auth/oauth"
 
 
