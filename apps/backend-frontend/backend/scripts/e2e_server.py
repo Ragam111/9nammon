@@ -29,6 +29,11 @@ def main() -> None:
         "MODEL_TIMEOUT_S": "15",
         "ENV_FILE": str(data_dir / "no.env"),  # ignore any developer .env
         "CORS_ORIGINS": "http://127.0.0.1:5174,http://localhost:5174",
+        # One run makes many logins and page loads from 127.0.0.1; the production limits make it flaky.
+        "LOGIN_PER_IP_PER_MIN": "1000",
+        "LOGIN_PER_USER_PER_MIN": "1000",
+        "RATE_LIMIT_IP_PER_MIN": "10000",
+        "RATE_LIMIT_USER_PER_MIN": "10000",
     })
     os.chdir(BACKEND)
     sys.path.insert(0, str(BACKEND))

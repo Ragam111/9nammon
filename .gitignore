@@ -81,3 +81,6 @@ agent_workspace/
 # agents_team runtime queue
 /state/
 
+
+# Task runner output
+apps/backend-frontend/backend/task-runs/

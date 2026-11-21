@@ -26,3 +26,67 @@ jobs:
 
       - name: Unit tests
         run: python -m unittest discover -s tests -v
+
+  backend-frontend:
+    name: Backend-frontend (tests, lint, E2E)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: apps/backend-frontend/backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend dependencies
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install -r requirements.lock -r requirements-dev.txt
+
+      - name: Backend lint (ruff)
+        run: .venv/bin/python -m ruff check app tests scripts
+
+      - name: Backend unit tests
+        run: .venv/bin/python -m unittest
+
+      - name: Fake-model eval
+        run: .venv/bin/python -m scripts.run_eval --fake --min-pass 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: apps/backend-frontend/frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: apps/backend-frontend/frontend
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: apps/backend-frontend/frontend
+        run: npm run typecheck
+
+      - name: Lint (biome)
+        working-directory: apps/backend-frontend/frontend
+        run: npm run lint
+
+      - name: Install Playwright Chromium
+        working-directory: apps/backend-frontend/frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: E2E (Playwright)
+        working-directory: apps/backend-frontend/frontend
+        env:
+          E2E_CHANNEL: chromium
+        run: npx playwright test
+
+      - name: Upload E2E results on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-test-results
+          path: apps/backend-frontend/frontend/test-results/
+          if-no-files-found: ignore
