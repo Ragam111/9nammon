@@ -33,8 +33,6 @@ from .model_client import StreamResult, estimate_tokens, iter_text, open_stream,
 from .ratelimit import RateLimiter
 
 MAX_BODY_BYTES = 256 * 1024
-LOGIN_PER_MIN = 10
-LOGIN_PER_USER_PER_MIN = 5
 NOT_FOUND = "ไม่พบประวัตินี้ หรืออาจถูกลบไปแล้ว"
 _REQUEST_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 _UNSAFE = {"POST", "PUT", "PATCH", "DELETE"}
@@ -103,8 +101,8 @@ def health(request: Request) -> dict[str, Any]:
 @router.post("/auth/login")
 def login(body: LoginIn, request: Request, response: Response) -> dict[str, Any]:
     ctx = ctx_of(request)
-    ctx.limiter.hit(f"login:{client_ip(request)}", LOGIN_PER_MIN)
-    ctx.limiter.hit(f"login-user:{body.username.lower()}", LOGIN_PER_USER_PER_MIN)  # many IPs, one account
+    ctx.limiter.hit(f"login:{client_ip(request)}", ctx.settings.login_per_ip_per_min)
+    ctx.limiter.hit(f"login-user:{body.username.lower()}", ctx.settings.login_per_user_per_min)  # many IPs, one account
     token = auth.login(ctx.db, body.username, body.password, ctx.settings.session_ttl_hours)
     response.set_cookie(
         auth.SESSION_COOKIE, token, httponly=True, samesite="lax", secure=ctx.settings.cookie_secure,

@@ -1,0 +1,41 @@
+{
+  "_comment": "Tasks for task_runner. cwd is relative to this file. A bare 'python' runs with the interpreter that starts the runner.",
+  "tasks": [
+    {
+      "name": "backend-unit",
+      "cmd": ["python", "-m", "unittest"],
+      "cwd": "..",
+      "timeout_s": 600,
+      "min_free_mb": 400
+    },
+    {
+      "name": "eval-fake",
+      "cmd": ["python", "-m", "scripts.run_eval", "--fake", "--min-pass", "1"],
+      "cwd": "..",
+      "timeout_s": 300,
+      "min_free_mb": 400
+    },
+    {
+      "name": "frontend-typecheck",
+      "cmd": "npm run typecheck",
+      "cwd": "../../frontend",
+      "timeout_s": 300,
+      "min_free_mb": 600
+    },
+    {
+      "name": "frontend-lint",
+      "cmd": "npm run lint",
+      "cwd": "../../frontend",
+      "timeout_s": 300,
+      "min_free_mb": 600
+    },
+    {
+      "name": "e2e-playwright",
+      "cmd": "npx playwright test",
+      "cwd": "../../frontend",
+      "timeout_s": 900,
+      "retries": 0,
+      "min_free_mb": 1000
+    }
+  ]
+}

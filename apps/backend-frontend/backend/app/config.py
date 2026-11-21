@@ -59,6 +59,9 @@ class Settings:
     cost_per_1k_tokens: float
     # Proxies whose X-Real-IP header is trusted for rate limits (e.g. the nginx container). Empty = trust none.
     trusted_proxies: list[str] = field(default_factory=list)
+    # Login attempts per client IP and per username, per minute. The E2E server raises them; keep defaults in production.
+    login_per_ip_per_min: int = 10
+    login_per_user_per_min: int = 5
 
 
 def load_env_file(path: Path) -> None:
@@ -100,4 +103,6 @@ def load_settings() -> Settings:
         cors_origins=_list("CORS_ORIGINS", ["http://127.0.0.1:5173", "http://localhost:5173"]),
         cost_per_1k_tokens=_float("COST_PER_1K_TOKENS", 0.0),
         trusted_proxies=_list("TRUSTED_PROXY_CIDRS", []),
+        login_per_ip_per_min=_int("LOGIN_PER_IP_PER_MIN", 10),
+        login_per_user_per_min=_int("LOGIN_PER_USER_PER_MIN", 5),
     )
