@@ -24,7 +24,7 @@ export type SettingsView = {
   user: User;
   model: string;
   key: KeyStatus;
-  quota: { window: string; resets_at: string; window_hours: number; used: number; limit: number; remaining: number };
+  quota: { window_hours: number; buckets: { name: "five_hour" | "weekly" | "heavy_weekly"; used: number; limit: number; resets_at: string }[] };
   rate_limit: { user_per_min: number; ip_per_min: number; user_remaining: number };
   limits: { max_input_chars: number; max_output_tokens: number };
 };

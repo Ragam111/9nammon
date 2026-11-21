@@ -24,24 +24,16 @@ export function Settings({ onLogout, onAuthLost }: { onLogout: () => void; onAut
   if (error) return <ErrorState title={errorTitle(error)} detail={errorDetail(error)} action={{ label: "ลองใหม่", onClick: load }} />;
   if (!view) return <Card><Skeleton className="h-6 w-1/2" /></Card>;
 
-  const pct = view.quota.limit ? Math.min(100, Math.round((view.quota.used / view.quota.limit) * 100)) : 0;
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-2xl font-semibold">ตั้งค่า</h1>
       <Card title="API key ของโมเดล">
         <KeySetup status={view.key} isAdmin={view.user.role === "admin"} onChange={(key) => setView({ ...view, key })} />
       </Card>
-      <Card title="Quota และการใช้งานรอบนี้">
-        <p className="text-sm">
-          ใช้ไป <span className="tabular">{fmt(view.quota.used)}</span> จาก <span className="tabular">{fmt(view.quota.limit)}</span> token
-          (เหลือ <span className="tabular">{fmt(view.quota.remaining)}</span>)
-        </p>
-        <div role="progressbar" aria-label="การใช้ quota รอบนี้" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}
-          className="mt-2 h-2 w-full overflow-hidden rounded-sm bg-surface-2">
-          <div className={`h-full ${pct >= 90 ? "bg-bad" : pct >= 70 ? "bg-warn" : "bg-accent"}`} style={{ width: `${pct}%` }} />
+      <Card title="การใช้งานและโควตา">
+        <div className="flex flex-col gap-5">
+          {view.quota.buckets.map((b) => <QuotaMeter key={b.name} bucket={b} />)}
         </div>
-        <p className="mt-1 text-xs text-muted">รีเซ็ตทุก {view.quota.window_hours} ชั่วโมง (เวลาไทย) · รอบถัดไปเริ่ม{" "}
-          {new Date(view.quota.resets_at).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</p>
       </Card>
       <Card title="Rate limit">
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
@@ -55,6 +47,31 @@ export function Settings({ onLogout, onAuthLost }: { onLogout: () => void; onAut
         <p className="mb-3 text-sm">{view.user.username} <span className="text-muted">({view.user.role === "admin" ? "ผู้ดูแลระบบ" : "ผู้ใช้"})</span></p>
         <Button variant="secondary" onClick={onLogout}>ออกจากระบบ</Button>
       </Card>
+    </div>
+  );
+}
+
+const BUCKET_LABEL: Record<string, string> = {
+  five_hour: "ทุกโมเดล · 5 ชั่วโมง",
+  weekly: "ทุกโมเดล · รายสัปดาห์",
+  heavy_weekly: "โมเดลหนัก · รายสัปดาห์",
+};
+
+function QuotaMeter({ bucket }: { bucket: SettingsView["quota"]["buckets"][number] }) {
+  const label = BUCKET_LABEL[bucket.name] ?? bucket.name;
+  const pct = bucket.limit ? Math.min(100, Math.round((bucket.used / bucket.limit) * 100)) : 0;
+  return (
+    <div>
+      <p className="text-sm">
+        {label} · ใช้ไป <span className="tabular">{pct}%</span> (<span className="tabular">{fmt(bucket.used)}</span> / <span className="tabular">{fmt(bucket.limit)}</span> token)
+      </p>
+      <div role="progressbar" aria-label={`การใช้ ${label}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}
+        className="mt-2 h-2 w-full overflow-hidden rounded-sm bg-surface-2">
+        <div className={`h-full ${pct >= 90 ? "bg-bad" : pct >= 70 ? "bg-warn" : "bg-accent"}`} style={{ width: `${pct}%` }} />
+      </div>
+      <p className="mt-1 text-xs text-muted">
+        รีเซ็ต {new Date(bucket.resets_at).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })} (เวลาไทย)
+      </p>
     </div>
   );
 }

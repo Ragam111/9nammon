@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta, timezone
 from app import quota
 from app.auth import create_user
 from app.db import Database
+from app.errors import AppError
 from tests.helpers import make_settings
 
 BANGKOK = timezone(timedelta(hours=7))
@@ -41,6 +42,41 @@ class WindowTest(unittest.TestCase):
         quota.record(db, uid, 900_000, window=first)
         self.assertEqual(quota.remaining(db, uid, 1_000_000, second), 1_000_000)
         self.assertEqual(quota.remaining(db, uid, 1_000_000, first), 100_000)
+
+
+class WeeklyBucketTest(unittest.TestCase):
+    def test_week_starts_on_wednesday_three_pm(self) -> None:
+        # 2026-11-21 is a Saturday, so the last Wednesday 15:00 is 2026-11-18
+        self.assertEqual(quota.week_start(_bkk(10, day=21)), _bkk(15, day=18))
+        self.assertEqual(quota.week_start(_bkk(14, 59, day=18)), _bkk(15, day=11))
+        self.assertEqual(quota.week_start(_bkk(15, 0, day=18)), _bkk(15, day=18))
+
+    def test_plan_has_heavy_bucket_only_for_heavy_models(self) -> None:
+        settings = make_settings()
+        names = [b.name for b in quota.plan(settings, heavy=False)]
+        self.assertEqual(names, ["five_hour", "weekly"])
+        heavy = quota.plan(settings, heavy=True)
+        self.assertEqual([b.name for b in heavy], ["five_hour", "weekly", "heavy_weekly"])
+        self.assertEqual(heavy[2].limit, settings.quota_tokens_heavy_weekly)
+
+    def test_heavy_bucket_refuses_even_when_five_hour_has_room(self) -> None:
+        settings = make_settings(quota_tokens_heavy_weekly=100)
+        db = Database(make_settings().data_dir / "app.db")
+        uid = create_user(db, "erin", "correct-horse-5").id
+        buckets = quota.plan(settings, heavy=True)
+        quota.record_all(db, uid, buckets, 100)
+        with self.assertRaises(AppError) as ctx:
+            quota.check_all(db, uid, buckets, need=1)
+        self.assertIn("โมเดลหนัก", ctx.exception.user_message)
+
+    def test_light_run_counts_only_on_all_model_buckets(self) -> None:
+        settings = make_settings()
+        db = Database(make_settings().data_dir / "app.db")
+        uid = create_user(db, "fay", "correct-horse-6").id
+        quota.record_all(db, uid, quota.plan(settings, heavy=False), 500)
+        heavy = quota.plan(settings, heavy=True)
+        self.assertEqual(quota.used(db, uid, heavy[2].key), 0)
+        self.assertEqual(quota.used(db, uid, heavy[1].key), 500)
 
 
 if __name__ == "__main__":
