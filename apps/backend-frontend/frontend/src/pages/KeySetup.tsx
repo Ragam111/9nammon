@@ -16,6 +16,21 @@ export function KeyStatusLine({ status }: { status: KeyStatus }) {
   );
 }
 
+/** How to get a key. Buying happens on the provider's own site; this app never takes payment. */
+export function GetKeySteps() {
+  return (
+    <section aria-labelledby="get-key-title" className="flex flex-col gap-2 text-sm">
+      <h3 id="get-key-title" className="font-semibold">วิธีได้ API key</h3>
+      <ol className="flex list-decimal flex-col gap-1 pl-5 text-muted">
+        <li>เข้าเว็บของผู้ให้บริการโมเดลที่ใช้ (ดูชื่อ host ใน MODEL_BASE_URL ของ server)</li>
+        <li>สมัครหรือเติมเครดิตที่หน้าบัญชีของผู้ให้บริการนั้นเอง การซื้อทำบนเว็บของผู้ให้บริการ ไม่ได้ทำในแอปนี้</li>
+        <li>สร้าง API key ในหน้า API keys แล้วคัดลอกมาวางในช่องด้านล่าง (เฉพาะผู้ดูแลระบบ)</li>
+      </ol>
+      <p className="text-muted">อย่าส่ง API key ในแชทหรืออีเมล ถ้าหลุดให้เพิกถอนที่หน้าผู้ให้บริการทันที</p>
+    </section>
+  );
+}
+
 type Props = { status: KeyStatus; isAdmin: boolean; onChange: (s: KeyStatus) => void };
 
 export function KeySetup({ status, isAdmin, onChange }: Props) {
@@ -54,7 +69,8 @@ export function KeySetup({ status, isAdmin, onChange }: Props) {
   return (
     <div className="flex flex-col gap-3">
       <KeyStatusLine status={status} />
-      {!isAdmin && <p className="text-sm text-muted">เฉพาะผู้ดูแลระบบที่ตั้งหรือเปลี่ยน API key ได้</p>}
+      {!status.configured && <GetKeySteps />}
+      {!isAdmin &&<p className="text-sm text-muted">เฉพาะผู้ดูแลระบบที่ตั้งหรือเปลี่ยน API key ได้</p>}
       {isAdmin && status.source !== "env" && (
         <form onSubmit={save} className="flex flex-col gap-2" noValidate>
           <Input label="API key ใหม่" type="password" autoComplete="off" spellCheck={false} value={key}

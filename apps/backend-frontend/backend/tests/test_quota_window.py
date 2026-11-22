@@ -51,8 +51,14 @@ class WeeklyBucketTest(unittest.TestCase):
         self.assertEqual(quota.week_start(_bkk(14, 59, day=18)), _bkk(15, day=11))
         self.assertEqual(quota.week_start(_bkk(15, 0, day=18)), _bkk(15, day=18))
 
-    def test_plan_has_heavy_bucket_only_for_heavy_models(self) -> None:
+    def test_free_tier_is_the_five_hour_window_only(self) -> None:
         settings = make_settings()
+        self.assertFalse(settings.quota_weekly_enabled)
+        self.assertEqual([b.name for b in quota.plan(settings, heavy=False)], ["five_hour"])
+        self.assertEqual([b.name for b in quota.plan(settings, heavy=True)], ["five_hour"])
+
+    def test_plan_has_heavy_bucket_only_for_heavy_models(self) -> None:
+        settings = make_settings(quota_weekly_enabled=True)
         names = [b.name for b in quota.plan(settings, heavy=False)]
         self.assertEqual(names, ["five_hour", "weekly"])
         heavy = quota.plan(settings, heavy=True)
@@ -60,7 +66,7 @@ class WeeklyBucketTest(unittest.TestCase):
         self.assertEqual(heavy[2].limit, settings.quota_tokens_heavy_weekly)
 
     def test_heavy_bucket_refuses_even_when_five_hour_has_room(self) -> None:
-        settings = make_settings(quota_tokens_heavy_weekly=100)
+        settings = make_settings(quota_tokens_heavy_weekly=100, quota_weekly_enabled=True)
         db = Database(make_settings().data_dir / "app.db")
         uid = create_user(db, "erin", "correct-horse-5").id
         buckets = quota.plan(settings, heavy=True)
@@ -70,7 +76,7 @@ class WeeklyBucketTest(unittest.TestCase):
         self.assertIn("โมเดลหนัก", ctx.exception.user_message)
 
     def test_light_run_counts_only_on_all_model_buckets(self) -> None:
-        settings = make_settings()
+        settings = make_settings(quota_weekly_enabled=True)
         db = Database(make_settings().data_dir / "app.db")
         uid = create_user(db, "fay", "correct-horse-6").id
         quota.record_all(db, uid, quota.plan(settings, heavy=False), 500)

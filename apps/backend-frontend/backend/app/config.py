@@ -62,7 +62,9 @@ class Settings:
     # Logins per client IP and per username, per minute. The E2E server raises them; keep defaults in production.
     login_per_ip_per_min: int = 10
     login_per_user_per_min: int = 5
-    # Weekly limits (all models, and models listed in HEAVY_MODELS). Windows reset Wednesday 15:00 Bangkok time.
+    # Free tier is the 5-hour window only. Weekly limits (all models, and models in HEAVY_MODELS) are opt-in:
+    # they reset Wednesday 15:00 Bangkok time and apply only when quota_weekly_enabled is True.
+    quota_weekly_enabled: bool = False
     quota_tokens_weekly: int = 5_000_000
     quota_tokens_heavy_weekly: int = 1_000_000
     heavy_models: list[str] = field(default_factory=list)
@@ -124,6 +126,7 @@ def load_settings() -> Settings:
         trusted_proxies=_list("TRUSTED_PROXY_CIDRS", []),
         login_per_ip_per_min=_int("LOGIN_PER_IP_PER_MIN", 10),
         login_per_user_per_min=_int("LOGIN_PER_USER_PER_MIN", 5),
+        quota_weekly_enabled=_bool("QUOTA_WEEKLY_ENABLED", False),
         quota_tokens_weekly=_int("QUOTA_TOKENS_WEEKLY", 5_000_000),
         quota_tokens_heavy_weekly=_int("QUOTA_TOKENS_HEAVY_WEEKLY", 1_000_000),
         heavy_models=_list("HEAVY_MODELS", []),

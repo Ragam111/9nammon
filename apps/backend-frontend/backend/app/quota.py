@@ -114,14 +114,20 @@ def week_start(now: datetime | None = None) -> datetime:
 
 
 def plan(settings: Settings, heavy: bool, now: datetime | None = None) -> list[Bucket]:
-    """The buckets that apply to one run. `heavy` is True when the run uses a model in HEAVY_MODELS."""
+    """The buckets that apply to one run. The free tier is the 5-hour bucket only.
+
+    Weekly and heavy-model buckets are added only when settings.quota_weekly_enabled is True.
+    `heavy` is True when the run uses a model in HEAVY_MODELS.
+    """
+    buckets = [
+        Bucket("five_hour", f"5h|{current_window(now)}", settings.quota_tokens_per_window, window_resets_at(now)),
+    ]
+    if not settings.quota_weekly_enabled:
+        return buckets
     week = week_start(now)
     week_key = week.strftime("%Y-%m-%dT%H")
     week_ends = (week + timedelta(days=7)).isoformat()
-    buckets = [
-        Bucket("five_hour", f"5h|{current_window(now)}", settings.quota_tokens_per_window, window_resets_at(now)),
-        Bucket("weekly", f"wk|{week_key}", settings.quota_tokens_weekly, week_ends),
-    ]
+    buckets.append(Bucket("weekly", f"wk|{week_key}", settings.quota_tokens_weekly, week_ends))
     if heavy:
         buckets.append(Bucket("heavy_weekly", f"hwk|{week_key}", settings.quota_tokens_heavy_weekly, week_ends))
     return buckets
