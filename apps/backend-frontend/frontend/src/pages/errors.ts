@@ -1,24 +1,25 @@
 import type { ApiError, ErrorType } from "../api";
+import { tr, type ThKey } from "../i18n/th";
 
-const TITLES: Record<ErrorType, string> = {
-  auth: "ต้องเข้าสู่ระบบใหม่",
-  quota: "โควตารอบ 5 ชั่วโมงเต็มแล้ว",
-  rate_limit: "ส่งคำขอถี่เกินไป",
-  timeout: "หมดเวลารอคำตอบ",
-  validation: "ข้อมูลไม่ถูกต้อง",
-  upstream: "บริการโมเดลมีปัญหา",
-  unknown: "เกิดข้อผิดพลาด",
-  network: "การเชื่อมต่อหลุด",
-  cancelled: "หยุดแล้ว",
+const TITLE_KEYS: Record<ErrorType, ThKey> = {
+  auth: "error.title.auth",
+  quota: "error.title.quota",
+  rate_limit: "error.title.rate_limit",
+  timeout: "error.title.timeout",
+  validation: "error.title.validation",
+  upstream: "error.title.upstream",
+  unknown: "error.title.unknown",
+  network: "error.title.network",
+  cancelled: "error.title.cancelled",
 };
 
-export const errorTitle = (err: ApiError): string => TITLES[err.type] ?? TITLES.unknown;
+export const errorTitle = (err: ApiError): string => tr(TITLE_KEYS[err.type] ?? TITLE_KEYS.unknown);
 
 /** The model key on the server is wrong or missing: the fix is on the Settings page, not a retry. */
 export const isKeyProblem = (err: ApiError): boolean => err.type === "upstream" && err.message.includes("API key");
 
 export function errorDetail(err: ApiError): string {
-  const wait = err.retryAfterS ? ` (รอประมาณ ${err.retryAfterS} วินาที)` : "";
-  const ref = err.requestId ? ` · request id: ${err.requestId}` : "";
+  const wait = err.retryAfterS ? ` ${tr("error.detail.wait", { s: err.retryAfterS })}` : "";
+  const ref = err.requestId ? ` ${tr("error.detail.ref", { id: err.requestId })}` : "";
   return `${err.message}${wait}${ref}`;
 }

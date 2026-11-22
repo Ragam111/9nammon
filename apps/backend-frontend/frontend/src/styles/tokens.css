@@ -51,6 +51,9 @@
   --space-12: 48px;
   --space-16: 64px;
 
+  /* Layout: reading width for message content (760px) */
+  --content-max: 47.5rem;
+
   /* Radius: two levels only */
   --radius-sm: 6px;
   --radius-md: 10px;
