@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, json, type KeyStatus, type User } from "./api";
 import { Select, Skeleton, ToastProvider } from "./components/ui";
+import { Chat } from "./pages/Chat";
 import { History } from "./pages/History";
 import { Login } from "./pages/Login";
 import { Onboarding } from "./pages/Onboarding";
@@ -29,7 +30,7 @@ function applyTheme(theme: Theme): void {
 }
 
 const NAV: { route: Route; label: string }[] = [
-  { route: "workbench", label: "หน้าทำงาน" }, { route: "history", label: "ประวัติ" }, { route: "settings", label: "ตั้งค่า" },
+  { route: "workbench", label: "หน้าทำงาน" }, { route: "chat", label: "แชท" }, { route: "history", label: "ประวัติ" }, { route: "settings", label: "ตั้งค่า" },
 ];
 
 export function App() {
@@ -82,6 +83,7 @@ export function App() {
           </header>
           <main className="mx-auto max-w-5xl p-4">
             {route === "workbench" && <Workbench onAuthLost={onAuthLost} />}
+            {route === "chat" && <Chat onAuthLost={onAuthLost} />}
             {route === "history" && <History onAuthLost={onAuthLost} />}
             {route === "settings" && <Settings onLogout={() => void onLogout()} onAuthLost={onAuthLost} />}
             {route === "onboarding" && <Onboarding user={user} />}

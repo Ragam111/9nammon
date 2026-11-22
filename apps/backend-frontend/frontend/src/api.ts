@@ -51,7 +51,7 @@ async function toApiError(res: Response): Promise<ApiError> {
   return new ApiError("unknown", `เกิดข้อผิดพลาด (HTTP ${res.status})`, false);
 }
 
-async function send(path: string, init: RequestInit = {}): Promise<Response> {
+export async function send(path: string, init: RequestInit = {}): Promise<Response> {
   const headers: Record<string, string> = init.body ? { "Content-Type": "application/json" } : {};
   let res: Response;
   try {

@@ -6,6 +6,11 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+# Model ids offered for chat when the CHAT_*_MODELS variables are not set.
+DEFAULT_OPENAI_MODELS = ("gpt-4o-mini", "gpt-4o")
+DEFAULT_GEMINI_MODELS = ("gemini-2.5-flash", "gemini-2.5-pro")
+DEFAULT_ANTHROPIC_MODELS = ("claude-sonnet-4-6", "claude-haiku-4-5")
+
 
 def _int(name: str, default: int) -> int:
     raw = os.environ.get(name, "").strip()
@@ -72,6 +77,16 @@ class Settings:
     oauth_google_client_secret: str = field(default="", repr=False)
     oauth_github_client_id: str = ""
     oauth_github_client_secret: str = field(default="", repr=False)
+    # Chat providers over OpenAI-compatible endpoints. Keys come only from the environment (never stored or returned).
+    chat_openai_base_url: str = "https://api.openai.com/v1"
+    chat_openai_api_key: str = field(default="", repr=False)
+    chat_openai_models: list[str] = field(default_factory=lambda: list(DEFAULT_OPENAI_MODELS))
+    chat_gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai"
+    chat_gemini_api_key: str = field(default="", repr=False)
+    chat_gemini_models: list[str] = field(default_factory=lambda: list(DEFAULT_GEMINI_MODELS))
+    chat_anthropic_base_url: str = "https://api.anthropic.com/v1"
+    chat_anthropic_api_key: str = field(default="", repr=False)
+    chat_anthropic_models: list[str] = field(default_factory=lambda: list(DEFAULT_ANTHROPIC_MODELS))
 
     def oauth_client(self, provider: str) -> tuple[str, str] | None:
         """(client id, client secret) when the provider is fully configured, else None."""
@@ -132,4 +147,15 @@ def load_settings() -> Settings:
         oauth_google_client_secret=os.environ.get("OAUTH_GOOGLE_CLIENT_SECRET", ""),
         oauth_github_client_id=os.environ.get("OAUTH_GITHUB_CLIENT_ID", ""),
         oauth_github_client_secret=os.environ.get("OAUTH_GITHUB_CLIENT_SECRET", ""),
+        chat_openai_base_url=os.environ.get("CHAT_OPENAI_BASE_URL", "https://api.openai.com/v1").strip().rstrip("/"),
+        chat_openai_api_key=os.environ.get("CHAT_OPENAI_API_KEY", "").strip(),
+        chat_openai_models=_list("CHAT_OPENAI_MODELS", list(DEFAULT_OPENAI_MODELS)),
+        chat_gemini_base_url=os.environ.get(
+            "CHAT_GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai").strip().rstrip("/"),
+        chat_gemini_api_key=os.environ.get("CHAT_GEMINI_API_KEY", "").strip(),
+        chat_gemini_models=_list("CHAT_GEMINI_MODELS", list(DEFAULT_GEMINI_MODELS)),
+        chat_anthropic_base_url=os.environ.get(
+            "CHAT_ANTHROPIC_BASE_URL", "https://api.anthropic.com/v1").strip().rstrip("/"),
+        chat_anthropic_api_key=os.environ.get("CHAT_ANTHROPIC_API_KEY", "").strip(),
+        chat_anthropic_models=_list("CHAT_ANTHROPIC_MODELS", list(DEFAULT_ANTHROPIC_MODELS)),
     )
