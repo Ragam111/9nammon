@@ -72,8 +72,14 @@ class ToolError(Exception):
 
 
 def is_denied_name(name: str) -> bool:
-    """True when one path segment matches the denylist."""
+    """True when one path segment matches the denylist.
+
+    A colon is always refused. Windows allows it only for drives and NTFS alternate data
+    streams ("config.json:x.md"), and a stream would otherwise hide the base name from the check.
+    """
     low = name.lower()
+    if ":" in low:
+        return True
     return (
         low in DENIED_EXACT
         or low.startswith(DENIED_PREFIX)

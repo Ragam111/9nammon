@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-22 · MCP review fixes
+
+### Fixed
+- `mawf/mcp_server.py`: a path segment with a colon is refused as `denied`. Before, `config.json:x.md` (an NTFS alternate data stream) read the content of the denied `config.json`.
+- `tests/test_mcp_server.py`: regression test for alternate data streams, and a directory-junction test for links that point outside the root (Windows fallback when symlinks are refused).
+
 ## 2026-11-22 · MCP read-only server
 
 ### Added

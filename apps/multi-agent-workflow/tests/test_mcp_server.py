@@ -111,6 +111,22 @@ class McpServerTest(unittest.TestCase):
             self.write(name, "value")
             self.assert_refused("read_file", {"path": name}, "denied")
 
+    def test_alternate_data_stream_cannot_hide_a_denied_name(self) -> None:
+        # NTFS "name:stream" used to pass the denylist because only the whole segment was compared.
+        self.write("config.json", "{}")
+        self.write("sample.db", "x")
+        self.write("notes.md", "plain")
+        for base in ["config.json", "sample.db", "notes.md"]:
+            try:
+                with open(self.root / f"{base}:x.txt", "w", encoding="utf-8") as handle:
+                    handle.write("MARKER-ADS")
+            except OSError:
+                self.skipTest("this file system does not allow alternate data streams")
+        for path in ["config.json:x.txt", "CONFIG.JSON:x.md", "sample.db:x.txt",
+                     "notes.md:x.txt", "config.json::$DATA", "sub/config.json:x.txt"]:
+            self.assert_refused("read_file", {"path": path}, "denied")
+        self.assert_refused("list_dir", {"path": "config.json:x.txt"}, "denied")
+
     def test_list_dir_hides_denied_entries(self) -> None:
         for name in ["notes.md", "config.json", "a.db", ".env", "my_secret.md"]:
             self.write(name, "x")
@@ -132,6 +148,26 @@ class McpServerTest(unittest.TestCase):
             self.skipTest("symlinks need extra rights on this machine")
         self.assert_refused("read_file", {"path": "link.md"})
         self.assertEqual(self.payload("list_dir", {"path": ""})["entries"], [])
+
+    def test_directory_link_pointing_outside_is_refused(self) -> None:
+        # A directory junction on Windows needs no privilege, so it is tried when symlinks are refused.
+        outside_dir = self.base / "outside_dir"
+        outside_dir.mkdir()
+        (outside_dir / "plain-outside.md").write_text("outside", encoding="utf-8")
+        link = self.root / "link_out"
+        try:
+            os.symlink(outside_dir, link, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            if os.name != "nt":
+                self.skipTest("symlinks need extra rights on this machine")
+            done = subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(outside_dir)],
+                                  capture_output=True)
+            if done.returncode != 0 or not link.exists():
+                self.skipTest("cannot create a directory link on this machine")
+        self.assert_refused("read_file", {"path": "link_out/plain-outside.md"}, "invalid path or outside root")
+        self.assert_refused("list_dir", {"path": "link_out"}, "invalid path or outside root")
+        names = [entry["name"] for entry in self.payload("list_dir", {"path": ""})["entries"]]
+        self.assertNotIn("link_out", names)
 
     def test_binary_file_is_refused(self) -> None:
         self.write("data.txt", b"abc\x00def")
