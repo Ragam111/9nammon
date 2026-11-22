@@ -97,6 +97,27 @@ def parse_executor(raw: str) -> tuple[str, str]:
     return str(status), output
 
 
+@dataclass(frozen=True)
+class ExecutorStep:
+    """Either a tool call to run, or the final status and output of the task."""
+
+    call: dict[str, Any] | None = None
+    status: str = ""
+    output: str = ""
+
+
+def parse_executor_step(raw: str) -> ExecutorStep:
+    """Executor reply when file tools are enabled: {"tool": {...}} or {"status": ..., "output": ...}."""
+    data = parse_object(raw)
+    if "tool" in data:
+        call = data["tool"]
+        if not isinstance(call, dict) or not isinstance(call.get("action"), str):
+            raise ProtocolError('tool ต้องเป็น object ที่มี "action"')
+        return ExecutorStep(call=call)
+    status, output = parse_executor(raw)
+    return ExecutorStep(status=status, output=output)
+
+
 def parse_verdict(raw: str) -> tuple[bool, str]:
     """Harness judge reply: {"pass": true|false, "reason": "..."}."""
     data = parse_object(raw)

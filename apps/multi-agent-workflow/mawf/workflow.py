@@ -12,9 +12,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .files import FileSandbox, result_text
 from .models import ModelClient, ModelError
-from .protocol import ProtocolError, Task, parse_executor, parse_plan, parse_verdict
-from .roles import EXECUTOR_SYSTEM, HARNESS_JUDGE_SYSTEM, PLANNER_SYSTEM
+from .protocol import ProtocolError, Task, parse_executor, parse_executor_step, parse_plan, parse_verdict
+from .roles import EXECUTOR_SYSTEM, EXECUTOR_TOOLS_SYSTEM, HARNESS_JUDGE_SYSTEM, PLANNER_SYSTEM
 
 
 class WorkflowError(RuntimeError):
@@ -25,6 +26,7 @@ class WorkflowError(RuntimeError):
 class Settings:
     max_retries: int = 2  # extra Executor attempts for a task the judge rejects
     plan_retries: int = 1  # extra Planner attempts when the plan is not a valid graph
+    max_tool_steps: int = 6  # file tool calls the Executor may make in one attempt
 
 
 @dataclass
@@ -45,12 +47,14 @@ class Report:
 
 class Harness:
     def __init__(self, planner: ModelClient, executor: ModelClient, judge: ModelClient,
-                 settings: Settings | None = None, transcript: Path | None = None) -> None:
+                 settings: Settings | None = None, transcript: Path | None = None,
+                 sandbox: FileSandbox | None = None) -> None:
         self.planner = planner
         self.executor = executor
         self.judge = judge
         self.settings = settings or Settings()
         self.transcript = transcript
+        self.sandbox = sandbox  # None = Executor has no file tools (text only)
         self.events: list[dict[str, Any]] = []
 
     def run(self, goal: str) -> Report:
@@ -106,11 +110,31 @@ class Harness:
         return "\n\n".join(parts)
 
     def _execute(self, prompt: str) -> tuple[str, str]:
-        raw = self._call(self.executor, EXECUTOR_SYSTEM, [{"role": "user", "content": prompt}])
-        try:
-            return parse_executor(raw)
-        except ProtocolError as exc:
-            raise WorkflowError(f"Executor ตอบรูปแบบไม่ถูกต้อง: {exc}") from exc
+        if self.sandbox is None:
+            raw = self._call(self.executor, EXECUTOR_SYSTEM, [{"role": "user", "content": prompt}])
+            try:
+                return parse_executor(raw)
+            except ProtocolError as exc:
+                raise WorkflowError(f"Executor ตอบรูปแบบไม่ถูกต้อง: {exc}") from exc
+        return self._execute_with_tools(prompt)
+
+    def _execute_with_tools(self, prompt: str) -> tuple[str, str]:
+        """Executor may call file tools, one per reply, up to max_tool_steps. The last reply must be the result."""
+        messages = [{"role": "user", "content": prompt}]
+        for _step in range(self.settings.max_tool_steps + 1):
+            raw = self._call(self.executor, EXECUTOR_TOOLS_SYSTEM, messages)
+            try:
+                step = parse_executor_step(raw)
+            except ProtocolError as exc:
+                raise WorkflowError(f"Executor ตอบรูปแบบไม่ถูกต้อง: {exc}") from exc
+            if step.call is None:
+                return step.status, step.output
+            self._log("executor", "tool", json.dumps(step.call, ensure_ascii=False))
+            result = self.sandbox.run(step.call)
+            self._log("sandbox", "result", json.dumps(result, ensure_ascii=False)[:500])
+            messages += [{"role": "assistant", "content": raw},
+                         {"role": "user", "content": f"ผลจากเครื่องมือ: {result_text(result)}"}]
+        return "blocked", "ใช้เครื่องมือครบจำนวนที่กำหนดแล้วแต่ยังไม่ได้ผลสุดท้าย"
 
     def _judge(self, task: Task, output: str) -> tuple[bool, str]:
         content = f"acceptance: {task.acceptance}\n\nผลของ Executor:\n{output}"

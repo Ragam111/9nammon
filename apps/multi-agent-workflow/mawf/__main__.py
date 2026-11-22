@@ -7,6 +7,7 @@ import os
 import sys
 from pathlib import Path
 
+from .files import FileSandbox
 from .models import AnthropicClient, ModelError
 from .workflow import Harness, WorkflowError
 
@@ -19,11 +20,14 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="mawf", description="Harness, Planner and Executor workflow.")
     parser.add_argument("goal")
     parser.add_argument("--transcript", type=Path, default=None)
+    parser.add_argument("--workdir", type=Path, default=None,
+                        help="enable Executor file tools, confined to this folder (omit = text only)")
     args = parser.parse_args(argv)
     key = os.environ.get("ANTHROPIC_API_KEY", "")
+    sandbox = FileSandbox(args.workdir) if args.workdir else None
     try:
         harness = Harness(AnthropicClient(key, PLANNER_MODEL), AnthropicClient(key, EXECUTOR_MODEL),
-                          AnthropicClient(key, JUDGE_MODEL), transcript=args.transcript)
+                          AnthropicClient(key, JUDGE_MODEL), transcript=args.transcript, sandbox=sandbox)
         report = harness.run(args.goal)
     except (ModelError, WorkflowError) as exc:
         print(f"ผิดพลาด: {exc}", file=sys.stderr)

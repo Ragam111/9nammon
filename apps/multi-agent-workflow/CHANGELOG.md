@@ -11,5 +11,10 @@
 - `tests/test_workflow.py`, `tests/__init__.py`: 11 unit tests with fake models.
 - `README.md`, `CHANGELOG.md`.
 
+### Added in this change
+- `mawf/files.py`: `FileSandbox` with read, write and list only, confined to one folder. Rejects `..`, absolute and drive paths, symlinks out, and files over 200 KB.
+- Executor tool loop (`max_tool_steps`, default 6) and `--workdir` flag to enable the tools.
+- `tests/test_files.py`: sandbox and tool-loop tests. The symlink test is skipped when Windows does not allow symlinks.
+
 ### Not changed
 - Nothing outside `apps/multi-agent-workflow/` was modified.

@@ -11,7 +11,7 @@ Three roles with one job each:
 ```powershell
 # from apps/multi-agent-workflow
 $env:ANTHROPIC_API_KEY = "<your key>"   # never commit it
-python -m mawf "<goal>" --transcript runs\demo.jsonl
+python -m mawf "<goal>" --transcript runs\demo.jsonl --workdir work\demo
 ```
 
 Default models: Planner `claude-sonnet-5-5`, Executor `claude-haiku-5-5`, judge `claude-sonnet-5-5`.
@@ -27,6 +27,7 @@ Tests use fake models, so they need no key and no network.
 
 ## Limits
 
-- The Executor has no tools. It produces text deliverables only. It cannot edit files or run code. Adding tools needs a separate design with approval before any write action.
+- The Executor has three file tools only when `--workdir <folder>` is given: `read_file`, `write_file` (create or overwrite) and `list_dir`. All paths must stay inside that folder. `..`, absolute paths, drive paths and symlinks that point outside are refused. There is no delete, no shell and no code execution.
+- Without `--workdir` the Executor produces text only.
 - The Planner cannot replan after a block. A blocked task stops the run and the report says why.
 - Retries are limited by `max_retries` (default 2 extra attempts per task).
