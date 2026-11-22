@@ -23,7 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from . import admin, auth, history, oauth, quota
+from . import admin, auth, chat, history, oauth, quota
 from .clientip import parse_networks, resolve_client_ip
 from .config import Settings, load_settings
 from .db import Database
@@ -405,9 +405,19 @@ def client_ip(request: Request) -> str:
     return resolve_client_ip(peer, request.headers, request.app.state.trusted_nets)
 
 
+def _declared_length(request: Request) -> int:
+    """The Content-Length header as a number. A missing header counts as 0; a non-numeric one is a 400."""
+    raw = request.headers.get("content-length")
+    if raw is None:
+        return 0
+    if not (raw.isascii() and raw.isdigit()):  # rejects "abc", "-5", "1.5" and empty values
+        raise AppError("validation", "ค่า Content-Length ไม่ถูกต้อง", http_status=400)
+    return int(raw)
+
+
 def _check_request(request: Request, ctx: Context) -> None:
     """Body size, Origin for state-changing calls, and the per-IP rate limit."""
-    if int(request.headers.get("content-length") or 0) > MAX_BODY_BYTES:
+    if _declared_length(request) > MAX_BODY_BYTES:
         raise AppError("validation", "ข้อมูลที่ส่งมามีขนาดใหญ่เกินไป", http_status=413)
     if "content-length" not in request.headers and "transfer-encoding" in request.headers:
         # A chunked body has no size up front; browsers always send Content-Length for these calls.
@@ -485,10 +495,12 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
     app.state.trusted_nets = parse_networks(s.trusted_proxies)
     app.include_router(router)
     app.include_router(admin.router)  # /api/admin/*: admin role required (see admin.py)
+    app.include_router(chat.router)  # /api/chat/*: signed-in user, scoped to their own conversations
     _install_handlers(app)
     _install_middleware(app)
     app.add_middleware(CORSMiddleware, allow_origins=s.cors_origins, allow_credentials=True,
-                       allow_methods=["GET", "POST", "PUT", "DELETE"], allow_headers=["Content-Type", "X-Request-ID"])
+                       allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+                       allow_headers=["Content-Type", "X-Request-ID"])
     return app
 
 

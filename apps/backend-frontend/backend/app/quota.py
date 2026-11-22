@@ -144,5 +144,27 @@ def record_all(db: Database, user_id: int, buckets: list[Bucket], tokens: int) -
         record(db, user_id, tokens, window=bucket.key)
 
 
+def reserve_all(db: Database, user_id: int, buckets: list[Bucket], tokens: int) -> None:
+    """Hold `tokens` in every bucket before the upstream call, so concurrent requests see it.
+
+    Call this right after check_all with no await in between. settle_all turns the hold into the real charge.
+    """
+    record_all(db, user_id, buckets, tokens)
+
+
+def settle_all(db: Database, user_id: int, buckets: list[Bucket], reserved: int, charged: int) -> None:
+    """Replace a hold of `reserved` tokens with the `charged` amount in every bucket. A bucket never goes below zero."""
+    delta = charged - reserved
+    if delta == 0:
+        return
+    with db.session() as conn:
+        for bucket in buckets:
+            conn.execute(
+                "INSERT INTO usage (user_id, day, tokens) VALUES (?, ?, MAX(0, ?)) "
+                "ON CONFLICT (user_id, day) DO UPDATE SET tokens = MAX(0, tokens + ?)",
+                (user_id, bucket.key, delta, delta),
+            )
+
+
 def _thai_time(iso: str) -> str:
     return datetime.fromisoformat(iso).strftime("%d %b %H:%M")

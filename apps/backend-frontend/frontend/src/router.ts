@@ -1,11 +1,11 @@
 // Minimal hash router: #/, #/history, #/settings, #/onboarding, #/showcase. No dependency needed.
 import { useEffect, useState } from "react";
 
-export type Route = "workbench" | "history" | "settings" | "onboarding" | "showcase";
+export type Route = "workbench" | "history" | "settings" | "onboarding" | "showcase" | "chat";
 
 const ROUTES: Record<string, Route> = {
   "": "workbench", "#/": "workbench", "#/history": "history", "#/settings": "settings",
-  "#/onboarding": "onboarding", "#/showcase": "showcase",
+  "#/onboarding": "onboarding", "#/showcase": "showcase", "#/chat": "chat",
 };
 
 export const hrefFor = (route: Route): string => (route === "workbench" ? "#/" : `#/${route}`);
