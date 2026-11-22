@@ -181,6 +181,18 @@ class McpServerTest(unittest.TestCase):
         names = [entry["name"] for entry in self.payload("list_dir", {"path": ""})["entries"]]
         self.assertNotIn("innocent.txt", names)
 
+    def test_link_created_after_path_check_is_refused(self) -> None:
+        # Simulate the race: the pre-open link check sees a plain file, but the opened handle is a link.
+        secret = self.base / "outside-race.txt"
+        secret.write_text("MARKER-RACE", encoding="utf-8")
+        try:
+            os.link(secret, self.root / "race.txt")
+        except (OSError, NotImplementedError):
+            self.skipTest("hard links are not available on this file system")
+        from unittest import mock
+        with mock.patch("mawf.mcp_server._is_hard_linked", return_value=False):
+            self.assert_refused("read_file", {"path": "race.txt"}, "denied")
+
     def test_hard_link_to_denied_file_is_refused(self) -> None:
         self.write("config.json", '{"key": "value"}')
         try:

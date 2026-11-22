@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any, Sequence
@@ -236,6 +237,10 @@ class McpServer:
         if _is_hard_linked(target):
             raise ToolError("denied")
         with target.open("rb") as handle:
+            # Check the link count on the opened handle: a link created after the path check
+            # above would otherwise be read as outside content (time-of-check to time-of-use).
+            if os.fstat(handle.fileno()).st_nlink > 1:
+                raise ToolError("denied")
             head = handle.read(max_bytes + 1)
         if b"\x00" in head[:BINARY_PROBE_BYTES]:
             raise ToolError("binary file refused")
