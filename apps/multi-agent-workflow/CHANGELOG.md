@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-11-22 · MCP read-only server
+
+### Added
+- `mawf/mcp_server.py`: read-only MCP server over stdio (JSON-RPC 2.0, newline-delimited) for one folder passed with `--root`. Version negotiation, `ping`, `tools/list`, `tools/call`. Exactly two tools: `list_dir` and `read_file`.
+- Allowlist for `read_file` (`.md .txt .csv .log .json .jsonl`), size cap via `max_bytes` with `truncated`, binary refusal, and a denylist for secret-like and database files, applied to every path segment.
+- `tests/test_mcp_server.py`: protocol, path-refusal, denylist, truncation, binary and subprocess tests.
+- README section "MCP server (read-only)".
+
+### Not changed
+- `mawf/files.py` is reused as is. No new path checker was added.
+- `mawf/__main__.py` and `mawf/workflow.py` were not modified.
+
 ## 2026-11-22 · First version
 
 ### Added
