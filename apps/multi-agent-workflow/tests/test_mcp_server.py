@@ -169,6 +169,26 @@ class McpServerTest(unittest.TestCase):
         names = [entry["name"] for entry in self.payload("list_dir", {"path": ""})["entries"]]
         self.assertNotIn("link_out", names)
 
+    def test_hard_link_to_outside_file_is_refused(self) -> None:
+        # A hard link aliases the outside file's bytes under an allowed name; the path check alone cannot see it.
+        secret = self.base / "outside-secret.txt"
+        secret.write_text("MARKER-HARDLINK", encoding="utf-8")
+        try:
+            os.link(secret, self.root / "innocent.txt")
+        except (OSError, NotImplementedError):
+            self.skipTest("hard links are not available on this file system")
+        self.assert_refused("read_file", {"path": "innocent.txt"}, "denied")
+        names = [entry["name"] for entry in self.payload("list_dir", {"path": ""})["entries"]]
+        self.assertNotIn("innocent.txt", names)
+
+    def test_hard_link_to_denied_file_is_refused(self) -> None:
+        self.write("config.json", '{"key": "value"}')
+        try:
+            os.link(self.root / "config.json", self.root / "readme.md")
+        except (OSError, NotImplementedError):
+            self.skipTest("hard links are not available on this file system")
+        self.assert_refused("read_file", {"path": "readme.md"}, "denied")
+
     def test_binary_file_is_refused(self) -> None:
         self.write("data.txt", b"abc\x00def")
         self.assert_refused("read_file", {"path": "data.txt"}, "binary file refused")

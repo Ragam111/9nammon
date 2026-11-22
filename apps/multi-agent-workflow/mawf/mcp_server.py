@@ -88,6 +88,11 @@ def is_denied_name(name: str) -> bool:
     )
 
 
+def _is_hard_linked(path: Path) -> bool:
+    """A file with more than one directory entry may alias content outside the root. Refuse it."""
+    return path.stat().st_nlink > 1
+
+
 def _error(req_id: Any, code: int, message: str) -> dict[str, Any]:
     return {"jsonrpc": "2.0", "id": req_id, "error": {"code": code, "message": message}}
 
@@ -228,6 +233,8 @@ class McpServer:
             raise ToolError("not a file")
         if not target.is_file():
             raise ToolError("not found")
+        if _is_hard_linked(target):
+            raise ToolError("denied")
         with target.open("rb") as handle:
             head = handle.read(max_bytes + 1)
         if b"\x00" in head[:BINARY_PROBE_BYTES]:
@@ -253,7 +260,7 @@ class McpServer:
                 continue  # denied or escaping entries are hidden completely
             if target.is_dir():
                 entries.append({"name": child.name, "type": "dir"})
-            elif target.is_file():
+            elif target.is_file() and not _is_hard_linked(target):
                 entries.append({"name": child.name, "type": "file", "size": target.stat().st_size})
         return {"path": self._rel(base), "entries": entries}
 
