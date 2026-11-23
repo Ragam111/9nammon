@@ -5,6 +5,7 @@ Ollama and the cloud model are both faked with httpx.MockTransport; no test open
 from __future__ import annotations
 
 import io
+import json
 import unittest
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -173,6 +174,16 @@ class LocalSendTest(GuardedTestCase):
         text = log.getvalue()
         self.assertNotIn(SECRET_TEXT, text)
         self.assertIn('"provider": "ollama_local"', text)
+
+    def test_local_turn_log_has_no_cloud_cost_estimate(self) -> None:
+        # COST_PER_1K_TOKENS is the cloud rate; a local turn costs nothing, so its log line must say 0.
+        log = io.StringIO()
+        with client_for(ollama(), log=log, cost_per_1k_tokens=0.5) as client:
+            conv = new_conversation(client)
+            self.assertEqual(send(client, conv).status_code, 200)
+        lines = [json.loads(line) for line in log.getvalue().splitlines() if '"ollama_local"' in line]
+        self.assertTrue(lines, "no log line for the local turn")
+        self.assertEqual(lines[-1]["cost_estimate"], 0)
 
     def test_every_local_request_targets_loopback_11434(self) -> None:
         seen: list[httpx.Request] = []
