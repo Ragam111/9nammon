@@ -32,6 +32,14 @@ CREATE TABLE IF NOT EXISTS usage (
     tokens INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (user_id, day)
 );
+CREATE TABLE IF NOT EXISTS quota_holds (
+    hold_id TEXT NOT NULL,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    bucket_key TEXT NOT NULL,
+    tokens INTEGER NOT NULL,
+    expires_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS quota_holds_user_key ON quota_holds (user_id, bucket_key);
 CREATE TABLE IF NOT EXISTS runs (
     id TEXT PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

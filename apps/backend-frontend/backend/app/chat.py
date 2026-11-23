@@ -470,17 +470,17 @@ async def send(conv_id: str, body: MessageIn, request: Request,
     need = estimate_tokens(_joined(context)) + cap
     # Check and hold in one synchronous step: no await runs between them, so a concurrent send sees the hold.
     quota.check_all(ctx.db, user.id, buckets, need=need)
-    quota.reserve_all(ctx.db, user.id, buckets, need)
+    hold = quota.reserve_all(ctx.db, user.id, buckets, need)
     try:
         start_turn(ctx.db, user.id, conv_id, content, ref.id, first_turn=not history)
     except BaseException:  # nothing was sent upstream: give the whole hold back before failing
-        quota.settle_all(ctx.db, user.id, buckets, reserved=need, charged=0)
+        quota.settle_all(ctx.db, user.id, buckets, hold, charged=0)
         raise
     message_id = _new_id("msg")
     try:
         upstream = await _open_stream(ctx, ref, context, cap)
     except BaseException as exc:  # no answer was produced: give the hold back, even if the request was cancelled
-        quota.settle_all(ctx.db, user.id, buckets, reserved=need, charged=0)
+        quota.settle_all(ctx.db, user.id, buckets, hold, charged=0)
         if not isinstance(exc, Exception):
             raise
         err = from_exception(exc)
@@ -488,7 +488,7 @@ async def send(conv_id: str, body: MessageIn, request: Request,
         raise err from exc
     result = StreamResult()
     stream = _relay(ctx, user.id, conv_id, ref.provider.name, ref.id, iter_text(upstream, result, cap * 8), result,
-                    upstream.aclose, _joined(context), started, request.state.request_id, buckets, message_id, need)
+                    upstream.aclose, _joined(context), started, request.state.request_id, buckets, message_id, hold)
     return StreamingResponse(stream, media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
@@ -507,17 +507,17 @@ def _send_local(ctx: Context, request: Request, user_id: int, conv_id: str, mode
     need = estimate_tokens(_joined(context)) + cap
     # Local runs have their own buckets; they never touch the cloud ones. Check and hold in one synchronous step.
     quota.check_all(ctx.db, user_id, buckets, need=need)
-    quota.reserve_all(ctx.db, user_id, buckets, need)
+    hold = quota.reserve_all(ctx.db, user_id, buckets, need)
     try:
         start_turn(ctx.db, user_id, conv_id, content, model_id, first_turn=not history)
     except BaseException:  # nothing was sent to Ollama: give the whole hold back before failing
-        quota.settle_all(ctx.db, user_id, buckets, reserved=need, charged=0)
+        quota.settle_all(ctx.db, user_id, buckets, hold, charged=0)
         raise
     message_id = _new_id("msg")
     result = StreamResult()
     deltas = _record_text(local.stream(context, model_id, cap), result)
     stream = _relay(ctx, user_id, conv_id, LOCAL_PROVIDER_NAME, model_id, deltas, result, _noop, _joined(context),
-                    started, request.state.request_id, buckets, message_id, need)
+                    started, request.state.request_id, buckets, message_id, hold)
     return StreamingResponse(stream, media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
@@ -543,7 +543,7 @@ def _joined(context: list[dict[str, str]]) -> str:
 async def _relay(ctx: Context, user_id: int, conv_id: str, provider: str, model_id: str,
                  deltas: AsyncIterator[str], result: StreamResult, closer: Callable[[], Awaitable[None]],
                  context_text: str, started: float, request_id: str, buckets: list[quota.Bucket],
-                 message_id: str, reserved: int) -> AsyncIterator[str]:
+                 message_id: str, hold: str) -> AsyncIterator[str]:
     """Forward deltas as SSE, then store the answer. Keeps partial text when the stream fails part way.
 
     The start event is inside the try, so a client that leaves at any yield still reaches _settle.
@@ -564,7 +564,7 @@ async def _relay(ctx: Context, user_id: int, conv_id: str, provider: str, model_
         if not completed and err is None:  # the browser went away before the end
             err = AppError("unknown", "การเชื่อมต่อถูกปิดก่อนได้คำตอบครบ")
         stored_id, usage = _settle(ctx, user_id, conv_id, provider, model_id, message_id, context_text, result,
-                                   err, started, request_id, buckets, reserved)
+                                   err, started, request_id, buckets, hold)
         await deltas.aclose()  # the generator may never have started, so also close the response directly
         await closer()
     if err is None:
@@ -576,7 +576,7 @@ async def _relay(ctx: Context, user_id: int, conv_id: str, provider: str, model_
 
 def _settle(ctx: Context, user_id: int, conv_id: str, provider: str, model_id: str, message_id: str,
             context_text: str, result: StreamResult, err: AppError | None, started: float, request_id: str,
-            buckets: list[quota.Bucket], reserved: int) -> tuple[str | None, dict[str, int]]:
+            buckets: list[quota.Bucket], hold: str) -> tuple[str | None, dict[str, int]]:
     """Store the answer if there is any text, settle the quota hold like /api/run, and write one log line.
 
     A local turn has no buckets, so no cloud usage row is touched for it.
@@ -589,7 +589,7 @@ def _settle(ctx: Context, user_id: int, conv_id: str, provider: str, model_id: s
     charged = tokens_in + tokens_out if (err is None or text) else 0
     # Settle before saving the answer, so a failed save cannot leave the hold in place.
     if buckets:
-        quota.settle_all(ctx.db, user_id, buckets, reserved=reserved, charged=charged)
+        quota.settle_all(ctx.db, user_id, buckets, hold, charged=charged)
     if text:  # never store an empty assistant message
         status = "complete" if err is None and not result.truncated else "partial"
         if finish_turn(ctx.db, user_id, conv_id, message_id, text, status):  # False: conversation deleted mid-answer
