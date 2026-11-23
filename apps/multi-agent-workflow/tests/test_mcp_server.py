@@ -271,5 +271,35 @@ class McpServerTest(unittest.TestCase):
         self.assertEqual(len(second["result"]["tools"]), 2)
 
 
+    def test_directory_swapped_to_a_link_after_the_check_is_refused(self) -> None:
+        # Time-of-check to time-of-use: the path is checked while "sub" is a real folder, then "sub" is
+        # replaced by a junction to a folder outside the root before the file is opened.
+        from unittest import mock
+
+        from mawf import mcp_server
+
+        sub = self.root / "sub"
+        sub.mkdir()
+        (sub / "note.md").write_text("MARKER-INSIDE", encoding="utf-8")
+        outside_dir = self.base / "outside_dir"
+        outside_dir.mkdir()
+        (outside_dir / "note.md").write_text("MARKER-OUTSIDE", encoding="utf-8")
+        real_check = McpServer._check
+
+        def check_then_swap(server: McpServer, rel: str) -> Path:
+            target = real_check(server, rel)
+            sub.rename(self.base / "sub_real")
+            done = subprocess.run(["cmd", "/c", "mklink", "/J", str(sub), str(outside_dir)], capture_output=True)
+            if done.returncode != 0 and not sub.exists():
+                self.skipTest("cannot create a directory link on this machine")
+            return target
+
+        with mock.patch.object(mcp_server.McpServer, "_check", check_then_swap):
+            reply = self.call("read_file", {"path": "sub/note.md"})
+        text = json.dumps(reply, ensure_ascii=False)
+        self.assertNotIn("MARKER-OUTSIDE", text)
+        self.assertTrue(reply["isError"], text)
+
+
 if __name__ == "__main__":
     unittest.main()

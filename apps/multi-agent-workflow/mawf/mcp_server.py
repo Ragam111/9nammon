@@ -221,6 +221,16 @@ class McpServer:
             raise ToolError("denied")
         return target
 
+    def _confirm_inside(self, target: Path) -> Path:
+        """Resolve the path again, right before use. Refuse it if it now points outside the root."""
+        try:
+            real = target.resolve(strict=True)
+        except OSError:
+            raise ToolError("not found") from None
+        if not real.is_relative_to(self.sandbox.root):
+            raise ToolError("denied")
+        return real
+
     def _rel(self, target: Path) -> str:
         return target.relative_to(self.sandbox.root).as_posix()
 
@@ -239,7 +249,13 @@ class McpServer:
         with target.open("rb") as handle:
             # Check the link count on the opened handle: a link created after the path check
             # above would otherwise be read as outside content (time-of-check to time-of-use).
-            if os.fstat(handle.fileno()).st_nlink > 1:
+            opened = os.fstat(handle.fileno())
+            if opened.st_nlink > 1:
+                raise ToolError("denied")
+            # A folder on the path may have been swapped for a link after the check. The opened file must be
+            # the same file that the path resolves to now, and that file must still be inside the root.
+            now = os.stat(self._confirm_inside(target))
+            if (now.st_dev, now.st_ino) != (opened.st_dev, opened.st_ino):
                 raise ToolError("denied")
             head = handle.read(max_bytes + 1)
         if b"\x00" in head[:BINARY_PROBE_BYTES]:
@@ -255,6 +271,7 @@ class McpServer:
         base = self._check(rel or ".")
         if not base.is_dir():
             raise ToolError("not a directory")
+        base = self._confirm_inside(base)  # a swapped folder must not be listed from outside the root
         entries: list[dict[str, Any]] = []
         for child in sorted(base.iterdir(), key=lambda p: p.name):
             if is_denied_name(child.name):
