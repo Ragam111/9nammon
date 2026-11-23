@@ -24,6 +24,7 @@ from . import auth, quota
 from .config import Settings
 from .db import Database
 from .errors import AppError, from_exception, is_retryable_exception
+from .local_provider import ModelStatus
 from .logging_json import estimate_cost, log_event
 from .model_client import StreamResult, estimate_tokens, iter_text
 from .retry import with_retry
@@ -304,10 +305,34 @@ def _sse(event: str, data: dict[str, Any]) -> str:
 
 @router.get("/models")
 def list_models(request: Request, _: auth.User = Depends(_current_user)) -> dict[str, Any]:
-    """Every model with its provider, and whether that provider has a key. Keys are never shown."""
+    """Cloud models with their key status. Keys are never shown.
+
+    Local models are not listed here: find_model (the send path) accepts cloud ids only, so a listed local
+    model could not be sent. Their status is reported by GET /api/chat/local/health until the send path
+    routes local models through OllamaLocalProvider.stream.
+    """
     refs = catalog(_ctx(request).settings)
-    return {"models": [{"id": r.id, "provider": r.provider.name, "label": r.id, "configured": r.configured}
-                       for r in refs]}
+    return {"models": [
+        {
+            "id": r.id,
+            "provider": r.provider.name,
+            "label": r.id,
+            "configured": r.configured,
+            "provider_kind": "cloud",
+            "status": (ModelStatus.READY if r.configured else ModelStatus.NOT_CONFIGURED).value,
+        }
+        for r in refs
+    ]}
+
+
+@router.get("/local/health")
+async def local_health(request: Request, _: auth.User = Depends(_current_user)) -> dict[str, Any]:
+    """Whether the local Ollama answers, and which models it has. Takes no address: the base URL is fixed."""
+    ctx = _ctx(request)
+    if ctx.local is None:
+        return {"reachable": False, "models": []}
+    reachable, names = await ctx.local.installed_models()
+    return {"reachable": reachable, "models": names}
 
 
 @router.get("/conversations")
