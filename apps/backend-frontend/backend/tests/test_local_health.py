@@ -15,7 +15,7 @@ from tests.netguard import GuardedTestCase
 from tests.test_local_routes import LOCAL_MODEL, app_client, tags
 
 HEALTH = "/api/chat/local/health"
-HEALTH_KEYS = {"reachable", "models", "available_ram_gb", "models_detail"}
+HEALTH_KEYS = {"enabled", "reachable", "models", "available_ram_gb", "models_detail"}
 DETAIL_KEYS = {"id", "installed", "required_ram_gb"}
 ROW_KEYS = {"id", "provider", "label", "configured", "provider_kind", "status", "required_ram_gb", "available_ram_gb"}
 CATALOG_IDS = [spec.id for spec in DEFAULT_LOCAL_CATALOG]
@@ -31,6 +31,19 @@ def assert_detail_shape(test: GuardedTestCase, detail: list[dict[str, Any]]) -> 
         test.assertEqual(set(entry), DETAIL_KEYS)
         test.assertIsInstance(entry["installed"], bool)
         test.assertIsInstance(entry["required_ram_gb"], float)
+
+
+class LocalHealthEnabledTest(GuardedTestCase):
+    def test_disabled_feature_reports_enabled_false_and_unreachable(self) -> None:
+        # Feature off: the payload must say "disabled", not look like a missing Ollama.
+        with app_client(local=None) as client:
+            body = client.get(HEALTH).json()
+            self.assertIs(body["enabled"], False)
+            self.assertIs(body["reachable"], False)
+
+    def test_enabled_feature_reports_enabled_true(self) -> None:
+        with app_client(local=tags(LOCAL_MODEL)) as client:
+            self.assertIs(client.get(HEALTH).json()["enabled"], True)
 
 
 class LocalHealthPayloadTest(GuardedTestCase):

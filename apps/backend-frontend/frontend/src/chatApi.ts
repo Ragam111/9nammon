@@ -36,6 +36,8 @@ export async function listChatModels(): Promise<ChatModel[]> {
 // Local (Ollama) health for onboarding. Optional fields stay optional so an older payload still parses.
 export type LocalModelDetail = { id: string; installed: boolean; required_ram_gb: number };
 export type LocalHealth = {
+  /** False when the local feature is switched off on the server. Missing on older servers. */
+  enabled?: boolean;
   reachable: boolean;
   models: string[];
   available_ram_gb?: number | null;

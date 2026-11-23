@@ -108,6 +108,8 @@ export const TH = {
   "onboarding.outcome.ready": "พร้อมใช้งาน — มีโมเดลในเครื่องที่ติดตั้งแล้วและ RAM เพียงพอ",
   "onboarding.outcome.not_installed": "ยังไม่ได้ติดตั้งโมเดลในเครื่อง — ติดตั้งด้วยคำสั่ง ollama pull {id}",
   "onboarding.outcome.not_enough_memory": "RAM ไม่พอสำหรับโมเดลที่ติดตั้งไว้ — ต้องการอย่างน้อย {required} GB",
+  "onboarding.outcome.disabled": "ยังไม่ได้เปิดใช้โมเดลในเครื่องบน server — ไม่ต้องติดตั้ง Ollama ถ้าไม่ได้ใช้",
+  "onboarding.outcome.badge.disabled": "ยังไม่เปิดใช้งาน",
   "onboarding.outcome.not_found": "ไม่พบ Ollama — ตรวจสอบว่า Ollama กำลังทำงานอยู่",
   "onboarding.outcome.badge.not_found": "ติดต่อ Ollama ไม่ได้",
   "onboarding.ram.line": "ต้องการ {required} GB · เครื่องมีว่าง {available} GB",
