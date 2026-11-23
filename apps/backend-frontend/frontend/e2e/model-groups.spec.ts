@@ -61,6 +61,12 @@ test("reasonFor gives null for ready rows and a reason for every other status", 
   expect(reasonFor(cloudNoKey)).toBe("ยังไม่ได้ตั้งค่า API key บน server");
 });
 
+test("reasonFor for a local row that is not configured does not mention the API key", () => {
+  const localOff: ChatModel = { ...localMissing, id: "off:1b", status: "not_configured" };
+  expect(reasonFor(localOff)).toBe("ยังไม่ได้เปิดใช้โมเดลในเครื่องบน server");
+  expect(reasonFor(localOff)).not.toContain("API key");
+});
+
 test("optionLabel appends the status text to the model label", () => {
   expect(optionLabel(localMissing)).toBe("Qwen 1.5B (ยังไม่ได้ติดตั้ง)");
   expect(optionLabel(cloudOk)).toBe("Claude A (พร้อมใช้งาน)");

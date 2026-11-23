@@ -51,6 +51,7 @@ export const TH = {
   "chat.status.reason.notInstalled": "ติดตั้งโมเดลด้วยคำสั่ง ollama pull {label}",
   "chat.status.reason.unreachable": "ติดต่อ Ollama ไม่ได้ — ตรวจสอบว่า Ollama กำลังทำงานอยู่",
   "chat.status.reason.notConfigured": "ยังไม่ได้ตั้งค่า API key บน server",
+  "chat.status.reason.localNotConfigured": "ยังไม่ได้เปิดใช้โมเดลในเครื่องบน server",
   "chat.provider.claude": "Claude",
   "chat.provider.gemini": "Gemini",
   "chat.provider.gpt": "GPT",
