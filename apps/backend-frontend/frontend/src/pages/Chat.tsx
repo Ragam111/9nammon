@@ -251,6 +251,8 @@ export function Chat({ onAuthLost }: { onAuthLost: () => void }) {
 
   const input = activeId ? (drafts[activeId] ?? "") : "";
   const usable = models.some(isSelectable);
+  // The composer follows the conversation's own model: another ready model in the list does not unblock it.
+  const selectedReady = models.some((m) => m.id === model && isSelectable(m));
   const hasCloud = models.some((m) => kindOf(m) === "cloud");
   const sorted = useMemo(
     () => conversations && [...conversations].sort((a, b) => (Date.parse(b.updated_at) || 0) - (Date.parse(a.updated_at) || 0)),
@@ -497,7 +499,7 @@ export function Chat({ onAuthLost }: { onAuthLost: () => void }) {
   };
 
   const submit = () => {
-    if (!activeId || streaming || !usable) return;
+    if (!activeId || streaming || !selectedReady) return;
     const content = input.trim();
     if (!content) {
       setComposerError(tr("chat.composer.empty"));
@@ -659,7 +661,7 @@ export function Chat({ onAuthLost }: { onAuthLost: () => void }) {
             onClick={toggleSidebar}
             className="min-h-11 min-w-11 rounded-sm border border-line bg-surface px-3 text-sm text-fg lg:hidden">{tr("chat.sidebar.open")}</button>
           <h1 id="chat-heading" className="mr-auto min-w-0 truncate text-xl font-semibold">{headerTitle}</h1>
-          <ModelPicker id={pickerId} models={models} value={model} onChange={setModel} />
+          <ModelPicker key={activeId ?? "none"} id={pickerId} models={models} value={model} onChange={setModel} />
         </div>
 
         {models.length > 0 && !usable && (hasCloud ? (
@@ -700,8 +702,8 @@ export function Chat({ onAuthLost }: { onAuthLost: () => void }) {
           <label htmlFor={inputId} className="sr-only">{tr("chat.composer.label")}</label>
           <div className="flex w-full min-w-0 flex-1 flex-col gap-1">
             <textarea id={inputId} ref={composerRef} value={input} onChange={(e) => setInput(e.target.value)}
-              onKeyDown={onComposerKey} disabled={!activeId || !usable} rows={2}
-              placeholder={usable ? tr("chat.composer.placeholder") : tr("chat.composer.blocked")}
+              onKeyDown={onComposerKey} disabled={!activeId || !selectedReady} rows={2}
+              placeholder={selectedReady ? tr("chat.composer.placeholder") : tr("chat.composer.blocked")}
               aria-invalid={composerError ? true : undefined}
               aria-describedby={composerError ? errorId : undefined}
               className="min-h-12 w-full resize-none rounded-sm border border-line bg-surface px-3 py-2 text-sm text-fg placeholder:text-muted disabled:opacity-60" />
@@ -711,7 +713,7 @@ export function Chat({ onAuthLost }: { onAuthLost: () => void }) {
             {streaming ? (
               <Button variant="danger" onClick={stop} aria-label={tr("chat.stop.aria")}>{tr("chat.stop")}</Button>
             ) : (
-              <Button variant="primary" type="submit" disabled={!activeId || !usable}>{tr("chat.send")}</Button>
+              <Button variant="primary" type="submit" disabled={!activeId || !selectedReady}>{tr("chat.send")}</Button>
             )}
           </div>
         </form>

@@ -25,15 +25,18 @@ const LOCAL_ONLY = [
   },
 ];
 
-async function mockApi(page: Page, models: unknown[]): Promise<void> {
+type MockConv = { id: string; title: string; model: string; updated_at: string };
+
+async function mockApi(page: Page, models: unknown[], convs: MockConv[] = [CONV]): Promise<void> {
   const json = (route: Route, body: unknown) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
   await page.route("**/api/**", (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path === "/api/auth/me") return json(route, { user: USER });
     if (path === "/api/settings/key") return json(route, { configured: true, last4: "7788", source: "stored" });
     if (path === "/api/chat/models") return json(route, { models });
-    if (path === "/api/chat/conversations") return json(route, { conversations: [CONV] });
-    if (path === `/api/chat/conversations/${CONV.id}`) return json(route, { ...CONV, messages: [] });
+    if (path === "/api/chat/conversations") return json(route, { conversations: convs });
+    const detail = convs.find((c) => path === `/api/chat/conversations/${c.id}`);
+    if (detail) return json(route, { ...detail, messages: [] });
     return route.fulfill({ status: 404, contentType: "application/json", body: "{\"error\":{\"type\":\"unknown\",\"message\":\"x\",\"retryable\":false}}" });
   });
 }
@@ -75,4 +78,36 @@ test("only local rows, none ready: the neutral banner shows and the composer is 
   await expect(page.getByLabel("พิมพ์ข้อความ")).toBeDisabled();
   const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
   expect(scrollWidth).toBeLessThanOrEqual(375);
+});
+
+const SECOND_CONV: MockConv = { id: "c-2", title: "สนทนาที่สอง", model: "claude-a", updated_at: "2026-11-20T09:00:00Z" };
+const NOT_READY_CONV: MockConv = { id: "c-3", title: "โมเดลยังไม่พร้อม", model: "gpt-a", updated_at: "2026-11-20T08:00:00Z" };
+const QWEN_REASON = "ติดตั้งโมเดลด้วยคำสั่ง ollama pull qwen2.5-coder:1.5b";
+
+// P3 minor 1: a refused pick's reason must not follow the user into another conversation.
+test("a refused pick's reason clears when the user opens another conversation", async ({ page }) => {
+  await mockApi(page, MIXED, [CONV, SECOND_CONV]);
+  await page.goto("/#/chat");
+  const select = page.getByLabel("เลือกโมเดล");
+  await expect(select).toBeVisible();
+  await select.evaluate((el: HTMLSelectElement, value: string) => {
+    el.value = value;
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+  }, "qwen2.5-coder:1.5b");
+  await expect(page.getByText(QWEN_REASON)).toBeVisible();
+
+  await page.getByRole("button", { name: "เปิดเมนู" }).click(); // the history drawer is closed at 375px
+  await page.locator(`button[title="${SECOND_CONV.title}"]`).click();
+  await expect(page.getByText(QWEN_REASON)).toBeHidden();
+  await expect(select).toHaveValue("claude-a");
+});
+
+// P3 minor 2: the composer must be blocked when the conversation's own model is not ready,
+// even if some other model in the list is ready.
+test("composer is blocked when the open conversation's model is not ready", async ({ page }) => {
+  await mockApi(page, MIXED, [NOT_READY_CONV]);
+  await page.goto("/#/chat");
+  await expect(page.locator(`button[title="${NOT_READY_CONV.title}"][aria-current="page"]`)).toHaveCount(1); // opens by itself
+  await expect(page.getByLabel("พิมพ์ข้อความ")).toBeDisabled();
+  await expect(page.getByRole("button", { name: "ส่ง" })).toBeDisabled();
 });
