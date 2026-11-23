@@ -471,7 +471,11 @@ async def send(conv_id: str, body: MessageIn, request: Request,
     # Check and hold in one synchronous step: no await runs between them, so a concurrent send sees the hold.
     quota.check_all(ctx.db, user.id, buckets, need=need)
     quota.reserve_all(ctx.db, user.id, buckets, need)
-    start_turn(ctx.db, user.id, conv_id, content, ref.id, first_turn=not history)
+    try:
+        start_turn(ctx.db, user.id, conv_id, content, ref.id, first_turn=not history)
+    except BaseException:  # nothing was sent upstream: give the whole hold back before failing
+        quota.settle_all(ctx.db, user.id, buckets, reserved=need, charged=0)
+        raise
     message_id = _new_id("msg")
     try:
         upstream = await _open_stream(ctx, ref, context, cap)
@@ -570,16 +574,17 @@ def _settle(ctx: Context, user_id: int, conv_id: str, provider: str, model_id: s
     """
     text = result.text
     stored_id: str | None = None
-    if text:  # never store an empty assistant message
-        status = "complete" if err is None and not result.truncated else "partial"
-        if finish_turn(ctx.db, user_id, conv_id, message_id, text, status):  # False: conversation deleted mid-answer
-            stored_id = message_id
     tokens_in = result.tokens_in or estimate_tokens(context_text)
     tokens_out = result.tokens_out or estimate_tokens(text)
     # A failed run with no output is not charged, the same rule as /api/run: the hold is given back in full.
     charged = tokens_in + tokens_out if (err is None or text) else 0
+    # Settle before saving the answer, so a failed save cannot leave the hold in place.
     if buckets:
         quota.settle_all(ctx.db, user_id, buckets, reserved=reserved, charged=charged)
+    if text:  # never store an empty assistant message
+        status = "complete" if err is None and not result.truncated else "partial"
+        if finish_turn(ctx.db, user_id, conv_id, message_id, text, status):  # False: conversation deleted mid-answer
+            stored_id = message_id
     if err is None:
         log_status = "partial" if result.truncated else "ok"
     else:

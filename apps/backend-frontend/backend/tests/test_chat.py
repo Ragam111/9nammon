@@ -512,5 +512,32 @@ class RequestGuardTest(unittest.TestCase):
             self.assertEqual((detail["title"], detail["messages"]), ("สนทนาใหม่", []))
 
 
+class QuotaHoldReleaseTests(unittest.TestCase):
+    """A hold taken before the upstream call must be given back on every failure path."""
+
+    def test_hold_is_released_when_the_turn_cannot_be_started(self) -> None:
+        model = FakeModel([ok_stream(["x"])])
+        with chat_client(model, max_output_tokens=2) as (client, _):
+            sign_in(client)
+            conv_id = new_conversation(client)
+            with mock.patch("app.chat.start_turn", side_effect=RuntimeError("db gone")):
+                res = send(client, conv_id, "hi")
+            self.assertGreaterEqual(res.status_code, 500)
+            self.assertEqual(_used_in_window(client), 0)
+
+    def test_hold_is_settled_even_when_saving_the_answer_fails(self) -> None:
+        model = FakeModel([ok_stream(["x"])])
+        with chat_client(model, max_output_tokens=50) as (client, _):  # a large cap makes the hold clearly bigger
+            sign_in(client)
+            conv_id = new_conversation(client)
+            with mock.patch("app.chat.finish_turn", side_effect=RuntimeError("write failed")):
+                try:
+                    send(client, conv_id, "hi")
+                except RuntimeError:
+                    pass
+            # The reserved amount is the input estimate plus the 50-token cap; the charged amount is a few tokens.
+            self.assertLess(_used_in_window(client), 50)
+
+
 if __name__ == "__main__":
     unittest.main()
