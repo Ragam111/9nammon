@@ -10,7 +10,7 @@ import json
 import re
 import secrets
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, TextIO
@@ -29,6 +29,7 @@ from .config import Settings, load_settings
 from .db import Database
 from .errors import AppError, from_exception
 from .keystore import KeyStore
+from .local_provider import DEFAULT_LOCAL_CATALOG, OllamaLocalProvider, system_available_ram_gb
 from .logging_json import estimate_cost, log_event
 from .model_client import StreamResult, estimate_tokens, iter_text, list_models, open_stream, require_key
 from .ratelimit import RateLimiter
@@ -47,6 +48,7 @@ class Context:
     limiter: RateLimiter
     http: httpx.AsyncClient
     log_stream: TextIO | None = None
+    local: OllamaLocalProvider | None = None  # the Ollama adapter on 127.0.0.1; see local_provider.py
 
 
 def ctx_of(request: Request) -> Context:
@@ -479,16 +481,29 @@ def _install_handlers(app: FastAPI) -> None:
 
 
 def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTransport | None = None,
-               log_stream: TextIO | None = None) -> FastAPI:
-    """Build the app. Tests pass `transport` to fake the model and `log_stream` to read logs."""
+               log_stream: TextIO | None = None, *,
+               local_transport: httpx.AsyncBaseTransport | None = None,
+               local_ram_gb: Callable[[], float | None] | None = None) -> FastAPI:
+    """Build the app. Tests pass `transport` to fake the model, `log_stream` to read logs, and
+    `local_transport` / `local_ram_gb` to fake the local Ollama and its free memory."""
     s = settings or load_settings()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         timeout = httpx.Timeout(s.model_timeout_s, connect=10.0)
-        async with httpx.AsyncClient(timeout=timeout, transport=transport) as client:
+        local_timeout = httpx.Timeout(5.0)
+        async with (
+            httpx.AsyncClient(timeout=timeout, transport=transport) as client,
+            httpx.AsyncClient(timeout=local_timeout, transport=local_transport) as local_client,
+        ):
+            local = OllamaLocalProvider(
+                client=local_client,
+                catalog=DEFAULT_LOCAL_CATALOG,
+                available_ram_gb=local_ram_gb or system_available_ram_gb,
+                enabled=s.local_models_enabled,
+            )
             app.state.ctx = Context(s, Database(s.data_dir / "app.db"), KeyStore(s.model_api_key, s.data_dir),
-                                    RateLimiter(), client, log_stream)
+                                    RateLimiter(), client, log_stream, local=local)
             yield
 
     app = FastAPI(title="backend-frontend API", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)

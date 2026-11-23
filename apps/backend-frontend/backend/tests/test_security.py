@@ -70,10 +70,10 @@ class AuthEverywhereTest(unittest.TestCase):
         with client:
             found = set(endpoints(client.app))
         self.assertTrue(PUBLIC <= found)
-        # 29 = 6 public (health, login, logout, and the 3 OAuth routes) + 23 that need login
+        # 30 = 6 public (health, login, logout, and the 3 OAuth routes) + 24 that need login
         # (incl. 3 account routes, 3 admin routes in admin.py which also need the admin role,
-        # and 7 chat routes in chat.py).
-        self.assertEqual(len(found), 29, "new endpoint added: add it to PUBLIC or check its auth here")
+        # and 8 chat routes in chat.py, among them GET /api/chat/local/health).
+        self.assertEqual(len(found), 30, "new endpoint added: add it to PUBLIC or check its auth here")
 
     def test_admin_only_endpoints_refuse_normal_users(self) -> None:
         client, _ = build()

@@ -234,7 +234,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {children}
       <div role="status" aria-live="polite" className="fixed bottom-4 right-4 left-4 z-50 flex flex-col items-end gap-2 sm:left-auto">
         {items.map((t) => (
-          <div key={t.id} className={`flex w-full max-w-sm items-start gap-2 rounded-md border border-line px-3 py-2 text-sm shadow-1 ${badgeStyles[t.status]}`}>
+          <div key={t.id} role={t.status === "bad" ? "alert" : undefined} className={`flex w-full max-w-sm items-start gap-2 rounded-md border border-line px-3 py-2 text-sm shadow-1 ${badgeStyles[t.status]}`}>
             {statusIcon[t.status]}
             <span className="flex-1 text-fg">{t.text}</span>
             <button type="button" onClick={() => dismiss(t.id)} aria-label="ปิดการแจ้งเตือน" className="rounded-sm px-1 text-muted hover:text-fg">×</button>
@@ -403,14 +403,20 @@ export function Skeleton({ className = "h-4 w-full" }: { className?: string }) {
 
 /* ---------- Error state: what happened and what to do next ---------- */
 
-type ErrorStateProps = { title: string; detail: string; action?: { label: string; onClick: () => void } };
+type ErrorAction = { label: string; onClick: () => void };
+type ErrorStateProps = { title: string; detail: string; action?: ErrorAction; dismiss?: ErrorAction };
 
-export function ErrorState({ title, detail, action }: ErrorStateProps) {
+export function ErrorState({ title, detail, action, dismiss }: ErrorStateProps) {
   return (
     <div role="alert" className="flex flex-col items-start gap-2 rounded-md border border-line bg-bad-bg p-4">
       <p className="flex items-center gap-2 font-semibold text-bad"><ErrorIcon /> {title}</p>
       <p className="text-sm text-fg">{detail}</p>
-      {action && <Button variant="secondary" onClick={action.onClick}>{action.label}</Button>}
+      {(action || dismiss) && (
+        <div className="flex flex-wrap gap-2">
+          {action && <Button variant="secondary" onClick={action.onClick}>{action.label}</Button>}
+          {dismiss && <Button variant="ghost" onClick={dismiss.onClick}>{dismiss.label}</Button>}
+        </div>
+      )}
     </div>
   );
 }

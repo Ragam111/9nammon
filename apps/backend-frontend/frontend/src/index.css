@@ -20,6 +20,8 @@
   --color-bad: var(--bad);
   --color-bad-bg: var(--bad-bg);
 
+  --container-content: var(--content-max);
+
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
 

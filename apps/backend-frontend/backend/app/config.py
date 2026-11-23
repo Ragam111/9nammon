@@ -87,6 +87,8 @@ class Settings:
     chat_anthropic_base_url: str = "https://api.anthropic.com/v1"
     chat_anthropic_api_key: str = field(default="", repr=False)
     chat_anthropic_models: list[str] = field(default_factory=lambda: list(DEFAULT_ANTHROPIC_MODELS))
+    # Local Ollama at 127.0.0.1 (see local_provider.py). The app reads LOCAL_MODELS_ENABLED, default off.
+    local_models_enabled: bool = False
 
     def oauth_client(self, provider: str) -> tuple[str, str] | None:
         """(client id, client secret) when the provider is fully configured, else None."""
@@ -158,4 +160,5 @@ def load_settings() -> Settings:
             "CHAT_ANTHROPIC_BASE_URL", "https://api.anthropic.com/v1").strip().rstrip("/"),
         chat_anthropic_api_key=os.environ.get("CHAT_ANTHROPIC_API_KEY", "").strip(),
         chat_anthropic_models=_list("CHAT_ANTHROPIC_MODELS", list(DEFAULT_ANTHROPIC_MODELS)),
+        local_models_enabled=_bool("LOCAL_MODELS_ENABLED", False),
     )

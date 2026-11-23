@@ -1,7 +1,7 @@
 // Typed client for the chat API. Same cookie and error rules as api.ts; provider keys never reach the browser.
 import { api, ApiError, json, send, type ErrorType } from "./api";
 
-export type Provider = "claude" | "gemini" | "gpt";
+export type Provider = "claude" | "gemini" | "gpt" | "ollama";
 export type ChatModel = { id: string; provider: Provider; label: string; configured: boolean };
 export type ConversationSummary = { id: string; title: string; model: string; updated_at: string };
 export type ChatMessage = {
