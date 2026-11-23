@@ -3,6 +3,15 @@
 Every file created, moved or deleted in this app is listed here (rule from the back-office brief).
 Nothing has been deleted or moved yet.
 
+## 2026-11-23 · V1 local free models (spec only)
+
+### Added
+- `V1_LOCAL_FREE.md`: v1 scope for free Ollama models, what already exists, what is out of scope (token packs,
+  payments, customer API key), open decisions, and the known P6 minor items. No code changed.
+
+### Not changed
+- All backend and frontend code, `LOCAL_MODELS_ENABLED` default (still `false`), quota rules, and the schema.
+
 ## 2026-11-22 · Back-office phase 1 (read-only)
 
 ### Added
