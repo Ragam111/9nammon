@@ -138,3 +138,19 @@ test("banner explains that the open conversation's model is not ready", async ({
   await expect(page.locator(`button[title="${NOT_READY_CONV.title}"][aria-current="page"]`)).toHaveCount(1);
   await expect(page.getByText("โมเดลของการสนทนานี้ยังไม่พร้อมใช้งาน")).toBeVisible();
 });
+
+// P3 minor: switching conversations must not drop focus from the model picker.
+// The conversation is opened with a programmatic click, so focus stays where the user left it.
+test("switching conversations keeps focus on the model picker", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await mockApi(page, MIXED, [CONV, SECOND_CONV]);
+  await page.goto("/#/chat");
+  const select = page.getByLabel("เลือกโมเดล");
+  await expect(select).toBeVisible();
+  await select.focus();
+  await page.evaluate((title) => {
+    (document.querySelector(`button[title="${title}"]`) as HTMLButtonElement).click();
+  }, SECOND_CONV.title);
+  await expect(page.locator(`button[title="${SECOND_CONV.title}"][aria-current="page"]`)).toHaveCount(1);
+  await expect(select).toBeFocused();
+});

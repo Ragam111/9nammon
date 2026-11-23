@@ -117,9 +117,17 @@ function MessageItem({ message, streaming, onRetry }: { message: ChatMessage; st
 /* ---------- Model picker: two groups (local, server). Rows that are not ready stay focusable (aria-disabled);
    picking one is refused and its reason is shown under the control. ---------- */
 
-function ModelPicker({ id, models, value, onChange }: { id: string; models: ChatModel[]; value: string; onChange: (v: string) => void }) {
+function ModelPicker({ id, models, value, conversationKey, onChange }: {
+  id: string; models: ChatModel[]; value: string; conversationKey: string | null; onChange: (v: string) => void;
+}) {
   const reasonId = useId();
   const [refused, setRefused] = useState<ChatModel | null>(null);
+  // A refused pick belongs to one conversation. Clearing it during render keeps the select mounted, so focus stays on it.
+  const [refusedFor, setRefusedFor] = useState(conversationKey);
+  if (refusedFor !== conversationKey) {
+    setRefusedFor(conversationKey);
+    setRefused(null);
+  }
   const groups = useMemo(() => groupModels(models), [models]);
   const usable = models.some(isSelectable);
   const selected = models.find((m) => m.id === value) ?? null;
@@ -664,7 +672,7 @@ export function Chat({ onAuthLost }: { onAuthLost: () => void }) {
             onClick={toggleSidebar}
             className="min-h-11 min-w-11 rounded-sm border border-line bg-surface px-3 text-sm text-fg lg:hidden">{tr("chat.sidebar.open")}</button>
           <h1 id="chat-heading" className="mr-auto min-w-0 truncate text-xl font-semibold">{headerTitle}</h1>
-          <ModelPicker key={activeId ?? "none"} id={pickerId} models={models} value={model} onChange={setModel} />
+          <ModelPicker id={pickerId} models={models} value={model} conversationKey={activeId} onChange={setModel} />
         </div>
 
         {models.length > 0 && !usable && (hasCloud ? (
