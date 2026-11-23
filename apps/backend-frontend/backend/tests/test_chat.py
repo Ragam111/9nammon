@@ -422,8 +422,8 @@ class HoldAndDisconnectTest(unittest.TestCase):
             ref = chat.find_model(ctx.settings, "gpt-test")
             buckets = quota.plan(ctx.settings, heavy=False)
             chat.start_turn(ctx.db, uid, conv_id, "hi", ref.id, first_turn=True)
-            quota.record_all(ctx.db, uid, buckets, 65)  # the hold the route takes before the upstream call
-            upstream = asyncio.run(_leave_after_start(model, ctx, uid, conv_id, ref, buckets))
+            hold = quota.reserve_all(ctx.db, uid, buckets, 65)  # the hold the route takes before the upstream call
+            upstream = asyncio.run(_leave_after_start(model, ctx, uid, conv_id, ref, buckets, hold))
             self.assertTrue(upstream.is_closed)  # the upstream connection is released at once
             self.assertIn('"event": "chat"', logs.getvalue())  # the turn is logged once
             self.assertIn('"status": "error"', logs.getvalue())
@@ -441,8 +441,8 @@ class HoldAndDisconnectTest(unittest.TestCase):
             ref = chat.find_model(ctx.settings, "gpt-test")
             buckets = quota.plan(ctx.settings, heavy=False)
             chat.start_turn(ctx.db, uid, conv_id, "hi", ref.id, first_turn=True)
-            quota.record_all(ctx.db, uid, buckets, 65)  # the hold the route takes before the upstream call
-            upstream = asyncio.run(_delete_mid_answer(model, ctx, uid, conv_id, ref, buckets))
+            hold = quota.reserve_all(ctx.db, uid, buckets, 65)  # the hold the route takes before the upstream call
+            upstream = asyncio.run(_delete_mid_answer(model, ctx, uid, conv_id, ref, buckets, hold))
             self.assertTrue(upstream.is_closed)  # the upstream connection is released
             # The hold of 65 is replaced by the estimate for the answer that was produced ("one").
             self.assertEqual(_used_in_window(client), estimate_tokens("hi") + estimate_tokens("one"))
@@ -450,13 +450,13 @@ class HoldAndDisconnectTest(unittest.TestCase):
 
 
 async def _delete_mid_answer(model: FakeModel, ctx: Any, uid: int, conv_id: str, ref: chat.ModelRef,
-                             buckets: list[quota.Bucket]) -> httpx.Response:
+                             buckets: list[quota.Bucket], hold: str) -> httpx.Response:
     """Stream one delta, delete the conversation while the answer is in flight, then the client disconnects."""
     async with httpx.AsyncClient(transport=model.transport) as http:
         upstream = await http.send(http.build_request("POST", OPENAI_URL, json={"stream": True}), stream=True)
         result = StreamResult()  # the same arguments the cloud route passes to _relay
         relay = chat._relay(ctx, uid, conv_id, ref.provider.name, ref.id, iter_text(upstream, result, 64 * 8),
-                            result, upstream.aclose, "hi", time.perf_counter(), "req-delete", buckets, "msg_delete", 65)
+                            result, upstream.aclose, "hi", time.perf_counter(), "req-delete", buckets, "msg_delete", hold)
         assert (await relay.__anext__()).startswith("event: start")
         assert (await relay.__anext__()).startswith("event: delta")
         chat.delete_conversation(ctx.db, uid, conv_id)
@@ -465,13 +465,13 @@ async def _delete_mid_answer(model: FakeModel, ctx: Any, uid: int, conv_id: str,
 
 
 async def _leave_after_start(model: FakeModel, ctx: Any, uid: int, conv_id: str, ref: chat.ModelRef,
-                             buckets: list[quota.Bucket]) -> httpx.Response:
+                             buckets: list[quota.Bucket], hold: str) -> httpx.Response:
     """Open the upstream stream the way the route does, read only the start event, then close the relay."""
     async with httpx.AsyncClient(transport=model.transport) as http:
         upstream = await http.send(http.build_request("POST", OPENAI_URL, json={"stream": True}), stream=True)
         result = StreamResult()  # the same arguments the cloud route passes to _relay
         relay = chat._relay(ctx, uid, conv_id, ref.provider.name, ref.id, iter_text(upstream, result, 64 * 8),
-                            result, upstream.aclose, "hi", time.perf_counter(), "req-leave", buckets, "msg_leave", 65)
+                            result, upstream.aclose, "hi", time.perf_counter(), "req-leave", buckets, "msg_leave", hold)
         start = await relay.__anext__()
         assert start.startswith("event: start"), start
         await relay.aclose()  # the browser went away at its first event

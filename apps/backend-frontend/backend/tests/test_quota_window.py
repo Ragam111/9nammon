@@ -79,5 +79,42 @@ class WeeklyBucketTest(unittest.TestCase):
         self.assertEqual(quota.used(db, uid, heavy[1].key), 500)
 
 
+class HoldExpiryTest(unittest.TestCase):
+    """A hold counts while it is live, is removed by settling, and stops counting after HOLD_TTL on its own."""
+
+    def setUp(self) -> None:
+        import tempfile
+        from pathlib import Path as _Path
+
+        self.tmp = tempfile.TemporaryDirectory()
+        self.settings = make_settings(data_dir=_Path(self.tmp.name))
+        self.db = Database(self.settings.data_dir / "app.db")
+        create_user(self.db, "alice", "correct-horse-battery")
+        with self.db.session() as conn:
+            self.uid = int(conn.execute("SELECT id FROM users WHERE username = 'alice'").fetchone()["id"])
+        self.bucket = quota.plan(self.settings, heavy=False)[0]
+        self.start = datetime(2026, 11, 21, 10, 0, tzinfo=BANGKOK)
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def test_live_hold_counts_and_settling_replaces_it(self) -> None:
+        hold = quota.reserve_all(self.db, self.uid, [self.bucket], 50, now=self.start)
+        self.assertEqual(quota.used(self.db, self.uid, self.bucket.key, now=self.start), 50)
+        quota.settle_all(self.db, self.uid, [self.bucket], hold, charged=3)
+        self.assertEqual(quota.used(self.db, self.uid, self.bucket.key, now=self.start), 3)
+
+    def test_unsettled_hold_stops_counting_after_the_ttl(self) -> None:
+        quota.reserve_all(self.db, self.uid, [self.bucket], 50, now=self.start)
+        later = self.start + quota.HOLD_TTL + timedelta(minutes=1)
+        self.assertEqual(quota.used(self.db, self.uid, self.bucket.key, now=later), 0)
+
+    def test_settling_after_expiry_still_charges(self) -> None:
+        hold = quota.reserve_all(self.db, self.uid, [self.bucket], 50, now=self.start)
+        later = self.start + quota.HOLD_TTL + timedelta(minutes=1)
+        quota.settle_all(self.db, self.uid, [self.bucket], hold, charged=7)
+        self.assertEqual(quota.used(self.db, self.uid, self.bucket.key, now=later), 7)
+
+
 if __name__ == "__main__":
     unittest.main()

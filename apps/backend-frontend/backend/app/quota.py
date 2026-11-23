@@ -7,6 +7,7 @@ daily keys from before this change ("2026-11-21") simply never match a window ke
 
 from __future__ import annotations
 
+import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
@@ -43,13 +44,24 @@ def window_resets_at(now: datetime | None = None) -> str:
     return min(start + timedelta(hours=WINDOW_HOURS), midnight).isoformat()
 
 
-def used(db: Database, user_id: int, window: str | None = None) -> int:
-    """Tokens the user has used in `window` (default: the current window)."""
+HOLD_TTL = timedelta(minutes=15)  # longer than any model call (MODEL_TIMEOUT_S); a hold nobody settles stops counting
+
+
+def _utc_now(now: datetime | None = None) -> str:
+    return (now or datetime.now(timezone.utc)).astimezone(timezone.utc).isoformat()
+
+
+def used(db: Database, user_id: int, window: str | None = None, now: datetime | None = None) -> int:
+    """Tokens the user has used in `window` (default: the current window), including live holds."""
+    key = window or current_window()
     with db.session() as conn:
-        row = conn.execute(
-            "SELECT tokens FROM usage WHERE user_id = ? AND day = ?", (user_id, window or current_window())
+        row = conn.execute("SELECT tokens FROM usage WHERE user_id = ? AND day = ?", (user_id, key)).fetchone()
+        held = conn.execute(
+            "SELECT COALESCE(SUM(tokens), 0) AS total FROM quota_holds "
+            "WHERE user_id = ? AND bucket_key = ? AND expires_at > ?",
+            (user_id, key, _utc_now(now)),
         ).fetchone()
-    return int(row["tokens"]) if row else 0
+    return (int(row["tokens"]) if row else 0) + int(held["total"])
 
 
 def remaining(db: Database, user_id: int, limit: int, window: str | None = None) -> int:
@@ -158,26 +170,39 @@ def record_all(db: Database, user_id: int, buckets: list[Bucket], tokens: int) -
         record(db, user_id, tokens, window=bucket.key)
 
 
-def reserve_all(db: Database, user_id: int, buckets: list[Bucket], tokens: int) -> None:
-    """Hold `tokens` in every bucket before the upstream call, so concurrent requests see it.
+def reserve_all(db: Database, user_id: int, buckets: list[Bucket], tokens: int, now: datetime | None = None) -> str:
+    """Hold `tokens` in every bucket before the upstream call. Returns the hold id for settle_all.
 
-    Call this right after check_all with no await in between. settle_all turns the hold into the real charge.
+    The hold counts toward `used` until settle_all replaces it, or until HOLD_TTL passes, so a request that
+    never reaches its settle step cannot keep quota blocked forever. Call this right after check_all, with no
+    await in between, so a concurrent request sees the hold.
     """
-    record_all(db, user_id, buckets, tokens)
-
-
-def settle_all(db: Database, user_id: int, buckets: list[Bucket], reserved: int, charged: int) -> None:
-    """Replace a hold of `reserved` tokens with the `charged` amount in every bucket. A bucket never goes below zero."""
-    delta = charged - reserved
-    if delta == 0:
-        return
+    hold_id = secrets.token_hex(16)
+    expires = _utc_now((now or datetime.now(timezone.utc)) + HOLD_TTL)
     with db.session() as conn:
+        conn.execute("DELETE FROM quota_holds WHERE expires_at <= ?", (_utc_now(now),))
         for bucket in buckets:
             conn.execute(
-                "INSERT INTO usage (user_id, day, tokens) VALUES (?, ?, MAX(0, ?)) "
-                "ON CONFLICT (user_id, day) DO UPDATE SET tokens = MAX(0, tokens + ?)",
-                (user_id, bucket.key, delta, delta),
+                "INSERT INTO quota_holds (hold_id, user_id, bucket_key, tokens, expires_at) VALUES (?, ?, ?, ?, ?)",
+                (hold_id, user_id, bucket.key, tokens, expires),
             )
+    return hold_id
+
+
+def settle_all(db: Database, user_id: int, buckets: list[Bucket], hold_id: str, charged: int) -> None:
+    """Remove the hold `hold_id` and charge `charged` tokens to every bucket, in one transaction.
+
+    A hold that has already expired is simply gone; the charge is still recorded.
+    """
+    with db.session() as conn:
+        conn.execute("DELETE FROM quota_holds WHERE hold_id = ? AND user_id = ?", (hold_id, user_id))
+        if charged > 0:
+            for bucket in buckets:
+                conn.execute(
+                    "INSERT INTO usage (user_id, day, tokens) VALUES (?, ?, ?) "
+                    "ON CONFLICT (user_id, day) DO UPDATE SET tokens = tokens + excluded.tokens",
+                    (user_id, bucket.key, charged),
+                )
 
 
 def _thai_time(iso: str) -> str:
