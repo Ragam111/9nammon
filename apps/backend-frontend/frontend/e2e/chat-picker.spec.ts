@@ -111,3 +111,22 @@ test("composer is blocked when the open conversation's model is not ready", asyn
   await expect(page.getByLabel("พิมพ์ข้อความ")).toBeDisabled();
   await expect(page.getByRole("button", { name: "ส่ง" })).toBeDisabled();
 });
+
+// Review finding: while a conversation's detail is still loading, the model is the previous conversation's.
+// The composer must not accept a message in that window.
+test("composer is blocked while the next conversation is still loading", async ({ page }) => {
+  await mockApi(page, MIXED, [CONV, { ...NOT_READY_CONV, title: "กำลังโหลด" }]);
+  await page.route(`**/api/chat/conversations/${NOT_READY_CONV.id}`, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 6000)); // long enough to assert inside the window
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ...NOT_READY_CONV, messages: [] }) });
+  });
+  await page.goto("/#/chat");
+  // Open a ready conversation first, so the model state holds a ready model before the slow one is opened.
+  await page.getByRole("button", { name: "เปิดเมนู" }).click();
+  await page.locator(`button[title="${CONV.title}"]`).click();
+  await expect(page.getByLabel("เลือกโมเดล")).toHaveValue("claude-a");
+  await page.getByRole("button", { name: "เปิดเมนู" }).click();
+  await page.locator('button[title="กำลังโหลด"]').click();
+  // Checked inside the 6 s window: the short timeout fails before the detail (gpt-a, not ready) arrives.
+  await expect(page.getByLabel("พิมพ์ข้อความ")).toBeDisabled({ timeout: 2000 });
+});

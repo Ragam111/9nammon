@@ -252,7 +252,8 @@ export function Chat({ onAuthLost }: { onAuthLost: () => void }) {
   const input = activeId ? (drafts[activeId] ?? "") : "";
   const usable = models.some(isSelectable);
   // The composer follows the conversation's own model: another ready model in the list does not unblock it.
-  const selectedReady = models.some((m) => m.id === model && isSelectable(m));
+  // While the thread is loading (or failed to load) the model is still the previous conversation's, so it is blocked.
+  const selectedReady = !threadLoading && !pageError && models.some((m) => m.id === model && isSelectable(m));
   const hasCloud = models.some((m) => kindOf(m) === "cloud");
   const sorted = useMemo(
     () => conversations && [...conversations].sort((a, b) => (Date.parse(b.updated_at) || 0) - (Date.parse(a.updated_at) || 0)),
@@ -517,6 +518,7 @@ export function Chat({ onAuthLost }: { onAuthLost: () => void }) {
   const retry = () => {
     if (!sendError || streaming) return;
     const { content, model: modelId } = sendError;
+    if (!models.some((m) => m.id === modelId && isSelectable(m))) return; // the model is no longer ready
     setSendError(null);
     composerRef.current?.focus();
     void sendMessage(content, modelId);
@@ -525,7 +527,7 @@ export function Chat({ onAuthLost }: { onAuthLost: () => void }) {
   // Retries a stopped reply that has no text: the stopped pair is dropped locally and the question is sent again.
   const retryReply = (index: number) => {
     const question = messages[index - 1];
-    if (question?.role !== "user" || streaming) return;
+    if (question?.role !== "user" || streaming || !selectedReady) return;
     setMessages((list) => list.slice(0, index - 1));
     void sendMessage(question.content, model);
   };
