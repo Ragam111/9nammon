@@ -2,7 +2,20 @@
 import { api, ApiError, json, send, type ErrorType } from "./api";
 
 export type Provider = "claude" | "gemini" | "gpt" | "ollama";
-export type ChatModel = { id: string; provider: Provider; label: string; configured: boolean };
+export type ModelProviderKind = "local" | "cloud";
+export type ModelStatus = "ready" | "not_installed" | "not_enough_memory" | "unreachable" | "not_configured";
+// provider_kind, status and the RAM fields are optional so a list response without them still works:
+// a missing status is derived from `configured` (see modelGroups.ts).
+export type ChatModel = {
+  id: string;
+  provider: Provider;
+  label: string;
+  configured: boolean;
+  provider_kind?: ModelProviderKind;
+  status?: ModelStatus;
+  required_ram_gb?: number | null;
+  available_ram_gb?: number | null;
+};
 export type ConversationSummary = { id: string; title: string; model: string; updated_at: string };
 export type ChatMessage = {
   id: string;
