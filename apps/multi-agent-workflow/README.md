@@ -6,7 +6,18 @@ Three roles with one job each:
 - **Agent 2, Planner:** splits the goal into at most 8 tasks with acceptance lines and dependencies. The plan must be a valid graph (no unknown ids, no self-dependency, no cycles, no duplicates), or it is rejected and the Planner is asked again once.
 - **Agent 3, Executor:** does one task at a time, in dependency order, and receives the outputs of the tasks it depends on.
 
-## Run
+## Run (offline demo, no key)
+
+```powershell
+# from apps/multi-agent-workflow
+python -m mawf --demo --workdir work\demo --transcript runs\demo.jsonl
+```
+
+`--demo` runs the whole loop with built-in replies: the Planner makes 2 tasks, the Executor writes a note
+into `work\demo\notes\t1.md` and reads it back, and the Harness accepts both. It shows the workflow
+runs end to end; it does not measure any model.
+
+## Run (real models)
 
 ```powershell
 # from apps/multi-agent-workflow
