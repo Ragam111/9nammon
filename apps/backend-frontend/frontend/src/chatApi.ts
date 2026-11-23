@@ -68,7 +68,7 @@ export async function deleteConversation(id: string): Promise<void> {
 
 // ---------- streaming send ----------
 
-export type ChatDone = { messageId: string; tokensIn: number; tokensOut: number };
+export type ChatDone = { messageId: string | null; tokensIn: number; tokensOut: number };
 export type ChatStreamHandlers = {
   signal?: AbortSignal;
   onStart: (messageId: string) => void;
@@ -114,7 +114,7 @@ function dispatch(ev: SseEvent, h: ChatStreamHandlers, state: StreamState): Chat
     h.onDelta(String(d.text ?? ""));
   } else if (ev.event === "done") {
     // The server sends null when the answer was not stored (the conversation was deleted mid-answer).
-    const messageId = d.message_id == null ? "" : String(d.message_id);
+    const messageId = d.message_id == null ? null : String(d.message_id);
     return { messageId, tokensIn: Number(d.tokens_in ?? 0), tokensOut: Number(d.tokens_out ?? 0) };
   } else if (ev.event === "error") throw streamError(d);
   return null;
