@@ -36,6 +36,26 @@ python -m unittest discover -s tests -t .
 
 Tests use fake models, so they need no key and no network.
 
+## MCP server (read-only)
+
+`mawf/mcp_server.py` lets any MCP client list and read files under one LCA folder. It uses JSON-RPC 2.0 over stdio, one JSON message per line, and opens no port.
+
+```powershell
+# from apps/multi-agent-workflow (stdlib only)
+python -m mawf.mcp_server --root "D:\path\to\LCA"
+```
+
+Two tools only:
+
+- `list_dir(path="")`: sorted entries with `name`, `type` (`file` or `dir`) and `size` for files.
+- `read_file(path, max_bytes=200000)`: UTF-8 text. Longer files are cut to `max_bytes` and marked `"truncated": true`.
+
+Allowlist: `read_file` accepts `.md .txt .csv .log .json .jsonl` only. Binary content (NUL byte in the first 8 KB) is refused.
+
+Denylist, matched case-insensitively on every path segment: `config.json`, `org.json`, `.env*`, `*.db`, `*.db-wal`, `*.db-shm`, `*.db-journal`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, and any name containing `secret`, `token`, `password`, `apikey` or `api_key`. Any path segment with a colon is refused too, so an NTFS alternate data stream such as `config.json:x.md` cannot read a denied file. The `LocalCodeAssistant` folder is denied with its contents. Denied entries are hidden from `list_dir`. A denied request returns `denied` and never says which rule fired.
+
+Paths are confined by `FileSandbox` (no `..`, no absolute or drive paths, no symlinks that point out). Tool failures return `isError: true` with a short reason. There is no write, delete or shell tool.
+
 ## Limits
 
 - The Executor has three file tools only when `--workdir <folder>` is given: `read_file`, `write_file` (create or overwrite) and `list_dir`. All paths must stay inside that folder. `..`, absolute paths, drive paths and symlinks that point outside are refused. There is no delete, no shell and no code execution.
