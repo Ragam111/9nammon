@@ -113,7 +113,9 @@ function dispatch(ev: SseEvent, h: ChatStreamHandlers, state: StreamState): Chat
     state.gotText = true;
     h.onDelta(String(d.text ?? ""));
   } else if (ev.event === "done") {
-    return { messageId: String(d.message_id), tokensIn: Number(d.tokens_in ?? 0), tokensOut: Number(d.tokens_out ?? 0) };
+    // The server sends null when the answer was not stored (the conversation was deleted mid-answer).
+    const messageId = d.message_id == null ? "" : String(d.message_id);
+    return { messageId, tokensIn: Number(d.tokens_in ?? 0), tokensOut: Number(d.tokens_out ?? 0) };
   } else if (ev.event === "error") throw streamError(d);
   return null;
 }
