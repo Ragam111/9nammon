@@ -81,8 +81,13 @@ def _tag_matches(model_id: str, tag: str) -> bool:
     return tag == model_id or (":" not in model_id and tag == f"{model_id}:latest")
 
 
+def installed_flag(model_id: str, names: Sequence[str]) -> bool:
+    """Whether Ollama reports the catalog model. Public wrapper of the same rule that sets the model status."""
+    return any(_tag_matches(model_id, tag) for tag in names)
+
+
 def _status_for(spec: ModelSpec, installed: Sequence[str], available_ram: float | None) -> ModelStatus:
-    if not any(_tag_matches(spec.id, tag) for tag in installed):
+    if not installed_flag(spec.id, installed):
         return ModelStatus.NOT_INSTALLED
     if available_ram is not None and available_ram < spec.required_ram_gb:
         return ModelStatus.NOT_ENOUGH_MEMORY

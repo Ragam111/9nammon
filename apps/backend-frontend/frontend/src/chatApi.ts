@@ -33,6 +33,19 @@ export async function listChatModels(): Promise<ChatModel[]> {
   return (await api<{ models: ChatModel[] }>(`${BASE}/models`)).models;
 }
 
+// Local (Ollama) health for onboarding. Optional fields stay optional so an older payload still parses.
+export type LocalModelDetail = { id: string; installed: boolean; required_ram_gb: number };
+export type LocalHealth = {
+  reachable: boolean;
+  models: string[];
+  available_ram_gb?: number | null;
+  models_detail?: LocalModelDetail[];
+};
+
+export function getLocalHealth(): Promise<LocalHealth> {
+  return api<LocalHealth>(`${BASE}/local/health`);
+}
+
 export async function listConversations(): Promise<ConversationSummary[]> {
   return (await api<{ conversations: ConversationSummary[] }>(`${BASE}/conversations`)).conversations;
 }

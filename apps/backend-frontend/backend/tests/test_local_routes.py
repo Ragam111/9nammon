@@ -123,7 +123,8 @@ class LocalHealthTest(GuardedTestCase):
         with app_client(local=tags(LOCAL_MODEL)) as client:
             res = client.get("/api/chat/local/health")
             self.assertEqual(res.status_code, 200)
-            self.assertEqual(res.json(), {"reachable": True, "models": [LOCAL_MODEL]})
+            body = res.json()
+            self.assertEqual((body["reachable"], body["models"]), (True, [LOCAL_MODEL]))
 
     def test_local_health_unreachable_is_200(self) -> None:
         def refuse(request: httpx.Request) -> httpx.Response:
@@ -132,14 +133,16 @@ class LocalHealthTest(GuardedTestCase):
         with app_client(local=refuse) as client:
             res = client.get("/api/chat/local/health")
             self.assertEqual(res.status_code, 200)
-            self.assertEqual(res.json(), {"reachable": False, "models": []})
+            body = res.json()
+            self.assertEqual((body["reachable"], body["models"]), (False, []))
 
     def test_local_health_without_provider_is_unreachable(self) -> None:
         with app_client(local=tags(LOCAL_MODEL)) as client:
             client.app.state.ctx.local = None
             res = client.get("/api/chat/local/health")
             self.assertEqual(res.status_code, 200)
-            self.assertEqual(res.json(), {"reachable": False, "models": []})
+            body = res.json()
+            self.assertEqual((body["reachable"], body["models"]), (False, []))
 
     def test_local_health_requires_signed_in_user(self) -> None:
         with app_client(local=tags(LOCAL_MODEL)) as client:

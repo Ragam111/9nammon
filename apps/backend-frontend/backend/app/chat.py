@@ -24,7 +24,7 @@ from . import auth, quota
 from .config import Settings
 from .db import Database
 from .errors import AppError, from_exception, is_retryable_exception
-from .local_provider import DEFAULT_LOCAL_CATALOG, ModelInfo, ModelStatus, OllamaLocalProvider
+from .local_provider import DEFAULT_LOCAL_CATALOG, ModelInfo, ModelStatus, OllamaLocalProvider, installed_flag
 from .logging_json import estimate_cost, log_event
 from .model_client import StreamResult, estimate_tokens, iter_text
 from .retry import with_retry
@@ -385,14 +385,28 @@ async def _local_rows(ctx: Context) -> list[dict[str, Any]]:
     return rows
 
 
+def _health_payload(reachable: bool, names: list[str], available_ram: float | None) -> dict[str, Any]:
+    """Health body: the P1 keys plus RAM and one detail row per catalog model. Read-only; no decision is made here."""
+    detail = [
+        {"id": spec.id, "installed": installed_flag(spec.id, names), "required_ram_gb": spec.required_ram_gb}
+        for spec in DEFAULT_LOCAL_CATALOG
+    ]
+    return {
+        "reachable": reachable,
+        "models": names,
+        "available_ram_gb": available_ram,
+        "models_detail": detail,
+    }
+
+
 @router.get("/local/health")
 async def local_health(request: Request, _: auth.User = Depends(_current_user)) -> dict[str, Any]:
-    """Whether the local Ollama answers, and which models it has. Takes no address: the base URL is fixed."""
+    """Whether the local Ollama answers, which models it has, and the RAM it reports. Takes no address."""
     ctx = _ctx(request)
     if ctx.local is None:
-        return {"reachable": False, "models": []}
+        return _health_payload(False, [], None)
     reachable, names = await ctx.local.installed_models()
-    return {"reachable": reachable, "models": names}
+    return _health_payload(reachable, names, ctx.local.free_ram_gb())
 
 
 @router.get("/conversations")
