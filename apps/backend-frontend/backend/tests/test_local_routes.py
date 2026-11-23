@@ -78,9 +78,9 @@ class ModelRowsTest(GuardedTestCase):
                     self.assertIn(key, row)
             kinds = {row["id"]: row["provider_kind"] for row in rows}
             self.assertEqual(kinds["gpt-test"], "cloud")
-            # Local ids are not listed: the send path cannot take them yet, so the list must not offer them.
-            self.assertNotIn(LOCAL_MODEL, kinds)
-            self.assertEqual(set(kinds.values()), {"cloud"})
+            # P3: the installed catalog model is listed as a local row; the send path routes it.
+            self.assertEqual(kinds[LOCAL_MODEL], "local")
+            self.assertEqual(set(kinds.values()), {"cloud", "local"})
 
     def test_models_cloud_status_not_configured_without_key(self) -> None:
         with app_client(chat_openai_api_key="") as client:
@@ -101,9 +101,10 @@ class ModelRowsTest(GuardedTestCase):
             self.assertEqual(res.status_code, 200)
             self.assertNotIn("sk-test-secret", res.text)
 
-    def test_models_lists_no_local_model_even_when_ollama_has_it(self) -> None:
+    def test_models_lists_local_model_when_ollama_has_it(self) -> None:
         with app_client(local=tags(LOCAL_MODEL)) as client:
-            self.assertNotIn(LOCAL_MODEL, rows_by_id(client))
+            row = rows_by_id(client)[LOCAL_MODEL]
+            self.assertEqual((row["provider_kind"], row["status"]), ("local", "ready"))
             health = client.get("/api/chat/local/health").json()
             self.assertEqual(health["models"], [LOCAL_MODEL])
 
@@ -114,7 +115,7 @@ class ModelRowsTest(GuardedTestCase):
         with app_client(local=refuse) as client:
             rows = rows_by_id(client)
             self.assertEqual(rows["gpt-test"]["status"], "ready")
-            self.assertNotIn(LOCAL_MODEL, rows)
+            self.assertEqual(rows[LOCAL_MODEL]["status"], "unreachable")
 
 
 class LocalHealthTest(GuardedTestCase):
@@ -122,7 +123,8 @@ class LocalHealthTest(GuardedTestCase):
         with app_client(local=tags(LOCAL_MODEL)) as client:
             res = client.get("/api/chat/local/health")
             self.assertEqual(res.status_code, 200)
-            self.assertEqual(res.json(), {"reachable": True, "models": [LOCAL_MODEL]})
+            body = res.json()
+            self.assertEqual((body["reachable"], body["models"]), (True, [LOCAL_MODEL]))
 
     def test_local_health_unreachable_is_200(self) -> None:
         def refuse(request: httpx.Request) -> httpx.Response:
@@ -131,14 +133,16 @@ class LocalHealthTest(GuardedTestCase):
         with app_client(local=refuse) as client:
             res = client.get("/api/chat/local/health")
             self.assertEqual(res.status_code, 200)
-            self.assertEqual(res.json(), {"reachable": False, "models": []})
+            body = res.json()
+            self.assertEqual((body["reachable"], body["models"]), (False, []))
 
     def test_local_health_without_provider_is_unreachable(self) -> None:
         with app_client(local=tags(LOCAL_MODEL)) as client:
             client.app.state.ctx.local = None
             res = client.get("/api/chat/local/health")
             self.assertEqual(res.status_code, 200)
-            self.assertEqual(res.json(), {"reachable": False, "models": []})
+            body = res.json()
+            self.assertEqual((body["reachable"], body["models"]), (False, []))
 
     def test_local_health_requires_signed_in_user(self) -> None:
         with app_client(local=tags(LOCAL_MODEL)) as client:
@@ -214,9 +218,10 @@ class SendContractTest(GuardedTestCase):
                 self.assertIn(key, error)
             self.assertIs(error["partial"], True)
 
-    def test_post_rejects_local_only_model_id(self) -> None:
-        with app_client(local=tags(LOCAL_MODEL)) as client:
-            res = self._send(client, {"content": "hi", "model": LOCAL_MODEL})
+    def test_post_rejects_local_id_outside_the_local_catalog(self) -> None:
+        # P3: a catalog id that is ready is routed locally (see test_local_send.py); a raw tag name never is.
+        with app_client(local=tags("llama3:latest")) as client:
+            res = self._send(client, {"content": "hi", "model": "llama3:latest"})
             self.assertEqual(res.status_code, 400)
             self.assertIn("ไม่พบโมเดลนี้ในรายการ", res.json()["error"]["message"])
         settings = make_settings(**BASE)

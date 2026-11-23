@@ -6,18 +6,15 @@ import {
 import { ApiError } from "../api";
 import {
   createConversation, deleteConversation, getConversation, listChatModels, listConversations, renameConversation,
-  streamChatMessage, type ChatMessage, type ChatModel, type ConversationSummary, type Provider,
+  streamChatMessage, type ChatMessage, type ChatModel, type ConversationSummary,
 } from "../chatApi";
 import { Badge, Button, Dialog, ErrorState, Skeleton, useToast } from "../components/ui";
-import { tr, type ThKey } from "../i18n/th";
+import {
+  groupModels, isSelectable, kindOf, optionLabel, pickDefaultModel, reasonFor, statusBadge, statusLabel,
+} from "../modelGroups";
+import { tr } from "../i18n/th";
 import { errorDetail, errorTitle } from "./errors";
 
-const PROVIDERS: { id: Provider; key: ThKey }[] = [
-  { id: "claude", key: "chat.provider.claude" },
-  { id: "gemini", key: "chat.provider.gemini" },
-  { id: "gpt", key: "chat.provider.gpt" },
-  { id: "ollama", key: "chat.provider.ollama" },
-];
 const CONTROL = "min-h-10 w-full rounded-sm border border-line bg-surface px-3 text-sm text-fg";
 const TITLE_MAX = 120;
 const MAX_INPUT_CHARS = 4000;
@@ -34,10 +31,6 @@ type RenameState = { id: string; draft: string; error: string | null } | null;
 
 const rowId = (id: string): string => `chat-conv-${id}`;
 const deleteBtnId = (id: string): string => `chat-conv-del-${id}`;
-
-function pickModel(models: ChatModel[]): string {
-  return (models.find((m) => m.configured) ?? models[0])?.id ?? "";
-}
 
 function isMdUp(): boolean {
   return window.matchMedia(MD_QUERY).matches;
@@ -121,33 +114,45 @@ function MessageItem({ message, streaming, onRetry }: { message: ChatMessage; st
   );
 }
 
-/* ---------- Model picker: grouped by provider; unconfigured models stay focusable (aria-disabled) ---------- */
+/* ---------- Model picker: two groups (local, server). Rows that are not ready stay focusable (aria-disabled);
+   picking one is refused and its reason is shown under the control. ---------- */
 
 function ModelPicker({ id, models, value, onChange }: { id: string; models: ChatModel[]; value: string; onChange: (v: string) => void }) {
-  const usable = models.some((m) => m.configured);
+  const reasonId = useId();
+  const [refused, setRefused] = useState<ChatModel | null>(null);
+  const groups = useMemo(() => groupModels(models), [models]);
+  const usable = models.some(isSelectable);
+  const selected = models.find((m) => m.id === value) ?? null;
+  const reasonModel = refused ?? selected;
+  const reason = reasonModel ? reasonFor(reasonModel) : null;
   const pick = (next: string) => {
     const chosen = models.find((m) => m.id === next);
-    if (chosen?.configured) onChange(next);
+    if (!chosen) return;
+    if (isSelectable(chosen)) {
+      setRefused(null);
+      onChange(next);
+    } else {
+      setRefused(chosen);
+    }
   };
+  const renderOption = (m: ChatModel) => (
+    <option key={m.id} value={m.id} aria-disabled={!isSelectable(m) || undefined}>{optionLabel(m)}</option>
+  );
   return (
-    <div className="flex w-full flex-col gap-1 sm:w-64">
+    <div className="flex w-full min-w-0 flex-col gap-1 sm:w-64">
       <label htmlFor={id} className="text-sm font-medium text-fg">{tr("chat.model.label")}</label>
-      <select id={id} value={usable ? value : ""} onChange={(e) => pick(e.target.value)} className={CONTROL}>
+      <select id={id} value={usable ? value : ""} onChange={(e) => pick(e.target.value)} className={CONTROL}
+        aria-describedby={reason ? reasonId : undefined}>
         {!usable && <option value="" aria-disabled="true">{tr("chat.model.none")}</option>}
-        {PROVIDERS.map((p) => {
-          const items = models.filter((m) => m.provider === p.id);
-          if (items.length === 0) return null;
-          return (
-            <optgroup key={p.id} label={tr(p.key)}>
-              {items.map((m) => (
-                <option key={m.id} value={m.id} aria-disabled={!m.configured || undefined}>
-                  {m.configured ? m.label : tr("chat.model.unconfigured", { label: m.label })}
-                </option>
-              ))}
-            </optgroup>
-          );
-        })}
+        {groups.local.length > 0 && <optgroup label={tr("chat.group.local")}>{groups.local.map(renderOption)}</optgroup>}
+        {groups.server.length > 0 && <optgroup label={tr("chat.group.server")}>{groups.server.map(renderOption)}</optgroup>}
       </select>
+      {selected && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge status={statusBadge(selected)}>{statusLabel(selected)}</Badge>
+        </div>
+      )}
+      {reason && <p id={reasonId} className="break-words text-sm text-muted">{reason}</p>}
     </div>
   );
 }
@@ -245,7 +250,8 @@ export function Chat({ onAuthLost }: { onAuthLost: () => void }) {
   const pendingFocusRef = useRef<string | null>(null);
 
   const input = activeId ? (drafts[activeId] ?? "") : "";
-  const usable = models.some((m) => m.configured);
+  const usable = models.some(isSelectable);
+  const hasCloud = models.some((m) => kindOf(m) === "cloud");
   const sorted = useMemo(
     () => conversations && [...conversations].sort((a, b) => (Date.parse(b.updated_at) || 0) - (Date.parse(a.updated_at) || 0)),
     [conversations],
@@ -323,7 +329,7 @@ export function Chat({ onAuthLost }: { onAuthLost: () => void }) {
     const [modelRes, listRes] = await Promise.allSettled([listChatModels(), listConversations()]);
     if (modelRes.status === "fulfilled") {
       setModels(modelRes.value);
-      setModel((current) => current || pickModel(modelRes.value));
+      setModel((current) => current || pickDefaultModel(modelRes.value));
       setPageError(null);
     } else {
       setPageError(fail(modelRes.reason, tr("chat.page.loadFail")));
@@ -479,7 +485,7 @@ export function Chat({ onAuthLost }: { onAuthLost: () => void }) {
 
   const startNewChat = async () => {
     try {
-      const conv = await createConversation(model || pickModel(models));
+      const conv = await createConversation(model || pickDefaultModel(models));
       setConversations((prev) => [conv, ...(prev ?? [])]);
       focusComposerRef.current = true;
       activate(conv.id);
@@ -656,9 +662,11 @@ export function Chat({ onAuthLost }: { onAuthLost: () => void }) {
           <ModelPicker id={pickerId} models={models} value={model} onChange={setModel} />
         </div>
 
-        {models.length > 0 && !usable && (
+        {models.length > 0 && !usable && (hasCloud ? (
           <p className="rounded-sm bg-warn-bg px-3 py-2 text-sm text-warn">{tr("chat.model.banner")}</p>
-        )}
+        ) : (
+          <p className="rounded-sm bg-surface-2 px-3 py-2 text-sm text-muted">{tr("chat.model.bannerLocal")}</p>
+        ))}
 
         {pageError ? (
           <ErrorState title={errorTitle(pageError)} detail={errorDetail(pageError)}

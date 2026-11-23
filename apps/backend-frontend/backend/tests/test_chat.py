@@ -19,7 +19,7 @@ from app import chat, quota
 from app.auth import create_user
 from app.db import Database
 from app.main import create_app
-from app.model_client import estimate_tokens
+from app.model_client import StreamResult, estimate_tokens, iter_text
 from tests.helpers import FakeModel, make_settings, ok_stream, parse_sse
 
 PASSWORD = "correct-horse-battery"
@@ -454,8 +454,9 @@ async def _delete_mid_answer(model: FakeModel, ctx: Any, uid: int, conv_id: str,
     """Stream one delta, delete the conversation while the answer is in flight, then the client disconnects."""
     async with httpx.AsyncClient(transport=model.transport) as http:
         upstream = await http.send(http.build_request("POST", OPENAI_URL, json={"stream": True}), stream=True)
-        relay = chat._relay(ctx, uid, conv_id, ref, upstream, "hi", time.perf_counter(), "req-delete", 64,
-                            buckets, "msg_delete", 65)
+        result = StreamResult()  # the same arguments the cloud route passes to _relay
+        relay = chat._relay(ctx, uid, conv_id, ref.provider.name, ref.id, iter_text(upstream, result, 64 * 8),
+                            result, upstream.aclose, "hi", time.perf_counter(), "req-delete", buckets, "msg_delete", 65)
         assert (await relay.__anext__()).startswith("event: start")
         assert (await relay.__anext__()).startswith("event: delta")
         chat.delete_conversation(ctx.db, uid, conv_id)
@@ -468,8 +469,9 @@ async def _leave_after_start(model: FakeModel, ctx: Any, uid: int, conv_id: str,
     """Open the upstream stream the way the route does, read only the start event, then close the relay."""
     async with httpx.AsyncClient(transport=model.transport) as http:
         upstream = await http.send(http.build_request("POST", OPENAI_URL, json={"stream": True}), stream=True)
-        relay = chat._relay(ctx, uid, conv_id, ref, upstream, "hi", time.perf_counter(), "req-leave", 64,
-                            buckets, "msg_leave", 65)
+        result = StreamResult()  # the same arguments the cloud route passes to _relay
+        relay = chat._relay(ctx, uid, conv_id, ref.provider.name, ref.id, iter_text(upstream, result, 64 * 8),
+                            result, upstream.aclose, "hi", time.perf_counter(), "req-leave", buckets, "msg_leave", 65)
         start = await relay.__anext__()
         assert start.startswith("event: start"), start
         await relay.aclose()  # the browser went away at its first event

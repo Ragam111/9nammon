@@ -14,5 +14,14 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["vite.config.ts", "playwright.config.ts", "e2e"]
+  "include": [
+    "vite.config.ts",
+    "playwright.config.ts",
+    "e2e",
+    "src/modelGroups.ts",
+    "src/onboardingLocal.ts",
+    "src/chatApi.ts",
+    "src/api.ts",
+    "src/i18n/th.ts"
+  ]
 }
