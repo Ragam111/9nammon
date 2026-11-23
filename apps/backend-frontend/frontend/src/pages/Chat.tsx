@@ -220,6 +220,7 @@ export function Chat({ onAuthLost }: { onAuthLost: () => void }) {
   const inputId = useId();
   const errorId = useId();
   const sidebarTitleId = useId();
+  const contextTitleId = useId();
   const [models, setModels] = useState<ChatModel[]>([]);
   const [conversations, setConversations] = useState<ConversationSummary[] | null>(null);
   const [listError, setListError] = useState<ApiError | null>(null);
@@ -716,6 +717,33 @@ export function Chat({ onAuthLost }: { onAuthLost: () => void }) {
           </div>
         </form>
       </section>
+
+      <aside aria-labelledby={contextTitleId}
+        className="hidden xl:flex xl:w-72 xl:shrink-0 xl:flex-col xl:gap-4 xl:rounded-md xl:border xl:border-line xl:bg-surface xl:p-4">
+        <h2 id={contextTitleId} className="text-sm font-semibold text-fg">{tr("chat.context.heading")}</h2>
+        {activeConv ? (
+          <dl className="flex flex-col gap-3 text-sm">
+            <div>
+              <dt className="text-muted">{tr("chat.context.model")}</dt>
+              <dd className="break-words text-fg">{models.find((m) => m.id === model)?.label ?? model}</dd>
+            </div>
+            <div>
+              <dt className="text-muted">{tr("chat.context.messages")}</dt>
+              <dd className="text-fg">{messages.length}</dd>
+            </div>
+            <div>
+              <dt className="text-muted">{tr("chat.context.updated")}</dt>
+              <dd className="text-fg">{formatUpdated(activeConv.updated_at)}</dd>
+            </div>
+          </dl>
+        ) : (
+          <p className="text-sm text-muted">{tr("chat.context.none")}</p>
+        )}
+        <div className="flex flex-col gap-2 border-t border-line pt-3">
+          <h3 className="text-sm font-medium text-fg">{tr("chat.context.outputs")}</h3>
+          <p className="text-sm text-muted">{tr("chat.context.outputsEmpty")}</p>
+        </div>
+      </aside>
 
       {deleteTarget && (
         <DeleteDialog onCancel={closeDelete} onConfirm={() => void removeConversation(deleteTarget)} />
