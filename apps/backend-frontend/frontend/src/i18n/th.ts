@@ -38,6 +38,7 @@ export const TH = {
   "chat.model.none": "ไม่มีโมเดลที่พร้อมใช้งาน",
   "chat.model.banner": "ยังไม่มีโมเดลที่ตั้งค่า API key บน server — ตั้งค่าก่อนจึงจะส่งข้อความได้",
   "chat.model.bannerLocal": "ยังไม่มีโมเดลที่พร้อมใช้งาน — ดูสถานะด้านบน",
+  "chat.model.selectedBlocked": "โมเดลของการสนทนานี้ยังไม่พร้อมใช้งาน — เลือกโมเดลที่พร้อมจากรายการด้านบน",
   "chat.group.local": "ในเครื่อง",
   "chat.group.server": "บนเซิร์ฟเวอร์",
   "chat.status.ready": "พร้อมใช้งาน",

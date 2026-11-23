@@ -130,3 +130,11 @@ test("composer is blocked while the next conversation is still loading", async (
   // Checked inside the 6 s window: the short timeout fails before the detail (gpt-a, not ready) arrives.
   await expect(page.getByLabel("พิมพ์ข้อความ")).toBeDisabled({ timeout: 2000 });
 });
+
+// P3 minor: when another model is ready but the open conversation's own model is not, the banner must say so.
+test("banner explains that the open conversation's model is not ready", async ({ page }) => {
+  await mockApi(page, MIXED, [NOT_READY_CONV]);
+  await page.goto("/#/chat");
+  await expect(page.locator(`button[title="${NOT_READY_CONV.title}"][aria-current="page"]`)).toHaveCount(1);
+  await expect(page.getByText("โมเดลของการสนทนานี้ยังไม่พร้อมใช้งาน")).toBeVisible();
+});

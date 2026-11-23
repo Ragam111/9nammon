@@ -672,6 +672,9 @@ export function Chat({ onAuthLost }: { onAuthLost: () => void }) {
         ) : (
           <p className="rounded-sm bg-surface-2 px-3 py-2 text-sm text-muted">{tr("chat.model.bannerLocal")}</p>
         ))}
+        {usable && activeId && !threadLoading && !pageError && !selectedReady && (
+          <p className="rounded-sm bg-warn-bg px-3 py-2 text-sm text-warn">{tr("chat.model.selectedBlocked")}</p>
+        )}
 
         {pageError ? (
           <ErrorState title={errorTitle(pageError)} detail={errorDetail(pageError)}
