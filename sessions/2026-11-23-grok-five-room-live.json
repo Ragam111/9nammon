@@ -1,0 +1,49 @@
+{
+  "title": "ห้องอัดเว็บห้าห้อง 23 พ.ย. 2026 รอบสด",
+  "source": "studio",
+  "space": "studio",
+  "skill": "rapid-iteration-ecosystem",
+  "version": "0.1.0",
+  "company": "Token LCA",
+  "token": "T-LCA",
+  "repo": "Ragam111/9nammon",
+  "brief": "สตูดิโอเว็บห้าห้อง เดินทีละไฟล์ก่อนแชทจะเป็นแอป แขกใช้ฟรีบนหน้า บัญชีแยกคลัง",
+  "charged": false,
+  "reached": 8,
+  "hands": 8,
+  "note": "ม้วนสตูดิโอไม่หัก T-LCA เริ่ม 8000 ต่อบัญชี หัก 1 เฉพาะเก็บบทแชทหรือมติสภา ของแขกอยู่แค่หน้า สมองบนเว็บเป็นแผนที่ไฟล์ หลัก 9arm เป็นจังหวะตัดสินใจ ไม่ใช่คลิป ไม่แทน server.py และไม่ย้ายตัวติดตั้ง Windows",
+  "rooms": ["สตูดิโอ", "แชท", "ไฟล์", "ติดตั้ง", "คอนโซล"],
+  "loop": ["Read", "Re-check", "Fix", "Report"],
+  "ledger": {
+    "name": "T-LCA",
+    "initial": 8000,
+    "deduction": "หัก 1 เมื่อเก็บบทแชทหรือมติสภา",
+    "free": "ม้วนสตูดิโอและคำตอบของแขกไม่หัก ไม่ซื้อขาย"
+  },
+  "notConnected": [
+    "กุญแจของ Ollama",
+    "รหัสไททันของแอดมิน",
+    "โทเคนเข้าเครื่องใน Dockerfile"
+  ],
+  "steps": [
+    { "n": 1, "title": "รับโจทย์จากคน", "files": [], "done": true, "layer": "คน" },
+    { "n": 2, "title": "เปิดม้วนเทป", "files": ["sessions/tape.json"], "done": true, "layer": "ม้วน" },
+    { "n": 3, "title": "เขียนหน้าที่คนเห็น", "files": ["app/", "lca_app.py"], "done": true, "layer": "frontend" },
+    { "n": 4, "title": "ต่อสายตอบทีละคำ", "files": ["server.py", "local_coder.py", "sysmanager/"], "done": true, "layer": "backend" },
+    { "n": 5, "title": "แช่แข็งสกิล", "files": ["skills/rapid-iteration-ecosystem/SKILL.md"], "done": true, "layer": "core" },
+    { "n": 6, "title": "แยกพื้นที่", "files": ["org_store.py", "app/auth_backend.py", "app/space_store.py"], "done": true, "layer": "backend" },
+    { "n": 7, "title": "หักเหรียญ", "files": ["app/history_store.py", "app/usage_store.py"], "done": true, "layer": "backend" },
+    { "n": 8, "title": "แพ็กเปิดตัว", "files": ["install/pack.json", "installer_gui.py", "install.ps1", "start-lca.bat", "Dockerfile"], "done": true, "layer": "install" }
+  ],
+  "pulse": [
+    "app/chat.js",
+    "server.py",
+    "app/auth_backend.py",
+    "app/space_store.py",
+    "app/admission.py",
+    "app/context_manager.py",
+    "app/model_backend.py",
+    "app/history_store.py"
+  ],
+  "crew": ["สถาปัตยกรรม", "ช่างแชท", "ผู้ดูแลข้อมูล", "ช่างติดตั้ง"]
+}
