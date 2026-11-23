@@ -608,7 +608,9 @@ def _log_turn(ctx: Context, user_id: int, conv_id: str, provider: str, model_id:
               started: float, status: str, err: AppError | None, tokens_in: int = 0, tokens_out: int = 0) -> None:
     """One JSON log line per chat turn. Message text and keys are never logged."""
     latency_ms = int((time.perf_counter() - started) * 1000)
+    # COST_PER_1K_TOKENS is the cloud rate. A local turn has no per-token cost, so it is logged as 0.
+    rate = 0.0 if provider == LOCAL_PROVIDER_NAME else ctx.settings.cost_per_1k_tokens
     log_event("chat", ctx.log_stream, request_id=request_id, user_id=user_id, conversation_id=conv_id,
               provider=provider, model=model_id, status=status, error_type=err.type if err else None,
               latency_ms=latency_ms, tokens_in=tokens_in, tokens_out=tokens_out,
-              cost_estimate=estimate_cost(tokens_in + tokens_out, ctx.settings.cost_per_1k_tokens))
+              cost_estimate=estimate_cost(tokens_in + tokens_out, rate))
