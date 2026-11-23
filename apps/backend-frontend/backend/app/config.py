@@ -71,6 +71,9 @@ class Settings:
     quota_tokens_weekly: int = 5_000_000
     quota_tokens_heavy_weekly: int = 1_000_000
     heavy_models: list[str] = field(default_factory=list)
+    # Local-model limits (own buckets, never the cloud ones). Defaults equal the cloud defaults.
+    local_quota_tokens_per_window: int = 1_000_000
+    local_quota_tokens_weekly: int = 5_000_000
     # Public address of the site, used to build OAuth redirect URLs (no trailing slash)
     public_base_url: str = "http://127.0.0.1:8080"
     oauth_google_client_id: str = ""
@@ -144,6 +147,8 @@ def load_settings() -> Settings:
         quota_tokens_weekly=_int("QUOTA_TOKENS_WEEKLY", 5_000_000),
         quota_tokens_heavy_weekly=_int("QUOTA_TOKENS_HEAVY_WEEKLY", 1_000_000),
         heavy_models=_list("HEAVY_MODELS", []),
+        local_quota_tokens_per_window=_int("LOCAL_QUOTA_TOKENS_PER_WINDOW", 1_000_000),
+        local_quota_tokens_weekly=_int("LOCAL_QUOTA_TOKENS_WEEKLY", 5_000_000),
         public_base_url=os.environ.get("PUBLIC_BASE_URL", "http://127.0.0.1:8080"),
         oauth_google_client_id=os.environ.get("OAUTH_GOOGLE_CLIENT_ID", ""),
         oauth_google_client_secret=os.environ.get("OAUTH_GOOGLE_CLIENT_SECRET", ""),

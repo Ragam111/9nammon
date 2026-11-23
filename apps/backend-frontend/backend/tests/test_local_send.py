@@ -231,5 +231,31 @@ class LocalModelRowsTest(GuardedTestCase):
             self.assertEqual(self._rows(client)[LOCAL_MODEL]["status"], "unreachable")
 
 
+class LocalQuotaTest(GuardedTestCase):
+    def test_local_turn_is_counted_in_the_local_buckets_only(self) -> None:
+        with client_for(ollama()) as client:
+            conv = new_conversation(client)
+            self.assertEqual(send(client, conv).status_code, 200)
+            from app import quota
+            ctx = client.app.state.ctx
+            with ctx.db.session() as conn:
+                uid = int(conn.execute("SELECT id FROM users WHERE username = ?", ("alice",)).fetchone()["id"])
+            local_key = quota.plan_local(ctx.settings)[0].key
+            self.assertGreater(quota.used(ctx.db, uid, local_key), 0)
+            cloud_key = quota.plan(ctx.settings, heavy=False)[0].key
+            self.assertEqual(quota.used(ctx.db, uid, cloud_key), 0)
+
+    def test_exhausted_local_quota_refuses_local_but_not_cloud(self) -> None:
+        cloud = FakeModel([ok_stream(["x"])])
+        with client_for(ollama(), cloud=cloud, local_quota_tokens_per_window=1) as client:
+            conv = new_conversation(client)
+            res = send(client, conv)
+            self.assertEqual(res.status_code, 429, res.text)
+            self.assertIn("โควตาโมเดลในเครื่อง", res.text)
+            self.assertEqual(cloud.requests, [])
+            cloud_conv = new_conversation(client, "gpt-test")
+            self.assertEqual(send(client, cloud_conv, model="gpt-test").status_code, 200)
+
+
 if __name__ == "__main__":
     unittest.main()

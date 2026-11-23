@@ -503,12 +503,21 @@ def _send_local(ctx: Context, request: Request, user_id: int, conv_id: str, mode
     local = ctx.local
     if local is None:  # resolve_model only lets a READY model through, and READY needs a provider
         raise AppError("validation", NOT_READY_MESSAGES[ModelStatus.UNREACHABLE], http_status=400)
-    start_turn(ctx.db, user_id, conv_id, content, model_id, first_turn=not history)
+    buckets = quota.plan_local(ctx.settings)
+    need = estimate_tokens(_joined(context)) + cap
+    # Local runs have their own buckets; they never touch the cloud ones. Check and hold in one synchronous step.
+    quota.check_all(ctx.db, user_id, buckets, need=need)
+    quota.reserve_all(ctx.db, user_id, buckets, need)
+    try:
+        start_turn(ctx.db, user_id, conv_id, content, model_id, first_turn=not history)
+    except BaseException:  # nothing was sent to Ollama: give the whole hold back before failing
+        quota.settle_all(ctx.db, user_id, buckets, reserved=need, charged=0)
+        raise
     message_id = _new_id("msg")
     result = StreamResult()
     deltas = _record_text(local.stream(context, model_id, cap), result)
     stream = _relay(ctx, user_id, conv_id, LOCAL_PROVIDER_NAME, model_id, deltas, result, _noop, _joined(context),
-                    started, request.state.request_id, [], message_id, 0)
+                    started, request.state.request_id, buckets, message_id, need)
     return StreamingResponse(stream, media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
