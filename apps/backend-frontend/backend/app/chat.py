@@ -385,13 +385,14 @@ async def _local_rows(ctx: Context) -> list[dict[str, Any]]:
     return rows
 
 
-def _health_payload(reachable: bool, names: list[str], available_ram: float | None) -> dict[str, Any]:
+def _health_payload(enabled: bool, reachable: bool, names: list[str], available_ram: float | None) -> dict[str, Any]:
     """Health body: the P1 keys plus RAM and one detail row per catalog model. Read-only; no decision is made here."""
     detail = [
         {"id": spec.id, "installed": installed_flag(spec.id, names), "required_ram_gb": spec.required_ram_gb}
         for spec in DEFAULT_LOCAL_CATALOG
     ]
     return {
+        "enabled": enabled,
         "reachable": reachable,
         "models": names,
         "available_ram_gb": available_ram,
@@ -404,9 +405,9 @@ async def local_health(request: Request, _: auth.User = Depends(_current_user)) 
     """Whether the local Ollama answers, which models it has, and the RAM it reports. Takes no address."""
     ctx = _ctx(request)
     if ctx.local is None:
-        return _health_payload(False, [], None)
+        return _health_payload(False, False, [], None)
     reachable, names = await ctx.local.installed_models()
-    return _health_payload(reachable, names, ctx.local.free_ram_gb())
+    return _health_payload(ctx.local.enabled, reachable, names, ctx.local.free_ram_gb())
 
 
 @router.get("/conversations")

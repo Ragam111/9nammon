@@ -3,7 +3,7 @@
 import type { LocalHealth } from "./chatApi";
 import type { ThKey } from "./i18n/th";
 
-export type LocalOutcome = "ready" | "not_installed" | "not_enough_memory" | "not_found";
+export type LocalOutcome = "ready" | "disabled" | "not_installed" | "not_enough_memory" | "not_found";
 export type ModelChoice = "local" | "server";
 
 /** One localStorage key for the preference. It is a per-browser convenience, never an access check. */
@@ -11,17 +11,19 @@ export const PREFERENCE_KEY = "lca.modelPreference";
 
 export const OUTCOME_MESSAGE_KEY: Record<LocalOutcome, ThKey> = {
   ready: "onboarding.outcome.ready",
+  disabled: "onboarding.outcome.disabled",
   not_installed: "onboarding.outcome.not_installed",
   not_enough_memory: "onboarding.outcome.not_enough_memory",
   not_found: "onboarding.outcome.not_found",
 };
 
 /**
- * Order of rules: missing or unreachable -> not_found; no installed catalog entry -> not_installed;
- * an installed entry fits the RAM -> ready; installed but none fits -> not_enough_memory.
+ * Order of rules: feature switched off -> disabled; missing or unreachable -> not_found; no installed catalog
+ * entry -> not_installed; an installed entry fits the RAM -> ready; installed but none fits -> not_enough_memory.
  * A null available_ram_gb does not block (same as the backend status rule).
  */
 export function decideLocalOutcome(health: LocalHealth | null | undefined): LocalOutcome {
+  if (health?.enabled === false) return "disabled";
   if (!health?.reachable) return "not_found";
   const installed = (health.models_detail ?? []).filter((m) => m.installed);
   if (installed.length === 0) return "not_installed";

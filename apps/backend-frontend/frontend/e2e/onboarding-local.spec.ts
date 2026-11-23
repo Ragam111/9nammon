@@ -16,6 +16,12 @@ test("unreachable Ollama is not_found", () => {
   expect(decideLocalOutcome(health)).toBe("not_found");
 });
 
+test("feature switched off is disabled, not not_found, even though Ollama is unreachable", () => {
+  const health: LocalHealth = { enabled: false, reachable: false, models: [], available_ram_gb: 16, models_detail: [QWEN] };
+  expect(decideLocalOutcome(health)).toBe("disabled");
+  expect(tr(OUTCOME_MESSAGE_KEY.disabled)).not.toContain("ไม่พบ Ollama");
+});
+
 test("a missing or null payload is not_found", () => {
   expect(decideLocalOutcome(null)).toBe("not_found");
   expect(decideLocalOutcome(undefined)).toBe("not_found");

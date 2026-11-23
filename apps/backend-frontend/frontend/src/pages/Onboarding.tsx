@@ -14,6 +14,7 @@ type LocalState = { status: "loading" } | { status: "error" } | { status: "ok"; 
 
 const BADGE: Record<LocalOutcome, { status: Status; label: ThKey }> = {
   ready: { status: "ok", label: "chat.status.ready" },
+  disabled: { status: "neutral", label: "onboarding.outcome.badge.disabled" },
   not_installed: { status: "warn", label: "chat.status.not_installed" },
   not_enough_memory: { status: "warn", label: "chat.status.not_enough_memory" },
   not_found: { status: "bad", label: "onboarding.outcome.badge.not_found" },

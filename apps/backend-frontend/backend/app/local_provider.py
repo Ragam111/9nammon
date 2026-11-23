@@ -147,6 +147,11 @@ class OllamaLocalProvider:
         available = self._available_ram()
         return [ModelInfo(s.id, s.label, _status_for(s, installed, available)) for s in self._catalog]
 
+    @property
+    def enabled(self) -> bool:
+        """Whether the local feature is switched on. When off, no call is made to Ollama."""
+        return self._enabled
+
     def free_ram_gb(self) -> float | None:
         """Free memory in GB as the host reports it now, or None when the host cannot say."""
         return self._available_ram() if self._available_ram is not None else None
