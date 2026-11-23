@@ -65,7 +65,9 @@ export function reasonFor(m: ChatModel): string | null {
     case "unreachable":
       return tr("chat.status.reason.unreachable");
     case "not_configured":
-      return tr("chat.status.reason.notConfigured");
+      return kindOf(m) === "local"
+        ? tr("chat.status.reason.localNotConfigured")
+        : tr("chat.status.reason.notConfigured");
   }
 }
 
