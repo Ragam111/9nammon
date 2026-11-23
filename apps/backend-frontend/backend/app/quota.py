@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import secrets
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 from .config import Settings
 from .db import Database
@@ -48,7 +48,7 @@ HOLD_TTL = timedelta(minutes=15)  # longer than any model call (MODEL_TIMEOUT_S)
 
 
 def _utc_now(now: datetime | None = None) -> str:
-    return (now or datetime.now(timezone.utc)).astimezone(timezone.utc).isoformat()
+    return (now or datetime.now(UTC)).astimezone(UTC).isoformat()
 
 
 def used(db: Database, user_id: int, window: str | None = None, now: datetime | None = None) -> int:
@@ -178,7 +178,7 @@ def reserve_all(db: Database, user_id: int, buckets: list[Bucket], tokens: int, 
     await in between, so a concurrent request sees the hold.
     """
     hold_id = secrets.token_hex(16)
-    expires = _utc_now((now or datetime.now(timezone.utc)) + HOLD_TTL)
+    expires = _utc_now((now or datetime.now(UTC)) + HOLD_TTL)
     with db.session() as conn:
         conn.execute("DELETE FROM quota_holds WHERE expires_at <= ?", (_utc_now(now),))
         for bucket in buckets:

@@ -456,7 +456,8 @@ async def _delete_mid_answer(model: FakeModel, ctx: Any, uid: int, conv_id: str,
         upstream = await http.send(http.build_request("POST", OPENAI_URL, json={"stream": True}), stream=True)
         result = StreamResult()  # the same arguments the cloud route passes to _relay
         relay = chat._relay(ctx, uid, conv_id, ref.provider.name, ref.id, iter_text(upstream, result, 64 * 8),
-                            result, upstream.aclose, "hi", time.perf_counter(), "req-delete", buckets, "msg_delete", hold)
+                            result, upstream.aclose, "hi", time.perf_counter(), "req-delete", buckets,
+                            "msg_delete", hold)
         assert (await relay.__anext__()).startswith("event: start")
         assert (await relay.__anext__()).startswith("event: delta")
         chat.delete_conversation(ctx.db, uid, conv_id)
