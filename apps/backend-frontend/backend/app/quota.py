@@ -92,6 +92,8 @@ _LABELS = {
     "five_hour": "โควตา 5 ชั่วโมง",
     "weekly": "โควตารายสัปดาห์",
     "heavy_weekly": "โควตาโมเดลหนักรายสัปดาห์",
+    "local_five_hour": "โควตาโมเดลในเครื่อง 5 ชั่วโมง",
+    "local_weekly": "โควตาโมเดลในเครื่องรายสัปดาห์",
 }
 
 
@@ -125,6 +127,18 @@ def plan(settings: Settings, heavy: bool, now: datetime | None = None) -> list[B
     if heavy:
         buckets.append(Bucket("heavy_weekly", f"hwk|{week_key}", settings.quota_tokens_heavy_weekly, week_ends))
     return buckets
+
+
+def plan_local(settings: Settings, now: datetime | None = None) -> list[Bucket]:
+    """The buckets for one local-model run: their own limits, never the cloud buckets."""
+    week = week_start(now)
+    week_key = week.strftime("%Y-%m-%dT%H")
+    week_ends = (week + timedelta(days=7)).isoformat()
+    return [
+        Bucket("local_five_hour", f"lcl5h|{current_window(now)}", settings.local_quota_tokens_per_window,
+               window_resets_at(now)),
+        Bucket("local_weekly", f"lwk|{week_key}", settings.local_quota_tokens_weekly, week_ends),
+    ]
 
 
 def check_all(db: Database, user_id: int, buckets: list[Bucket], need: int) -> None:
