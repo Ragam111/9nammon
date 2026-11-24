@@ -2299,6 +2299,12 @@ def make_handler(project_root: Path, auth_token: Optional[str],
         def _todos_body(self):
             """อ่าน body เป็น JSON object — ไม่ใช่ object หรือ JSON เสีย → ตอบ 400 แล้วคืน None"""
             try:
+                int(self.headers.get("Content-Length", 0) or 0)
+            except ValueError:
+                # ไม่ส่งข้อความ exception ดิบของ Python (เช่น "invalid literal for int()") กลับไป
+                self._send_json(400, {"error": "Content-Length ไม่ถูกต้อง"})
+                return None
+            try:
                 data = self._read_json_body()
             except (json.JSONDecodeError, UnicodeDecodeError):
                 self._send_json(400, {"error": "request body ต้องเป็น JSON ที่ถูกต้อง"})

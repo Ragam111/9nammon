@@ -92,6 +92,21 @@ class TodoHardeningHttpTest(unittest.TestCase):
                 self.assertEqual(status, 400)
                 self.assertIn("error", body)
 
+    def test_non_numeric_content_length_returns_fixed_400(self):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        conn.putrequest("POST", "/api/todos")
+        conn.putheader("Content-Type", "application/json")
+        conn.putheader("Content-Length", "abc")
+        conn.putheader("X-Auth-Token", self.handler.session_token)
+        conn.endheaders()
+        resp = conn.getresponse()
+        text = resp.read().decode("utf-8")
+        conn.close()
+        self.assertEqual(resp.status, 400)
+        body = json.loads(text)
+        self.assertEqual(body["error"], "Content-Length ไม่ถูกต้อง")
+        self.assertNotIn("invalid literal", text)
+
     def test_bad_toggle_id_does_not_leak_python_error(self):
         status, body = self._post("/api/todos/toggle", {"id": "abc"})
         self.assertEqual(status, 400)
