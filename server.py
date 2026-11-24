@@ -477,7 +477,12 @@ def make_handler(project_root: Path, auth_token: Optional[str],
         def _fail_last_resort(self, exc: BaseException) -> None:
             """ข้อผิดพลาดที่ไม่มีใครดัก: เดิม socket ถูกปิดเงียบ ๆ = curl error 52 "Empty reply".
             ตอนนี้: ยังไม่ส่ง header → 500 JSON อ่านรู้เรื่อง; ส่งไปแล้ว (เช่นกลาง SSE) → เงียบ
-            (เปลี่ยน status ไม่ได้แล้ว) — ทั้งสองกรณีลง error_log ให้ /dev เห็น"""
+            (เปลี่ยน status ไม่ได้แล้ว) — ทั้งสองกรณีลง error_log ให้ /dev เห็น
+            ยกเว้น socket timeout (client ค้างกลาง request): client อ่านคำตอบไม่ได้อยู่แล้ว
+            จึงปิดการเชื่อมต่อเงียบ ๆ ไม่ตอบ 500 และไม่ลง error log"""
+            if isinstance(exc, (TimeoutError, socket.timeout)):
+                self.close_connection = True
+                return
             msg = f"{exc.__class__.__name__}: {exc}"
             print(f"[server][error] {self.command} {self.path} → {msg}")
             try:
