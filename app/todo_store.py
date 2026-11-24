@@ -11,9 +11,13 @@ Interface ที่ local_coder.py / server.py เรียกใช้ตรง
 """
 
 import json
+import threading
 from pathlib import Path
 
 TODOS_FILE_NAME = "todos.json"
+
+# กัน read-modify-write ชนกันเมื่อหลาย request (ThreadingHTTPServer) เขียนพร้อมกัน
+_LOCK = threading.RLock()
 
 
 def _todos_path(project_root: Path) -> Path:
@@ -46,30 +50,33 @@ def _save_todos(project_root: Path, todos: list) -> None:
 
 def add_todo(project_root: Path, text: str) -> dict:
     """เพิ่ม todo ใหม่ — id เป็นเลขถัดจาก id สูงสุดที่มีอยู่ (กัน id ซ้ำแม้เคยลบตัวกลางไปแล้ว)"""
-    todos = load_todos(project_root)
-    next_id = max((t.get("id", 0) for t in todos), default=0) + 1
-    item = {"id": next_id, "text": text, "done": False}
-    todos.append(item)
-    _save_todos(project_root, todos)
+    with _LOCK:
+        todos = load_todos(project_root)
+        next_id = max((t.get("id", 0) for t in todos), default=0) + 1
+        item = {"id": next_id, "text": text, "done": False}
+        todos.append(item)
+        _save_todos(project_root, todos)
     return item
 
 
 def toggle_todo(project_root: Path, todo_id: int) -> bool:
     """สลับสถานะ done ↔ ไม่ done — คืน True ถ้าเจอ id, False ถ้าไม่เจอ"""
-    todos = load_todos(project_root)
-    for t in todos:
-        if t.get("id") == todo_id:
-            t["done"] = not t.get("done", False)
-            _save_todos(project_root, todos)
-            return True
-    return False
+    with _LOCK:
+        todos = load_todos(project_root)
+        for t in todos:
+            if t.get("id") == todo_id:
+                t["done"] = not t.get("done", False)
+                _save_todos(project_root, todos)
+                return True
+        return False
 
 
 def delete_todo(project_root: Path, todo_id: int) -> bool:
     """ลบ todo ตาม id — คืน True ถ้าเจอและลบสำเร็จ, False ถ้าไม่เจอ"""
-    todos = load_todos(project_root)
-    filtered = [t for t in todos if t.get("id") != todo_id]
-    if len(filtered) == len(todos):
-        return False
-    _save_todos(project_root, filtered)
-    return True
+    with _LOCK:
+        todos = load_todos(project_root)
+        filtered = [t for t in todos if t.get("id") != todo_id]
+        if len(filtered) == len(todos):
+            return False
+        _save_todos(project_root, filtered)
+        return True
