@@ -4,8 +4,15 @@
 
 โปรโตคอล (ให้ LLM ตอบ JSON บรรทัดเดียวต่อรอบ):
   {"thought": "...", "tool": "read_file", "args": {"path": "server.py"}}   # เรียก tool
-  {"thought": "...", "final": "คำตอบสุดท้าย"}                               # จบงาน
-loop ป้อนผล tool กลับเป็น observation แล้ววนจน final หรือครบ max_steps.
+  {"thought": "...", "action": "finish", "final": "คำตอบสุดท้าย"}          # จบงาน (canonical)
+  {"thought": "...", "final": "คำตอบสุดท้าย"}                               # alias เดิม (ยังรับได้)
+  ทางเลือกอีกรูปแบบ: {"action": "read_file", "input": {...}} ก็รับได้เช่นกัน
+loop ป้อนผล tool กลับเป็น observation แล้ววนจน finish หรือครบ max_steps.
+
+ทุก step มีฟิลด์: step (เลข 0-based), action, input, observation, thought
+  - step ของ tool: เพิ่ม tool/args ซ้ำไว้เพื่อความเข้ากันได้กับโค้ดเดิม
+  - step ของ finish: action="finish", input={"final": ...}, final=...
+  - step ของ parse error: action="parse_error", error="parse", raw=...
 
 ปลอดภัย: ทุก tool วิ่งผ่าน sandbox (confine path + allowlist). log ทุก step ไว้ตรวจย้อนได้.
 degrade: LLM ตอบไม่เป็น JSON → ป้อน error กลับให้แก้ (ไม่ crash). ครบ max_steps → คืนผลเท่าที่มี.
@@ -22,6 +29,8 @@ from app.agent import tools as tools_mod
 
 DEFAULT_MODEL = "qwen2.5:0.5b"
 DEFAULT_MAX_STEPS = 8
+FINISH = "finish"          # action ที่ใช้จบงาน
+PARSE_ERROR = "parse_error"  # action ของ step ที่ LLM ตอบไม่เป็น JSON
 
 
 def _system_prompt(tool_schemas: list) -> str:
@@ -32,9 +41,9 @@ def _system_prompt(tool_schemas: list) -> str:
         f"เครื่องมือที่ใช้ได้:\n{tools_txt}\n\n"
         "กติกาการตอบ: ตอบเป็น JSON บรรทัดเดียวเท่านั้น ไม่มีข้อความอื่นนอก JSON:\n"
         '  เรียกเครื่องมือ: {"thought":"เหตุผลสั้น","tool":"ชื่อ","args":{...}}\n'
-        '  จบงาน:         {"thought":"สรุปสั้น","final":"คำตอบสุดท้ายให้ผู้ใช้"}\n'
+        '  จบงาน:         {"thought":"สรุปสั้น","action":"finish","final":"คำตอบสุดท้ายให้ผู้ใช้"}\n'
         "ทำทีละขั้น: อ่าน/ตรวจก่อนสรุป. อย่าเดาเนื้อไฟล์ — ใช้ read_file ดูจริง. "
-        "เมื่อมั่นใจแล้วค่อยตอบ final."
+        "เมื่อมั่นใจแล้วค่อยตอบ finish."
     )
 
 
@@ -48,6 +57,64 @@ def _parse(reply: str) -> dict:
     return json.loads(s[start:end + 1])
 
 
+def _is_finish(action: dict) -> bool:
+    """จบเมื่อ action == "finish" หรือมีคีย์ "final" (alias เดิม คงไว้ให้โค้ด/เทสต์เก่าไม่พัง)"""
+    return action.get("action") == FINISH or action.get("tool") == FINISH or "final" in action
+
+
+def _final_text(action: dict) -> str:
+    """ดึงคำตอบสุดท้าย: จากคีย์ final ตรง ๆ หรือจาก input.final"""
+    if "final" in action:
+        return str(action.get("final") or "")
+    inp = action.get("input")
+    if isinstance(inp, dict):
+        return str(inp.get("final") or "")
+    return ""
+
+
+def _name_args(action: dict) -> tuple:
+    """คืน (ชื่อ tool/action, args dict) รองรับทั้ง tool/args และ action/input"""
+    name = str(action.get("action") or action.get("tool") or "")
+    raw = action.get("input") if "input" in action else action.get("args")
+    return name, (raw if isinstance(raw, dict) else {})
+
+
+def _run_tool(registry: dict, name: str, args: dict) -> str:
+    """รัน tool ผ่าน registry — ความผิดพลาดกลายเป็น observation ไม่ crash"""
+    fn = registry.get(name)
+    if fn is None:
+        return f"ไม่รู้จักเครื่องมือ '{name}' (มี: {', '.join(registry)})"
+    try:
+        return fn(args)
+    except tools_mod.ToolError as e:
+        return f"[tool error] {e}"
+
+
+class EchoBackend:
+    """สมองปลอม offline: คืนคำตอบ (action) ที่เตรียมไว้ตามลำดับ ไม่เรียกเครือข่ายเลย.
+
+    actions: list ของ dict (แปลงเป็น JSON ให้) หรือ str JSON.
+    เมื่อหมดลำดับจะคืน finish อัตโนมัติ กันวนไม่จบ.
+    """
+
+    EXHAUSTED_TEXT = "echo: หมดลำดับ action"
+
+    def __init__(self, actions: list) -> None:
+        self._queue = [a if isinstance(a, str) else json.dumps(a, ensure_ascii=False)
+                       for a in actions]
+        self._pos = 0
+        self.calls = 0
+
+    def __call__(self, messages: list) -> str:
+        self.calls += 1
+        if self._pos < len(self._queue):
+            reply = self._queue[self._pos]
+            self._pos += 1
+            return reply
+        return json.dumps({"thought": "echo", "action": FINISH,
+                           "final": self.EXHAUSTED_TEXT}, ensure_ascii=False)
+
+
 def run(project_root, task: str, workspace, model: str = DEFAULT_MODEL,
         max_steps: int = DEFAULT_MAX_STEPS, allowed_commands=None, approvals_root=None,
         generate_fn=None, extra_system: str = None, net_ctx=None) -> dict:
@@ -56,8 +123,10 @@ def run(project_root, task: str, workspace, model: str = DEFAULT_MODEL,
     - approvals_root: ถ้าให้มา → เปิด tool 'เสนอ' (P6) เขียนไฟล์/รันคำสั่งที่ต้องรอคนอนุมัติ
     - generate_fn: ถ้าให้มา → ใช้ "สมอง" นี้แทน backend ตาม config (callable(messages)->str)
       ให้ bot วิ่ง ReAct ผ่าน connection ที่เลือกได้ (ไม่ผูกกับ MODEL_BACKEND กลาง)
+      ใช้ EchoBackend(...) เพื่อรันแบบ offline ตามลำดับที่เตรียมไว้
     - extra_system: system prompt เสริม (เช่น persona ของ skill) ต่อท้าย tool-protocol
-    - steps: log ทุกขั้น (thought/tool/args/observation หรือ final) ไว้ตรวจย้อน
+    - steps: log ทุกขั้น (ดูฟิลด์ใน docstring ของโมดูล) ไว้ตรวจย้อน
+    - stopped_reason: "final" (จบด้วย finish) | "max_steps"
     """
     task = (task or "").strip()
     if not task:
@@ -77,36 +146,34 @@ def run(project_root, task: str, workspace, model: str = DEFAULT_MODEL,
     if extra_system:
         messages.append({"role": "system", "content": extra_system})
     messages.append({"role": "user", "content": f"งาน: {task}"})
-    steps = []
+    steps: list = []
     for _ in range(max_steps):
+        idx = len(steps)
         reply = gen(messages)
         try:
             action = _parse(reply)
         except ValueError:
             # LLM ตอบไม่เป็น JSON — ป้อน error กลับให้แก้ (ไม่ทิ้งงาน)
+            hint = "ตอบเป็น JSON ตามรูปแบบที่กำหนดเท่านั้น"
             messages.append({"role": "assistant", "content": reply})
-            messages.append({"role": "user", "content": "ตอบเป็น JSON ตามรูปแบบที่กำหนดเท่านั้น"})
-            steps.append({"error": "parse", "raw": reply[:500]})
+            messages.append({"role": "user", "content": hint})
+            steps.append({"step": idx, "thought": "", "action": PARSE_ERROR, "input": {},
+                          "observation": hint, "error": "parse", "raw": reply[:500]})
             continue
 
-        if "final" in action:
-            steps.append({"thought": action.get("thought", ""), "final": action["final"]})
-            return {"final": action["final"], "steps": steps, "stopped_reason": "final"}
+        thought = str(action.get("thought", "") or "")
+        if _is_finish(action):
+            final = _final_text(action)
+            steps.append({"step": idx, "thought": thought, "action": FINISH,
+                          "input": {"final": final}, "observation": "", "final": final})
+            return {"final": final, "steps": steps, "stopped_reason": "final"}
 
-        tool_name = action.get("tool", "")
-        args = action.get("args", {}) or {}
-        fn = registry.get(tool_name)
-        if fn is None:
-            obs = f"ไม่รู้จักเครื่องมือ '{tool_name}' (มี: {', '.join(registry)})"
-        else:
-            try:
-                obs = fn(args)
-            except tools_mod.ToolError as e:
-                obs = f"[tool error] {e}"
-        steps.append({"thought": action.get("thought", ""), "tool": tool_name,
-                      "args": args, "observation": obs})
+        name, args = _name_args(action)
+        obs = _run_tool(registry, name, args)
+        steps.append({"step": idx, "thought": thought, "action": name, "input": args,
+                      "observation": obs, "tool": name, "args": args})
         # ป้อนผลกลับให้ agent คิดต่อ
         messages.append({"role": "assistant", "content": reply})
-        messages.append({"role": "user", "content": f"ผลจาก {tool_name}:\n{obs}"})
+        messages.append({"role": "user", "content": f"ผลจาก {name}:\n{obs}"})
 
     return {"final": None, "steps": steps, "stopped_reason": "max_steps"}

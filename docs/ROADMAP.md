@@ -56,7 +56,7 @@ Source of truth เดียวสำหรับงานพัฒนา LCA �
 
 | ลำดับ | งาน | หมายเหตุ |
 |------|-----|---------|
-| P2-1 | **Resource Manager (code)** — `app/resource_budget.py` + `GET /api/health` + `pick_backend()` คืน CPU ตามผลวัด #26 | ต่อจาก design #23/#25 |
+| P2-1 | ✅ **Resource Manager (code)** — `app/resource_budget.py` + `GET /api/health` + `pick_backend()` คืน CPU ตามผลวัด #26 | เสร็จ (ตรวจ 2026-11-24: `test_resource_budget` + `test_server_health` 31 tests OK) |
 | P2-2 | ✅ Ollama บนเครื่อง user → **แชตจริงบน CPU ได้แล้ว** (qwen2.5-coder:0.5b, iGPU ถูก drop รันบน CPU ตรงตาม benchmark, RAM ว่าง ~2.6GB พอดีสำหรับ 0.5b) | เสร็จ (2026-10-19) |
 | P2-3 | SSD upgrade — แก้คอขวด HDD (โหลดโมเดลเร็วขึ้น + เครื่องลื่น) | ตัดสินจากข้อมูล Phase 1 |
 | S2 | ✅ Support dashboard ใน `/dev` — แสดง ticket + เปลี่ยนสถานะผ่าน UI (#30) | เสร็จ |

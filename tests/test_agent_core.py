@@ -37,22 +37,25 @@ class SandboxTest(unittest.TestCase):
         self.assertIn("sub/", out)
 
     def test_run_command_allowed(self):
-        # ls is POSIX-only; `python` is on the allowlist and runs on every host.
-        out = self.sb.run_command(["python", "-c", "import os; print(sorted(os.listdir('.')))"])
+        sb = tools.Sandbox(self.root, allow_commands=True)   # run_command ปิดเป็นค่าเริ่มต้น
+        out = sb.run_command("ls")
         self.assertIn("hello.txt", out)
 
     def test_run_command_denied_not_in_allowlist(self):
+        sb = tools.Sandbox(self.root, allow_commands=True)
         with self.assertRaises(tools.ToolError):
-            self.sb.run_command("rm -rf /")
+            sb.run_command("rm -rf /")
 
     def test_run_command_fullpath_bypass_denied(self):
         # กันเลี่ยง allowlist ด้วย path เต็ม
+        sb = tools.Sandbox(self.root, allow_commands=True)
         with self.assertRaises(tools.ToolError):
-            self.sb.run_command("/bin/rm hello.txt")
+            sb.run_command("/bin/rm hello.txt")
 
     def test_run_command_no_shell_injection(self):
         # ; และ && ไม่ถูกตีความ (ไม่ผ่าน shell) — ถูกส่งเป็น args ของ echo เฉย ๆ
-        out = self.sb.run_command("python -c print(1) ; rm hello.txt")
+        sb = tools.Sandbox(self.root, allow_commands=True)
+        out = sb.run_command("echo hi ; rm hello.txt")
         self.assertTrue((self.root / "hello.txt").exists())   # ไฟล์ยังอยู่ = rm ไม่ทำงาน
 
 
