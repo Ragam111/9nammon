@@ -1,7 +1,7 @@
 // Settings: key status, quota and usage, rate limits, account and logout.
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, api, type SettingsView } from "../api";
-import { Card, ErrorState, Skeleton } from "../components/ui";
+import { Badge, Card, ErrorState, Skeleton, type Status } from "../components/ui";
 import { errorDetail, errorTitle } from "./errors";
 import { AccountCard } from "./AccountCard";
 import { KeySetup } from "./KeySetup";
@@ -55,13 +55,22 @@ const BUCKET_LABEL: Record<string, string> = {
   heavy_weekly: "โมเดลหนัก · รายสัปดาห์",
 };
 
+// Text level shown next to the bar, so the state never depends on colour alone.
+function quotaLevel(pct: number): { status: Status; text: string } | null {
+  if (pct >= 90) return { status: "bad", text: "เกือบเต็ม" };
+  if (pct >= 70) return { status: "warn", text: "ใกล้เต็ม" };
+  return null;
+}
+
 function QuotaMeter({ bucket }: { bucket: SettingsView["quota"]["buckets"][number] }) {
   const label = BUCKET_LABEL[bucket.name] ?? bucket.name;
   const pct = bucket.limit ? Math.min(100, Math.round((bucket.used / bucket.limit) * 100)) : 0;
+  const level = quotaLevel(pct);
   return (
     <div>
       <p className="text-sm">
-        {label} · ใช้ไป <span className="tabular">{pct}%</span> (<span className="tabular">{fmt(bucket.used)}</span> / <span className="tabular">{fmt(bucket.limit)}</span> token)
+        {label} · ใช้ไป <span className="tabular">{pct}%</span> (<span className="tabular">{fmt(bucket.used)}</span> / <span className="tabular">{fmt(bucket.limit)}</span> token){" "}
+        {level && <Badge status={level.status}>{level.text}</Badge>}
       </p>
       <div role="progressbar" aria-label={`การใช้ ${label}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}
         className="mt-2 h-2 w-full overflow-hidden rounded-sm bg-surface-2">

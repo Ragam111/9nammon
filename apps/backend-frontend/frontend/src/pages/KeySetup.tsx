@@ -1,7 +1,7 @@
 // Set the model API key through the server. The browser only ever sees the last 4 characters.
 import { useState, type FormEvent } from "react";
 import { ApiError, api, json, type KeyStatus } from "../api";
-import { Badge, Button, Input, useToast } from "../components/ui";
+import { Badge, Button, Dialog, Input, useToast } from "../components/ui";
 
 export function KeyStatusLine({ status }: { status: KeyStatus }) {
   if (!status.configured) return <Badge status="warn">ยังไม่ได้ตั้งค่า API key</Badge>;
@@ -23,6 +23,7 @@ export function KeySetup({ status, isAdmin, onChange }: Props) {
   const [key, setKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [confirmClear, setConfirmClear] = useState(false);
   const invalid = key.length > 0 && (key.length < 8 || /\s/.test(key));
 
   const save = async (e: FormEvent) => {
@@ -63,10 +64,17 @@ export function KeySetup({ status, isAdmin, onChange }: Props) {
             hint="ส่งไปเก็บที่ server เท่านั้น หน้านี้จะแสดงแค่ 4 ตัวท้าย" />
           <div className="flex flex-wrap gap-2">
             <Button type="submit" variant="primary" loading={busy} disabled={!key || invalid}>บันทึก key</Button>
-            {status.source === "stored" && <Button variant="danger" onClick={clear}>ลบ key ที่ตั้งไว้</Button>}
+            {status.source === "stored" && <Button variant="danger" onClick={() => setConfirmClear(true)}>ลบ key ที่ตั้งไว้</Button>}
           </div>
         </form>
       )}
+      <Dialog open={confirmClear} onClose={() => setConfirmClear(false)} title="ลบ API key ที่ตั้งไว้?"
+        actions={<>
+          <Button onClick={() => setConfirmClear(false)}>ยกเลิก</Button>
+          <Button variant="danger" onClick={() => { setConfirmClear(false); void clear(); }}>ลบ key</Button>
+        </>}>
+        ระบบจะลบ key ที่บันทึกไว้ในเซิร์ฟเวอร์ ต้องใส่ key ใหม่ก่อนใช้โมเดลอีกครั้ง
+      </Dialog>
     </div>
   );
 }
