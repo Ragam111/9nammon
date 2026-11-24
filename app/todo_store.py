@@ -11,6 +11,8 @@ Interface ที่ local_coder.py / server.py เรียกใช้ตรง
 """
 
 import json
+import os
+import tempfile
 import threading
 from pathlib import Path
 
@@ -18,6 +20,14 @@ TODOS_FILE_NAME = "todos.json"
 
 # กัน read-modify-write ชนกันเมื่อหลาย request (ThreadingHTTPServer) เขียนพร้อมกัน
 _LOCK = threading.RLock()
+
+
+def _log(msg: str) -> None:
+    """print ที่ไม่พังเมื่อ stdout เป็น encoding แคบ (เช่น cp1252 ตอน pipe บน Windows)"""
+    try:
+        print(msg)
+    except UnicodeEncodeError:
+        print(msg.encode("ascii", "replace").decode("ascii"))
 
 
 def _todos_path(project_root: Path) -> Path:
@@ -32,20 +42,39 @@ def load_todos(project_root: Path) -> list:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(data, list):
-            print(f"[todo][warn] {TODOS_FILE_NAME} รูปแบบผิด (ไม่ใช่ list) — ถือว่าว่างเปล่า")
+            _log(f"[todo][warn] {TODOS_FILE_NAME} รูปแบบผิด (ไม่ใช่ list) — ถือว่าว่างเปล่า")
             return []
         return data
     except (OSError, json.JSONDecodeError) as e:
-        print(f"[todo][warn] อ่าน {TODOS_FILE_NAME} ไม่ได้: {e} — ถือว่าว่างเปล่า")
+        _log(f"[todo][warn] อ่าน {TODOS_FILE_NAME} ไม่ได้: {e} — ถือว่าว่างเปล่า")
         return []
 
 
+class TodoSaveError(OSError):
+    """เขียน todos.json ไม่สำเร็จ — ผู้เรียกต้องรู้ (ห้ามรายงานว่าสำเร็จ)"""
+
+
 def _save_todos(project_root: Path, todos: list) -> None:
+    """เขียนแบบ atomic: เขียนลงไฟล์ชั่วคราวในโฟลเดอร์เดียวกันแล้ว os.replace ทับ
+    — ถ้าโปรแกรมดับกลางคัน todos.json เดิมยังอยู่ครบ. ล้มเหลว → raise TodoSaveError"""
     path = _todos_path(project_root)
+    data = json.dumps(todos, ensure_ascii=False, indent=2)
+    tmp_name = None
     try:
-        path.write_text(json.dumps(todos, ensure_ascii=False, indent=2), encoding="utf-8")
+        fd, tmp_name = tempfile.mkstemp(dir=str(project_root), prefix=".todos-", suffix=".tmp")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(data)
+        os.replace(tmp_name, path)
+        tmp_name = None
     except OSError as e:
-        print(f"[todo][error] เขียน {TODOS_FILE_NAME} ไม่ได้: {e}")
+        _log(f"[todo][error] เขียน {TODOS_FILE_NAME} ไม่ได้: {e}")
+        raise TodoSaveError(f"เขียน {TODOS_FILE_NAME} ไม่ได้: {e}") from e
+    finally:
+        if tmp_name is not None:
+            try:
+                os.unlink(tmp_name)
+            except OSError:
+                pass
 
 
 def add_todo(project_root: Path, text: str) -> dict:

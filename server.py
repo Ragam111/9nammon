@@ -31,7 +31,7 @@ from urllib.parse import urlparse, parse_qs
 
 sys.path.insert(0, str(Path(__file__).parent))
 from local_coder import get_system_prompt  # noqa: E402
-from app.todo_store import load_todos, add_todo, toggle_todo, delete_todo  # noqa: E402
+from app.todo_store import load_todos, add_todo, toggle_todo, delete_todo, TodoSaveError  # noqa: E402
 from app import org_store  # noqa: E402  (ระบบองค์กร: user/role/api key/quota)
 from sysmanager.sysinfo import get_system_info  # noqa: E402  (spec เครื่องสำหรับ dev view)
 from app import job_queue  # noqa: E402  (คิวงาน server เก็บด้วย SQLite)
@@ -2027,37 +2027,60 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             todos = load_todos(project_root)
             self._send_json(200, todos)
 
+        def _todos_save_failed(self):
+            self._send_json(500, {"error": "บันทึก todo ไม่สำเร็จ — ตรวจสิทธิ์/พื้นที่ดิสก์ของโฟลเดอร์โปรเจกต์"})
+
         def _handle_todos_post(self):
             if self._require("USER") is None:
                 return
-            data = self._read_json_body()
-            text = data.get("text", "").strip()
+            data = self._todos_body()
+            if data is None:
+                return
+            text = data.get("text", "")
+            if not isinstance(text, str):
+                self._send_json(400, {"error": "text ต้องเป็นสตริง"})
+                return
+            text = text.strip()
             if not text:
                 self._send_json(400, {"error": "ต้องระบุ text"})
                 return
-            item = add_todo(project_root, text)
+            try:
+                item = add_todo(project_root, text)
+            except TodoSaveError:
+                self._todos_save_failed()
+                return
             self._send_json(200, item)
 
         def _handle_todos_toggle(self):
             if self._require("USER") is None:
                 return
-            data = self._read_json_body()
-            todo_id = data.get("id")
-            if todo_id is None:
-                self._send_json(400, {"error": "ต้องระบุ id"})
+            data = self._todos_body()
+            if data is None:
                 return
-            ok = toggle_todo(project_root, int(todo_id))
+            todo_id = self._todos_id(data)
+            if todo_id is None:
+                return
+            try:
+                ok = toggle_todo(project_root, todo_id)
+            except TodoSaveError:
+                self._todos_save_failed()
+                return
             self._send_json(200 if ok else 404, {"success": ok})
 
         def _handle_todos_delete(self):
             if self._require("USER") is None:
                 return
-            data = self._read_json_body()
-            todo_id = data.get("id")
-            if todo_id is None:
-                self._send_json(400, {"error": "ต้องระบุ id"})
+            data = self._todos_body()
+            if data is None:
                 return
-            ok = delete_todo(project_root, int(todo_id))
+            todo_id = self._todos_id(data)
+            if todo_id is None:
+                return
+            try:
+                ok = delete_todo(project_root, todo_id)
+            except TodoSaveError:
+                self._todos_save_failed()
+                return
             self._send_json(200 if ok else 404, {"success": ok})
 
     LocalAssistantHandler.session_token = auth_token
