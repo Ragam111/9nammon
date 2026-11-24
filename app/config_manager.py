@@ -20,6 +20,7 @@ Interface ที่ local_coder.py เรียกใช้ตรงๆ:
 
 import json
 import os
+import tempfile
 from pathlib import Path
 
 try:
@@ -34,12 +35,29 @@ def _config_path(project_root: Path) -> Path:
     return project_root / CONFIG_FILE_NAME
 
 
+def _atomic_write_text(path: Path, text: str) -> None:
+    """Write ``text`` to ``path`` atomically: unique temp file in the same
+    directory, flush + fsync, then os.replace. A failure leaves the old file
+    intact and removes the temp file."""
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def _write_config(project_root: Path, config: dict) -> None:
     path = _config_path(project_root)
     text = json.dumps(config, ensure_ascii=False, indent=2)
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
-    tmp.replace(path)
+    _atomic_write_text(path, text)
 
 
 def _seal_plaintext_secrets(project_root: Path, config: dict) -> bool:

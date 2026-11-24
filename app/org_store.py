@@ -29,9 +29,11 @@ Interface หลักที่ server.py เรียกใช้:
     verify_api_key(project_root, raw_key) -> dict | None            # คืน record (ไม่มี hash)
     revoke_api_key(project_root, key_id, actor_role) -> bool
     consume_quota(project_root, key_id) -> tuple[bool, int]         # (ผ่านไหม, เหลือเท่าไร)
+    refund_quota(project_root, key_id) -> RefundResult               # คืน 1 ที่จองไว้เมื่อแชทล้ม
     list_api_keys(project_root) -> list[dict]                       # ไม่คืน key/hash
 """
 
+import enum
 import functools
 import hashlib
 import hmac
@@ -40,6 +42,7 @@ import os
 import secrets
 import tempfile
 import threading
+import time
 from datetime import date, datetime
 from pathlib import Path
 
@@ -98,16 +101,35 @@ def _load(project_root: Path) -> dict:
     return data
 
 
-def _save(project_root: Path, data: dict) -> None:
-    # เขียนแบบ atomic (temp + os.replace) เพื่อให้ผู้อ่านพร้อมกันเห็นไฟล์เก่าหรือใหม่เต็มๆ
-    # เสมอ ไม่เห็นไฟล์ครึ่งๆ กลางๆ (กัน JSON พังตอนอ่านชนกับตอนเขียน)
+_REPLACE_ATTEMPTS = 5      # Windows: os.replace may hit a transient PermissionError
+_REPLACE_BACKOFF_S = 0.02  # when another reader holds org.json open
+
+
+def _replace_with_retry(src: str, dst: Path) -> None:
+    """os.replace with a few retries on PermissionError (Windows sharing violation)."""
+    for i in range(_REPLACE_ATTEMPTS):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if i == _REPLACE_ATTEMPTS - 1:
+                raise
+            time.sleep(_REPLACE_BACKOFF_S * (i + 1))
+
+
+def _save(project_root: Path, data: dict) -> bool:
+    """เขียนแบบ atomic (temp + os.replace) — คืน True ถ้าบันทึกสำเร็จ, False ถ้าล้ม
+
+    ผู้อ่านพร้อมกันเห็นไฟล์เก่าหรือใหม่เต็มๆ เสมอ ไม่เห็นไฟล์ครึ่งๆ กลางๆ.
+    ผู้เรียกที่ความถูกต้องสำคัญ (เช่น consume_quota) ต้องเช็คผลนี้ ห้ามถือว่าสำเร็จเอง
+    """
     path = _org_path(project_root)
     try:
         fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".org.", suffix=".tmp")
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
-            os.replace(tmp, path)
+            _replace_with_retry(tmp, path)
         except OSError:
             # เก็บกวาด temp ถ้าเขียน/replace ไม่สำเร็จ
             try:
@@ -116,8 +138,10 @@ def _save(project_root: Path, data: dict) -> None:
                 pass
             raise
     except OSError as e:
-        # fail loud (Rule 14) แต่ไม่ทำโปรแกรมพัง — ผู้เรียกจะเห็นว่า state ไม่ถูกบันทึก
+        # fail loud (Rule 14) แต่ไม่ทำโปรแกรมพัง — คืน False ให้ผู้เรียกรู้ว่า state ไม่ถูกบันทึก
         print(f"[org][error] เขียน {ORG_FILE_NAME} ไม่ได้: {e}")
+        return False
+    return True
 
 
 # ---------- password hashing ----------
@@ -330,8 +354,8 @@ def verify_api_key(project_root: Path, raw_key: str) -> dict | None:
 def has_quota(project_root: Path, key_id: str) -> bool:
     """เช็คว่า key นี้ยังมีโควตาเหลือวันนี้ไหม โดย 'ไม่หัก' (peek อย่างเดียว)
 
-    ใช้ที่ server เพื่อปฏิเสธคำขอที่เกินโควตา 'ก่อน' ลงมือทำงานจริง แล้วค่อยเรียก
-    consume_quota หลังทำสำเร็จ — คำขอที่ล้มเหลว (body พัง/Ollama ล่ม) จะได้ไม่โดนหัก
+    ใช้ที่ server เพื่อปฏิเสธเร็วก่อนอ่าน body. การหักจริงคือ consume_quota (จองแบบ atomic
+    ก่อนเรียกโมเดล) และถ้าโมเดล/แชทล้มเหลว server จะเรียก refund_quota คืนให้
     """
     data = _load(project_root)
     rec = data["api_keys"].get(key_id)
@@ -352,6 +376,8 @@ def consume_quota(project_root: Path, key_id: str) -> tuple:
     - tier paid (daily_limit=0) → ไม่จำกัด ok=True, remaining=-1 (แทน unlimited)
     - รีเซ็ตตัวนับอัตโนมัติเมื่อข้ามวัน
     - เกินโควตา → ok=False ไม่หักเพิ่ม
+    - บันทึกลงดิสก์ไม่สำเร็จ → ok=False (fail-closed; ไม่ปล่อยผ่านทั้งที่ไม่ได้นับ)
+    - server เรียกเพื่อ "จอง" ก่อนเรียกโมเดล และเรียก refund_quota เมื่อไม่ได้คำตอบ
     """
     data = _load(project_root)
     rec = data["api_keys"].get(key_id)
@@ -372,8 +398,41 @@ def consume_quota(project_root: Path, key_id: str) -> tuple:
         return (False, 0)
 
     rec["used_today"] += 1
-    _save(project_root, data)
+    if not _save(project_root, data):
+        return (False, 0)  # ไม่ได้บันทึกการหัก → ห้ามให้ผ่าน (กันข้ามโควตาบน Windows)
     return (True, limit - rec["used_today"])
+
+
+class RefundResult(enum.Enum):
+    """ผลของ refund_quota — bool() เป็น True เฉพาะ REFUNDED (เข้ากันได้กับโค้ดเดิมที่เช็ค bool)"""
+    REFUNDED = "refunded"        # คืนแล้วและบันทึกสำเร็จ
+    NOTHING = "nothing"          # ไม่มีอะไรต้องคืน (ไม่มี key / paid / ข้ามวัน / used=0)
+    SAVE_FAILED = "save_failed"  # คืนในหน่วยความจำแล้วแต่บันทึก org.json ไม่สำเร็จ
+
+    def __bool__(self) -> bool:
+        return self is RefundResult.REFUNDED
+
+
+@_synchronized
+def refund_quota(project_root: Path, key_id: str) -> RefundResult:
+    """คืน 1 โควตาที่ consume_quota จองไว้ (ใช้เมื่อโมเดล/แชทล้มเหลว)
+
+    - ไม่ติดลบ (used_today ต่ำสุด 0); tier paid/ข้ามวันแล้ว = NOTHING
+    - บันทึกไม่สำเร็จ = SAVE_FAILED (ผู้เรียกควร log warn)
+    """
+    data = _load(project_root)
+    rec = data["api_keys"].get(key_id)
+    if not rec or rec.get("daily_limit", 0) == 0:
+        return RefundResult.NOTHING
+    if rec.get("usage_date") != _today_str():
+        return RefundResult.NOTHING  # ข้ามวันแล้ว ตัวนับรีเซ็ตไปเอง ไม่คืนข้ามวัน
+    used = int(rec.get("used_today", 0))
+    if used <= 0:
+        return RefundResult.NOTHING
+    rec["used_today"] = used - 1
+    if not _save(project_root, data):
+        return RefundResult.SAVE_FAILED
+    return RefundResult.REFUNDED
 
 
 @_synchronized
@@ -458,8 +517,7 @@ def check_and_consume_quota(username: str, tier: str = "free", project_root: Pat
         _save(root, data)
         return False
     bucket[username] = {"date": today, "count": count + 1}
-    _save(root, data)
-    return True
+    return _save(root, data)  # fail-closed: ไม่ได้บันทึกการหัก = ไม่ให้ผ่าน
 
 
 # ---------- google oauth ----------

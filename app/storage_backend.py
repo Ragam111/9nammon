@@ -19,6 +19,8 @@ stdlib ล้วน — ไม่เพิ่ม dependency
 
 from __future__ import annotations
 
+import os
+import tempfile
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from app import config_manager
@@ -26,6 +28,25 @@ from app import config_manager
 
 class StorageError(Exception):
     """อ่าน/เขียนที่เก็บไม่สำเร็จ — ผู้เรียกแปลงเป็น error ของตัวเองได้"""
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    """Write ``text`` atomically: unique temp file in the same directory,
+    flush + fsync, then os.replace. On failure the old file stays intact and
+    the temp file is removed."""
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def _safe_key(key: str) -> str:
@@ -89,7 +110,7 @@ class LocalStorageBackend(StorageBackend):
         path = self._path(key)
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(text, encoding="utf-8")
+            _atomic_write_text(path, text)
         except OSError as e:
             raise StorageError(f"เขียน {key} ไม่ได้: {e}") from e
 

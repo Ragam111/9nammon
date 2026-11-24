@@ -10,12 +10,8 @@
 
 <div id="sidebar">
   <h2>โมเดล</h2>
-  <select id="model-select" aria-label="โมเดล">
-    <option value="qwen2.5-coder:0.5b">qwen2.5-coder:0.5b</option>
-    <option value="qwen2.5-coder:1.5b">qwen2.5-coder:1.5b</option>
-    <option value="qwen2.5-coder:7b">qwen2.5-coder:7b</option>
-    <option value="qwen2.5-coder:14b">qwen2.5-coder:14b</option>
-  </select>
+  <select id="model-select" aria-label="โมเดล"></select>
+  <p id="model-msg"></p>
 
   <h2>ภาษา</h2>
   <select id="lang-select" aria-label="ภาษา">
@@ -283,6 +279,39 @@ todoInput.addEventListener('keydown', async (e) => {
   loadTodos();
 });
 
+// ---------- Models: only what the server reports (Ollama /api/tags) ----------
+async function loadModels() {
+  const msg = document.getElementById('model-msg');
+  modelSelect.replaceChildren();
+  try {
+    const res = await fetch('/api/chat/providers', { headers: window.lca.authHeaders() });
+    if (!res.ok) {
+      msg.textContent = res.status === 401 ? 'ต้องล็อกอินเพื่อดูรายชื่อโมเดล' : 'โหลดรายชื่อโมเดลไม่ได้ (error ' + res.status + ')';
+      return;
+    }
+    const data = await res.json();
+    const ollama = (data.providers || []).find((p) => p.id === 'ollama');
+    const models = (ollama && ollama.models) || [];
+    models.forEach((m) => {
+      const opt = document.createElement('option');
+      opt.value = m;
+      opt.textContent = m;
+      modelSelect.append(opt);
+    });
+    if (!models.length) {
+      msg.textContent = ollama && ollama.status === 'unreachable'
+        ? 'ต่อ Ollama ไม่ได้ — ยังไม่มีโมเดลให้เลือก'
+        : 'ยังไม่มีโมเดลติดตั้งใน Ollama';
+    } else {
+      msg.textContent = '';
+    }
+  } catch (err) {
+    msg.textContent = 'ต่อ server ไม่ได้';
+    console.error('โหลดรายชื่อโมเดลไม่สำเร็จ:', err);
+  }
+}
+
+loadModels();
 loadTodos();
 </script>
 

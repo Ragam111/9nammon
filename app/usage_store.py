@@ -21,11 +21,18 @@ Interface:
 
 from __future__ import annotations
 
+import contextlib
+import json
+import os
+import shutil
 import sqlite3
+import threading
+import time
+import uuid
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Iterator, Optional
 
 USAGE_DB_NAME = "usage.db"
 
@@ -160,41 +167,238 @@ def summary(project_root: Path) -> dict:
     }
 
 
-def check_and_consume_quota(username: str, tier: str = "free", project_root: Path | str | None = None) -> bool:
-    """Compatibility quota guard for Phase 1 validation tests.
+QUOTA_FILE_NAME = "usage_quotas.json"
+FREE_DAILY_LIMIT = 100
+LOCK_TIMEOUT_S = 5.0   # รอ lock นานสุดเท่านี้ก่อนปฏิเสธ (fail-closed)
+LOCK_STALE_S = 30.0    # lock ที่เก่ากว่านี้ถือว่าค้างจากโปรเซสที่ล้ม
 
-    Uses a simple JSON store at ``usage_quotas.json`` so the API behaves like a
-    fail-closed daily quota gate without depending on a database.
-    """
+
+class QuotaStoreError(RuntimeError):
+    """ไฟล์โควตาเสียหาย/อ่านไม่ได้/ล็อกไม่ได้ — ปฏิเสธคำขอ ห้ามรีเซ็ตโควตาเงียบๆ"""
+
+
+def _quota_path(project_root: Path | str | None) -> Path:
     root = Path(project_root) if project_root is not None else Path.cwd()
+    return root / QUOTA_FILE_NAME
+
+
+def _validate_quota_data(data: object) -> dict:
+    """ตรวจโครงสร้าง {username: {"date": str, "count": int}} — ไม่ผ่าน raise ValueError"""
+    if not isinstance(data, dict):
+        raise ValueError("ระดับบนสุดต้องเป็น object")
+    for user, entry in data.items():
+        ok = (isinstance(entry, dict) and isinstance(entry.get("date"), str)
+              and isinstance(entry.get("count"), int))
+        if not ok:
+            raise ValueError(f"รายการของ {user!r} ไม่ถูกต้อง")
+    return data
+
+
+def _quarantine_corrupt(path: Path) -> str:
+    """คัดลอกไฟล์เสียเป็น .corrupt-<เวลา> เก็บไว้ (ไฟล์เดิมคงอยู่เพื่อให้ยัง fail-closed)"""
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    backup = path.with_name(f"{path.name}.corrupt-{stamp}")
+    shutil.copy2(path, backup)
+    return backup.name
+
+
+def _load_quota(path: Path) -> dict:
+    """อ่านโควตา: ไม่มีไฟล์ = ว่าง (เริ่มใหม่ได้); ไฟล์เสีย = เก็บสำเนาแล้ว raise"""
+    if not path.exists():
+        return {}
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError as e:
+        raise QuotaStoreError(f"อ่านไฟล์โควตาไม่ได้: {e}") from e
+    try:
+        return _validate_quota_data(json.loads(raw))
+    except ValueError as e:
+        try:
+            where = _quarantine_corrupt(path)
+        except OSError:
+            where = "(สำรองไม่สำเร็จ)"
+        raise QuotaStoreError(
+            f"ไฟล์โควตาเสียหาย ({e}) เก็บสำเนาไว้ที่ {where} — "
+            "ปฏิเสธคำขอจนกว่าผู้ดูแลจะตรวจสอบ"
+        ) from e
+
+
+def _replace_with_retry(src: Path, dst: Path, attempts: int = 20) -> None:
+    """os.replace บน Windows อาจโดน PermissionError ชั่วคราวถ้ามีผู้อ่านถือไฟล์อยู่ -> ลองใหม่"""
+    for i in range(attempts):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if i == attempts - 1:
+                raise
+            time.sleep(0.005)
+
+
+def _write_quota_atomic(path: Path, data: dict) -> None:
+    """เขียนผ่านไฟล์ tmp ชื่อไม่ซ้ำ แล้ว os.replace ทับ — ไม่มีไฟล์ครึ่งๆ กลางคัน"""
+    tmp = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f)  # ไม่ fsync: ไฟล์ที่ครึ่งๆ กลางคันหลังไฟดับจะถูกจับเป็นไฟล์เสีย (fail-closed)
+        _replace_with_retry(tmp, path)
+    finally:
+        with contextlib.suppress(OSError):
+            tmp.unlink()  # ไม่มีผลถ้า replace สำเร็จไปแล้ว (tmp หายไปแล้ว)
+
+
+def _read_lock_token(lock: Path) -> Optional[str]:
+    try:
+        return lock.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+
+
+def _restore_lock(grave: Path, lock: Path) -> None:
+    """คืนไฟล์ lock ที่ย้ายผิดตัวกลับชื่อเดิม โดยไม่เขียนทับ lock ใหม่ที่อาจเกิดขึ้นแล้ว
+
+    os.link ล้มถ้าปลายทางมีอยู่ (ทั้ง POSIX/NTFS) ส่วน os.rename บน POSIX จะเขียนทับ จึงใช้
+    link ก่อน; ถ้า filesystem ไม่รองรับ hard link ใช้ rename (Windows ล้มเองถ้าปลายทางมี)
+    ข้อจำกัด: ถ้ามีโปรเซสที่สามสร้าง lock ใหม่ระหว่างช่วงสั้น ๆ ที่เรา rename ออกไป จะคืนไม่ได้
+    เจ้าของเดิมจะเห็น token ไม่ตรงตอนปล่อยและไม่ลบของโปรเซสที่สาม (เกิดได้เฉพาะ race แคบมาก)
+    """
+    try:
+        os.link(grave, lock)
+    except FileExistsError:
+        pass  # มี lock ใหม่แล้ว คืนไม่ได้ (ดูข้อจำกัดด้านบน)
+    except OSError:
+        if os.name == "nt":  # rename บน Windows ไม่เขียนทับ → ปลอดภัย
+            with contextlib.suppress(OSError):
+                os.rename(grave, lock)
+                return
+        elif not lock.exists():  # POSIX fallback: ยังมีช่องแคบระหว่าง exists กับ rename
+            with contextlib.suppress(OSError):
+                os.rename(grave, lock)
+                return
+    with contextlib.suppress(OSError):
+        grave.unlink()
+
+
+def _remove_lock_if_token(lock: Path, expected: str) -> bool:
+    """rename-then-verify: ย้าย lock ไปชื่อชั่วคราวไม่ซ้ำ (atomic) แล้วค่อยตรวจ token
+
+    ถ้า token ตรง → ลบ, ไม่ตรง → คืนชื่อเดิม. ลดช่อง TOCTOU ของ "อ่าน token แล้ว unlink"
+    เพราะสิ่งที่ตรวจคือไฟล์ที่เรายึดมาแล้วจริง ไม่ใช่ไฟล์ที่อาจถูกแทนที่ระหว่างอ่านกับลบ
+    Windows: rename ไฟล์ที่อีกโปรเซสเปิดอยู่จะได้ PermissionError → ถือว่าไม่ได้ลบ (ลองใหม่รอบหน้า)
+    """
+    grave = lock.with_name(f"{lock.name}.{uuid.uuid4().hex}.del")
+    try:
+        os.rename(lock, grave)
+    except OSError:
+        return False
+    if _read_lock_token(grave) == expected:
+        with contextlib.suppress(OSError):
+            grave.unlink()
+        return True
+    _restore_lock(grave, lock)
+    return False
+
+
+def _break_stale_lock(lock: Path) -> None:
+    """ลบ lock ที่ค้างจากโปรเซสที่ล้ม — เฉพาะเมื่อ token ยังเป็นตัวเดียวกับที่เห็นว่าเก่า"""
+    seen = _read_lock_token(lock)
+    if seen is None:
+        return
+    try:
+        age = time.time() - lock.stat().st_mtime
+    except OSError:
+        return
+    if age <= LOCK_STALE_S:
+        return
+    _remove_lock_if_token(lock, seen)  # มีเจ้าของใหม่แทนที่แล้ว → คืนชื่อเดิม ไม่ลบ
+
+
+def _release_own_lock(lock: Path, token: str) -> None:
+    """ลบไฟล์ lock เฉพาะเมื่อยังเป็นของเรา (token ตรง) — ถ้าถูกตัดเป็น stale แล้วมีคนอื่นถือ ห้ามลบ"""
+    if not _remove_lock_if_token(lock, token):
+        print("[quota][warn] lock ถูกโปรเซสอื่นถือแทนแล้ว (เราช้าเกิน LOCK_STALE_S) — ไม่ลบ")
+
+
+_THREAD_LOCKS: dict[str, threading.Lock] = {}
+_THREAD_LOCKS_GUARD = threading.Lock()
+
+
+def _thread_lock_for(path: Path) -> threading.Lock:
+    """lock ระดับเธรดต่อไฟล์ — กันเธรดในโปรเซสเดียวกัน polling ไฟล์ lock แย่งกัน"""
+    key = str(path)
+    with _THREAD_LOCKS_GUARD:
+        return _THREAD_LOCKS.setdefault(key, threading.Lock())
+
+
+def _acquire_file_lock(lock: Path, deadline: float) -> str:
+    """สร้างไฟล์ .lock ด้วย O_EXCL แล้วเขียน token ของตัวเองลงไป — คืน token, เกิน deadline raise"""
+    token = f"{os.getpid()}-{uuid.uuid4().hex}"
+    while True:
+        try:
+            fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except (FileExistsError, PermissionError):
+            # Windows: ไฟล์ lock ที่กำลังถูกลบอยู่จะตอบ PermissionError -> ลองใหม่เหมือนถูกล็อก
+            _break_stale_lock(lock)
+            if time.monotonic() >= deadline:
+                raise QuotaStoreError("รอ lock ของโควตานานเกินไป ปฏิเสธคำขอชั่วคราว") from None
+            time.sleep(0.005)
+            continue
+        except OSError as e:
+            raise QuotaStoreError(f"สร้าง lock ของโควตาไม่ได้: {e}") from e
+        try:
+            os.write(fd, token.encode("ascii"))
+        finally:
+            os.close(fd)
+        return token
+
+
+@contextmanager
+def _quota_lock(path: Path, timeout: float = LOCK_TIMEOUT_S) -> Iterator[None]:
+    """lock ระดับไฟล์ข้ามโปรเซส (O_EXCL บนไฟล์ .lock) ซ้อนกับ lock ระดับเธรด พร้อม timeout"""
+    thread_lock = _thread_lock_for(path)
+    if not thread_lock.acquire(timeout=timeout):
+        raise QuotaStoreError("รอ lock ของโควตานานเกินไป ปฏิเสธคำขอชั่วคราว")
+    try:
+        lock = path.with_name(f"{path.name}.lock")
+        token = _acquire_file_lock(lock, time.monotonic() + timeout)
+        try:
+            yield
+        finally:
+            _release_own_lock(lock, token)
+    finally:
+        thread_lock.release()
+
+
+def check_and_consume_quota(username: str, tier: str = "free", project_root: Path | str | None = None) -> bool:
+    """โควตารายวันแบบ fail-closed (free = FREE_DAILY_LIMIT ต่อวันต่อ username)
+
+    - คืน True ถ้าหักได้ (หรือ tier paid), False ถ้าเกินโควตาแล้ว
+    - raise QuotaStoreError ถ้าไฟล์เสีย/อ่านไม่ได้/ล็อกไม่ได้ — ไม่รีเซ็ตโควตาเด็ดขาด
+    - อ่าน-ตรวจ-เขียน ทำภายใต้ lock เดียวกัน จึงไม่เกิด lost update
+    """
     if tier == "paid":
         return True
+    limit = FREE_DAILY_LIMIT if tier == "free" else 0
+    path = _quota_path(project_root)
+    try:
+        return _consume_locked(path, username, limit)
+    except QuotaStoreError:
+        raise
+    except OSError as e:  # PermissionError จาก os.replace/lock ฯลฯ → ตาม docstring
+        raise QuotaStoreError(f"บันทึกโควตาไม่ได้: {e}") from e
 
-    quota_path = root / "usage_quotas.json"
-    today = datetime.now().strftime("%Y-%m-%d")
-    data = {}
-    if quota_path.exists():
-        try:
-            data = __import__("json").loads(quota_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            data = {}
-    if not isinstance(data, dict):
-        data = {}
 
-    entry = data.get(username, {}) if isinstance(data.get(username), dict) else {}
-    if entry.get("date") != today:
-        entry = {"date": today, "count": 0}
-
-    count = int(entry.get("count", 0))
-    limit = 100 if tier == "free" else 0
-    if limit == 0:
-        data[username] = {"date": today, "count": count}
-        quota_path.write_text(__import__("json").dumps(data), encoding="utf-8")
+def _consume_locked(path: Path, username: str, limit: int) -> bool:
+    """อ่าน-ตรวจ-เขียนโควตาภายใต้ lock เดียว (ผู้เรียกแปลง OSError เป็น QuotaStoreError)"""
+    with _quota_lock(path):
+        data = _load_quota(path)
+        if limit == 0:
+            return True
+        today = datetime.now().strftime("%Y-%m-%d")
+        entry = data.get(username)
+        count = entry["count"] if entry and entry["date"] == today else 0
+        if count >= limit:
+            return False
+        data[username] = {"date": today, "count": count + 1}
+        _write_quota_atomic(path, data)
         return True
-    if count >= limit:
-        data[username] = {"date": today, "count": count}
-        quota_path.write_text(__import__("json").dumps(data), encoding="utf-8")
-        return False
-    data[username] = {"date": today, "count": count + 1}
-    quota_path.write_text(__import__("json").dumps(data), encoding="utf-8")
-    return True

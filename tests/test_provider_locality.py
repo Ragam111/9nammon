@@ -111,6 +111,7 @@ class ProviderLocalityTest(unittest.TestCase):
     def test_catalog_local_flag_uses_base_url(self):
         self._set("OLLAMA_BASE_URL", "http://192.168.1.5:11434")
         self._set("OPENAI_BASE_URL", "http://localhost:8000/v1")
+        self._set("ANTHROPIC_API_KEY", "test-not-a-real-key")  # cloud is listed only with a key
         flags = {p["id"]: p["local"] for p in chat_hub._provider_catalog(self.root)}
         self.assertFalse(flags["ollama"])
         self.assertTrue(flags["openai_compat"])

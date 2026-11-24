@@ -27,9 +27,13 @@ from app.chat_store import ChatStoreError
 LOCAL_PROVIDERS = {"ollama", "openai_compat"}
 MAX_COMPARE = 4
 
+# Ollama/openai_compat ไม่มีรายการคงที่ — Ollama อ่านจาก /api/tags จริงใน _ollama_models
+OLLAMA_TAGS_TIMEOUT_S = 1.5
+OLLAMA_CACHE_S = 10.0
+_OLLAMA_CACHE: dict = {}  # base_url -> (monotonic ts, models, status)
+
+# cloud: แสดงเฉพาะ provider ที่ตั้ง key ไว้แล้ว (ดู _provider_catalog)
 SUGGESTED_MODELS = {
-    "ollama": ["qwen2.5-coder:0.5b", "qwen2.5-coder:1.5b", "qwen2.5-coder:3b"],
-    "openai_compat": ["local-model"],
     "openai": ["gpt-4o-mini", "gpt-4.1-mini"],
     "anthropic": ["claude-haiku-4-5", "claude-sonnet-4-5"],
     "gemini": ["gemini-2.5-flash"],
@@ -739,7 +743,39 @@ def handle_post(handler, parsed, project_root, gen_gate) -> None:
         handler._send_json(_http_status(exc), {"error": str(exc)})
 
 
+def _ollama_models(project_root) -> tuple[list, str]:
+    """(ชื่อโมเดลจาก Ollama /api/tags จริง, "ok"|"unreachable") — cache สั้น ๆ ต่อ base URL
+
+    Ollama ไม่ตอบ/ตอบผิดรูป → ([], "unreachable") ไม่เดารายการขึ้นมาเอง
+    """
+    from app.providers.registry import configured_base_url
+    base = configured_base_url("ollama", project_root) or ""
+    now = time.monotonic()
+    hit = _OLLAMA_CACHE.get(base)
+    if hit and now - hit[0] < OLLAMA_CACHE_S:
+        return list(hit[1]), hit[2]
+    try:
+        provider = _providers().get_provider(
+            "ollama", project_root=project_root, timeout=OLLAMA_TAGS_TIMEOUT_S)
+        models, status = [m.id for m in provider.list_models()], "ok"
+    except Exception:  # noqa: BLE001 — ล่ม/timeout/รูปแบบผิด = ไม่มีรายการ
+        models, status = [], "unreachable"
+    _OLLAMA_CACHE[base] = (now, models, status)
+    return list(models), status
+
+
+def _has_key(name: str, project_root) -> bool:
+    """มี key ตั้งไว้หรือไม่ — ใช้แค่ความจริง/เท็จ ไม่เก็บ ไม่คืน ไม่ log ค่า key"""
+    try:
+        provider = _providers().get_provider(name, project_root=project_root)
+        return bool(provider.resolve_key())
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _provider_catalog(project_root) -> list:
+    """รายการ provider/โมเดลที่ใช้ได้จริง: Ollama จาก /api/tags, cloud เฉพาะที่มี key"""
+    from app.providers.registry import REGISTRY, _cfg
     recommended = None
     try:
         from app import resource_budget
@@ -748,15 +784,24 @@ def _provider_catalog(project_root) -> list:
         recommended = None
     catalog = []
     for name in _providers().supported_providers():
-        models = list(SUGGESTED_MODELS.get(name, []))
-        if name == "ollama" and recommended and recommended not in models:
-            models.insert(0, recommended)
-        catalog.append({
-            "id": name,
-            "label": LABELS.get(name, name),
-            "local": _is_local(name, project_root),
-            "models": models,
-        })
+        entry = {"id": name, "label": LABELS.get(name, name)}
+        if name == "ollama":
+            models, status = _ollama_models(project_root)
+            if recommended in models:  # แนะนำได้เฉพาะตัวที่ติดตั้งจริง
+                models.remove(recommended)
+                models.insert(0, recommended)
+            entry["status"] = status
+        elif name == "openai_compat":
+            if not _cfg(project_root, "OPENAI_BASE_URL"):
+                continue  # ไม่ได้ตั้ง endpoint ไว้ — ไม่โชว์โมเดลสมมติ
+            models = []  # ไม่รู้ชื่อโมเดลจริง ให้ผู้ใช้พิมพ์เองผ่าน "กำหนดโมเดลเอง"
+        elif getattr(REGISTRY.get(name), "requires_key", False) and not _has_key(name, project_root):
+            continue  # cloud ที่ยังไม่มี key ไม่แสดง
+        else:
+            models = list(SUGGESTED_MODELS.get(name, []))
+        entry["local"] = _is_local(name, project_root)
+        entry["models"] = models
+        catalog.append(entry)
     return catalog
 
 

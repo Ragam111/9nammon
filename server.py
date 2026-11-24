@@ -2044,8 +2044,9 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             """auth/quota peek + อ่าน body + เลือก model + เติม system prompt
             คืน (model, messages, num_ctx) ถ้าพร้อม, หรือ None (ตอบ error ให้แล้ว)
             ใช้ร่วมกันทั้ง /api/chat (blocking) และ /api/chat/stream — logic เดียว ไม่ซ้ำ"""
-            # peek โควตาก่อนลงมือ (ปฏิเสธเร็ว) — หักจริงหลังตอบสำเร็จเท่านั้น เพื่อไม่ให้
-            # request ที่ body พังหรือ Ollama ล่มไปกินโควตาของผู้ใช้ฟรีทิ้งเปล่าๆ
+            # peek โควตาก่อนลงมือ (ปฏิเสธเร็ว ไม่อ่าน body) — การหักจริงคือ "จอง" แบบ atomic
+            # ท้ายฟังก์ชันนี้ก่อนเรียกโมเดล; ถ้าโมเดล/แชทล้ม (502/503/exception/status ไม่ ok)
+            # _chat_release คืนให้ใน finally ของ handler — ผู้ใช้จึงไม่โดนหักเมื่อไม่ได้คำตอบ
             if ident.get("key_id") and not org_store.has_quota(project_root, ident["key_id"]):
                 self._send_json(429, {"error": "เกินโควตาการใช้งานรายวันของ API key นี้แล้ว "
                                                "(อัปเกรดเป็น tier paid เพื่อใช้ได้ไม่จำกัด)"})
@@ -2100,17 +2101,41 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             # ให้ server แทรกให้เองตาม lang ที่เลือก
             if messages and (not isinstance(messages[0], dict) or messages[0].get("role") != "system"):
                 messages = [{"role": "system", "content": get_system_prompt(lang)}] + messages
+            # จองโควตาแบบ atomic "ก่อนเรียกโมเดล" — consume_quota ทำ check+หักใน lock เดียว
+            # จึงกันคำขอพร้อมกันเกินโควตาได้ ถ้าเกินแล้วตอบ 429 ทันที ไม่เรียก LLM
+            # (consume_quota คืน ok=False ด้วยถ้าบันทึก org.json ไม่สำเร็จ — fail-closed)
+            if ident.get("key_id"):
+                ok, _remaining = org_store.consume_quota(project_root, ident["key_id"])
+                if not ok:
+                    self._send_json(429, {"error": "เกินโควตาการใช้งานรายวันของ API key นี้แล้ว "
+                                                   "(อัปเกรดเป็น tier paid เพื่อใช้ได้ไม่จำกัด)"})
+                    return None
+                ident["_quota_reserved"] = True  # รอ _chat_finalize ยืนยัน หรือ _chat_release คืน
             return model, messages, num_ctx, hub
 
+        def _chat_release(self, ident):
+            """คืนโควตาที่จองไว้ถ้าแชทไม่สำเร็จ (ไม่มี _chat_finalize มายืนยัน) — เรียกใน finally"""
+            if not ident.pop("_quota_reserved", False):
+                return
+            try:
+                result = org_store.refund_quota(project_root, ident["key_id"])
+            except Exception as e:  # noqa: BLE001 — การคืนโควตาต้องไม่ทำ response พัง
+                print(f"[quota][warn] คืนโควตาไม่สำเร็จ: {e}")
+                return
+            if result is org_store.RefundResult.SAVE_FAILED:
+                # คืนแล้วแต่บันทึก org.json ไม่ได้ — ผู้ใช้ยังโดนหัก 1 ครั้ง (ไม่ log ค่า key)
+                print("[quota][warn] คืนโควตาแล้วแต่บันทึก org.json ไม่สำเร็จ "
+                      f"(key_id={ident.get('key_id')})")
+
         def _chat_finalize(self, ident, model, messages, reply):
-            """หักโควตา + บันทึก usage + เก็บ dataset — หลังได้คำตอบเต็มแล้ว (blocking/stream ใช้ร่วม)"""
-            # หักโควตาหลังได้คำตอบจริงเท่านั้น (master/local ไม่มี key_id = ไม่หัก)
-            # แล้วบันทึก usage ลง SQLite ด้วย (metering ย้อนหลัง/คิดเงินต่อ tier)
+            """บันทึก usage + เก็บ dataset — หลังได้คำตอบเต็มแล้ว (blocking/stream ใช้ร่วม)"""
+            # ยืนยันโควตาที่จองไว้ใน _chat_prepare (ก่อนเรียกโมเดล) — ไม่หักซ้ำ และไม่คืนแล้ว
+            ident.pop("_quota_reserved", None)
+            # บันทึก usage ลง SQLite (metering ย้อนหลัง/คิดเงินต่อ tier)
             if ident.get("role") == "GUEST":
                 _guest_quota_consume(ident.get("client") or "unknown")
                 return  # guest: ไม่ metering/ไม่ dataset — ไม่มีอะไรลงดิสก์
             if ident.get("key_id"):
-                org_store.consume_quota(project_root, ident["key_id"])
                 try:
                     usage_store.record_usage(
                         project_root, ident["key_id"], ident.get("owner"),
@@ -2151,6 +2176,12 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             prepared = self._chat_prepare(ident)
             if prepared is None:
                 return
+            try:
+                self._handle_chat_prepared(ident, prepared)
+            finally:
+                self._chat_release(ident)  # ไม่ได้ finalize (502/503/exception) → คืนโควตา
+
+        def _handle_chat_prepared(self, ident, prepared):
             model, messages, num_ctx, hub = prepared
             # provider ต่อ request หรือบทสนทนาใน DB → app.providers (สลับค่ายกลางบทสนทนาได้)
             # ไม่ส่งสองอย่างนี้ = ทางเดิม model_backend (รวม cluster forward)
@@ -2179,9 +2210,11 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 with gen_gate.slot():
                     reply = model_backend.generate(project_root, model, messages, num_ctx)
             except admission.Busy as e:
+                self._chat_release(ident)  # คืนก่อนตอบ — client เห็นยอดที่ถูกต้องทันที
                 self._send_json(503, {"error": str(e)})
                 return
             except model_backend.BackendError as e:
+                self._chat_release(ident)
                 self._send_json(502, {"error": str(e)})
                 return
             self._chat_finalize(ident, model, messages, reply)
@@ -2198,6 +2231,12 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             prepared = self._chat_prepare(ident)
             if prepared is None:
                 return
+            try:
+                self._handle_chat_stream_prepared(ident, prepared)
+            finally:
+                self._chat_release(ident)  # สตรีมพัง/ผู้ใช้ปิดแท็บ/status ไม่ ok → คืนโควตา
+
+        def _handle_chat_stream_prepared(self, ident, prepared):
             model, messages, num_ctx, hub = prepared
             if hub.get("provider") or hub.get("conversation_id"):
                 chat_hub.serve_chat(self, project_root, ident, model, messages, num_ctx, hub, gen_gate, stream=True)
@@ -2228,7 +2267,7 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                             parts.append(chunk)
                             sse({"delta": chunk})
                     except (BrokenPipeError, ConnectionResetError):
-                        # client ปิดแท็บกลางคัน — ไม่ใช่ error ของเรา เงียบไว้ (ไม่หักโควตา)
+                        # client ปิดแท็บกลางคัน — ไม่ใช่ error ของเรา เงียบไว้ (finally คืนโควตาที่จองไว้)
                         return
                     except Exception as e:  # noqa: BLE001 — BackendError หรืออะไรก็ตาม: สตรีมต้องจบด้วย event เสมอ
                         try:
@@ -2236,10 +2275,11 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                         except (BrokenPipeError, ConnectionResetError):
                             pass
                         return
-                    # finalize หลังสตรีมจบครบ (หักโควตา/usage/dataset เหมือน blocking)
+                    # finalize หลังสตรีมจบครบ (ยืนยันโควตาที่จอง/usage/dataset เหมือน blocking)
                     self._chat_finalize(ident, model, messages, "".join(parts))
                     sse({"done": True})
             except admission.Busy as e:
+                self._chat_release(ident)
                 self._send_json(503, {"error": str(e)})
 
         def _stream_from_node(self, ident, model, messages, node, payload):
