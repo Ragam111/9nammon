@@ -24,6 +24,7 @@ import secrets
 import socket
 import sqlite3
 import sys
+import unicodedata
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Optional
@@ -2349,6 +2350,10 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             text = text.strip()
             if not text:
                 self._send_json(400, {"error": "ต้องระบุ text"})
+                return
+            # ปฏิเสธ NUL และ control character อื่น (ยกเว้น tab / newline)
+            if any(unicodedata.category(ch) == "Cc" and ch not in "\t\n" for ch in text):
+                self._send_json(400, {"error": "text มีอักขระควบคุมที่ไม่อนุญาต (เช่น NUL)"})
                 return
             try:
                 item = add_todo(project_root, text)

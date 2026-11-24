@@ -92,6 +92,17 @@ class TodoHardeningHttpTest(unittest.TestCase):
                 self.assertEqual(status, 400)
                 self.assertIn("error", body)
 
+    def test_control_characters_in_text_rejected_with_400(self):
+        for text in ("a\x00b", "a\x01b", "a\x7fb", "a\rb", "x\x1b[31m"):
+            with self.subTest(text=text):
+                status, body = self._post("/api/todos", {"text": text})
+                self.assertEqual(status, 400)
+                self.assertIn("error", body)
+        # tab และ newline ยังอนุญาต
+        status, body = self._post("/api/todos", {"text": "ok\tline\nnext"})
+        self.assertEqual(status, 200)
+        self.assertEqual(body["text"], "ok\tline\nnext")
+
     def test_non_numeric_content_length_returns_fixed_400(self):
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
         conn.putrequest("POST", "/api/todos")
