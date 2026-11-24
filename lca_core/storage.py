@@ -8,7 +8,10 @@ Cleanup deletes only temp names this package registered
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
+import tempfile
+import threading
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -16,6 +19,10 @@ from lca_core.constants import BUSY_TIMEOUT_MS
 
 MANIFEST = ".lca_core_owned.json"
 SAFE_TEMP_SUFFIXES = (".db.tmp", ".db-journal")
+
+# register() อ่าน-แก้-เขียน manifest; ถ้าหลาย thread ทำพร้อมกันจะเขียนทับกัน
+# และชื่อ temp คงที่ทำให้ Windows โยน PermissionError (WinError 32) ตอน os.replace
+_LOCK = threading.RLock()
 
 __all__ = [
     "SAFE_TEMP_SUFFIXES",
@@ -54,12 +61,23 @@ def _load(directory: Path) -> dict:
 
 
 def _save(directory: Path, data: dict) -> None:
+    """เขียน manifest แบบ atomic ด้วยชื่อ temp ที่ไม่ซ้ำกัน (mkstemp) + os.replace"""
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
     path = _manifest_path(directory)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    tmp.replace(path)
+    payload = json.dumps(data, indent=2)
+    with _LOCK:
+        fd, tmp_name = tempfile.mkstemp(dir=str(directory), prefix=".lca_manifest-", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(payload)
+            os.replace(tmp_name, path)
+        except BaseException:
+            try:
+                os.unlink(tmp_name)
+            except OSError:
+                pass
+            raise
 
 
 def register(path: Path) -> Path:
@@ -72,10 +90,11 @@ def register(path: Path) -> Path:
     if name == MANIFEST:
         raise ValueError("refusing to register the manifest")
     directory = path.parent
-    data = _load(directory)
-    if name not in data["files"]:
-        data["files"].append(name)
-        _save(directory, data)
+    with _LOCK:
+        data = _load(directory)
+        if name not in data["files"]:
+            data["files"].append(name)
+            _save(directory, data)
     return path
 
 

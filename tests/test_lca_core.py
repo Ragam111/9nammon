@@ -505,6 +505,35 @@ class StorageTest(unittest.TestCase):
             with self.assertRaises(Exception):
                 conn.execute("SELECT 1")
 
+    def test_concurrent_register_has_no_errors_and_keeps_all_names(self):
+        # 20 thread register() พร้อมกัน: ต้องไม่มี PermissionError (temp ชื่อคงที่เคยชนบน Windows)
+        # และ manifest ต้องมีชื่อครบทั้ง 20
+        import json
+        import tempfile
+        import threading
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            errors = []
+            barrier = threading.Barrier(20)
+
+            def worker(i):
+                try:
+                    barrier.wait()
+                    register(root / f"owned-{i}.db")
+                except Exception as e:  # noqa: BLE001
+                    errors.append(e)
+
+            threads = [threading.Thread(target=worker, args=(i,)) for i in range(20)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+            self.assertEqual(errors, [])
+            manifest = json.loads((root / ".lca_core_owned.json").read_text(encoding="utf-8"))
+            self.assertEqual(sorted(manifest["files"]), sorted(f"owned-{i}.db" for i in range(20)))
+            self.assertEqual([p.name for p in root.glob("*.tmp")], [])
+
 
 class ExecutorAndLoopTest(unittest.TestCase):
     def tearDown(self):
