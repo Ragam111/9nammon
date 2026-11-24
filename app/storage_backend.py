@@ -35,7 +35,10 @@ def _safe_key(key: str) -> str:
     if not key:
         raise StorageError("key ว่างไม่ได้")
     p = Path(key)
-    if p.is_absolute() or ".." in p.parts:
+    # p.anchor catches rooted-but-driveless keys such as "/etc/passwd", which
+    # is_absolute() reports as relative on Windows and which would otherwise
+    # rebase onto the current drive root when joined.
+    if p.is_absolute() or p.anchor or ".." in p.parts:
         raise StorageError(f"key ไม่ปลอดภัย: {key!r}")
     return key
 
