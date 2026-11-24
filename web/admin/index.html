@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>LCA Admin Dashboard</title>
+  <link rel="stylesheet" href="./admin.css">
+</head>
+<body>
+  <header>
+    <h1>Admin Dashboard</h1>
+    <p class="muted">Local backend monitor</p>
+  </header>
+  <main>
+    <form id="api-base-form">
+      <label for="api-base">API base</label>
+      <input id="api-base" name="api-base" type="url" value="http://127.0.0.1:8765" spellcheck="false" autocomplete="off" required>
+      <button id="refresh" type="submit">Refresh</button>
+    </form>
+    <p id="error" role="alert" hidden></p>
+    <section aria-label="Service">
+      <h2>Service</h2>
+      <dl>
+        <div>
+          <dt>Service version</dt>
+          <dd id="service-version">—</dd>
+        </div>
+        <div>
+          <dt>Uptime</dt>
+          <dd id="uptime">—</dd>
+        </div>
+        <div>
+          <dt>Last updated</dt>
+          <dd id="last-updated">—</dd>
+        </div>
+      </dl>
+    </section>
+    <section aria-label="Health">
+      <h2>Health</h2>
+      <div class="health-grid">
+        <article id="backend-health" data-state="unknown">
+          <h3>Backend health</h3>
+          <p class="state" data-field="state">unknown</p>
+          <p class="detail" data-field="detail">—</p>
+        </article>
+        <article id="frontend-health" data-state="unknown">
+          <h3>Frontend health</h3>
+          <p class="state" data-field="state">unknown</p>
+          <p class="detail" data-field="detail">—</p>
+        </article>
+      </div>
+    </section>
+  </main>
+  <script type="module" src="./admin.js"></script>
+</body>
+</html>

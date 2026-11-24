@@ -4,6 +4,11 @@
 
 Format: Keep a Changelog, SemVer. วันที่เป็นเวลาไทย (UTC+7)
 
+## [Unreleased]
+
+### Added
+- Admin Dashboard (`web/admin/`) — static page that polls `GET /api/v1/status` and shows service version, uptime, and backend/frontend health (API base defaults to `http://127.0.0.1:8765`)
+
 ## [0.3.4] — 2026-11-05 (Test Coverage — router unit tests)
 
 ### Added
