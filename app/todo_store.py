@@ -45,15 +45,26 @@ def _preserve_corrupt(path: Path, reason: str) -> None:
         _log(f"[todo][warn] {TODOS_FILE_NAME} {reason} และคัดลอกสำรองไม่ได้: {e} — ถือว่าว่างเปล่า")
 
 
+class TodoReadError(OSError):
+    """อ่าน todos.json ไม่ได้ (เช่น ถูกล็อก/ไม่มีสิทธิ์/เป็นโฟลเดอร์) — ห้ามถือว่าว่างแล้วเขียนทับ
+    ผู้เรียก write path ต้องหยุดและไม่แตะไฟล์"""
+
+
 def load_todos(project_root: Path) -> list:
     """อ่าน todos.json — ไม่มีไฟล์คืน list ว่าง. ถ้าไฟล์เสีย (JSON พัง / ไม่ใช่ list)
-    คัดลอกเก็บเป็น todos.json.corrupt-<timestamp> เตือนแล้วคืน list ว่าง"""
+    คัดลอกเก็บเป็น todos.json.corrupt-<timestamp> เตือนแล้วคืน list ว่าง.
+    ถ้าอ่านไฟล์ไม่ได้เพราะ OSError → raise TodoReadError (ไม่คืนว่าง เพื่อกันเขียนทับไฟล์จริง)"""
     path = _todos_path(project_root)
     if not path.exists():
         return []
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as e:
+        raw = path.read_bytes()
+    except OSError as e:
+        _log(f"[todo][error] อ่าน {TODOS_FILE_NAME} ไม่ได้: {e}")
+        raise TodoReadError(f"อ่าน {TODOS_FILE_NAME} ไม่ได้: {e}") from e
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as e:
         _preserve_corrupt(path, f"อ่านไม่ได้: {e}")
         return []
     if not isinstance(data, list):

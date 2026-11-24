@@ -43,16 +43,26 @@ def _empty() -> dict:
     return {"spaces": [], "items": []}
 
 
+class SpaceReadError(OSError):
+    """อ่าน spaces.json ไม่ได้ (OSError) — ห้ามถือว่าว่างแล้วเขียนทับ ผู้เรียก write path ต้องหยุด"""
+
+
 def _load(project_root) -> dict:
-    """อ่าน spaces.json — ไม่มีไฟล์ = ว่าง. ไฟล์เสีย/รูปแบบผิด → คัดลอกเก็บเป็น
-    spaces.json.corrupt-<timestamp> ก่อน แล้วค่อยทำงานต่อจากรายการว่าง (ไม่ทิ้งข้อมูลเงียบ ๆ)"""
+    """อ่าน spaces.json — ไม่มีไฟล์ = ว่าง. ไฟล์เสีย/รูปแบบผิด (JSON พัง) → คัดลอกเก็บเป็น
+    spaces.json.corrupt-<timestamp> ก่อน แล้วค่อยทำงานต่อจากรายการว่าง (ไม่ทิ้งข้อมูลเงียบ ๆ).
+    อ่านไฟล์ไม่ได้เพราะ OSError → raise SpaceReadError (ไม่คืนว่าง เพื่อกันเขียนทับไฟล์จริง)"""
     p = _path(project_root)
     with _LOCK:
         if not p.exists():
             return _empty()
         try:
-            data = json.loads(p.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as e:
+            raw = p.read_bytes()
+        except OSError as e:
+            _log(f"[space][error] อ่าน {STORE_FILE} ไม่ได้: {e}")
+            raise SpaceReadError(f"อ่าน {STORE_FILE} ไม่ได้: {e}") from e
+        try:
+            data = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as e:
             _preserve_corrupt(p, f"อ่านไม่ได้: {e}")
             return _empty()
         if not isinstance(data, dict):

@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -115,6 +116,43 @@ class SpaceStoreTest(unittest.TestCase):
         self.assertEqual(len(backups), 1)
         self.assertEqual(backups[0].read_text(encoding="utf-8"), truncated)
         self.assertEqual([s["name"] for s in ss.list_spaces(self.root, "nok", "CEO")], ["ใหม่"])
+
+
+class SpaceReadFailureTest(unittest.TestCase):
+    """อ่าน spaces.json ด้วย OSError → write ต้องถูกปฏิเสธ และไฟล์เดิมต้องไม่ถูกแตะ"""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.path = self.root / ss.STORE_FILE
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_create_refused_when_store_is_a_directory(self):
+        self.path.mkdir()
+        with self.assertRaises(ss.SpaceReadError):
+            ss.create_space(self.root, "ห้ามเขียน", owner="nok")
+        self.assertTrue(self.path.is_dir())
+        self.assertEqual(list(self.root.glob(".spaces-*.tmp")), [])
+
+    def test_permission_error_on_read_keeps_file_unchanged(self):
+        original = b'{"spaces": [{"id": "sp1", "name": "keep", "owner": "nok", "visibility": "shared", "members": [], "ts": 1}], "items": []}'
+        self.path.write_bytes(original)
+        with patch.object(Path, "read_bytes", side_effect=PermissionError("locked")):
+            for op in (
+                lambda: ss.create_space(self.root, "new", owner="nok"),
+                lambda: ss.add_item(self.root, "sp1", "nok", "hello"),
+                lambda: ss.add_member(self.root, "sp1", "bob"),
+            ):
+                with self.assertRaises(ss.SpaceReadError):
+                    op()
+        self.assertEqual(self.path.read_bytes(), original)
+
+    def test_parse_error_still_backed_up_and_treated_as_empty(self):
+        self.path.write_text("{broken", encoding="utf-8")
+        self.assertEqual(ss.list_spaces(self.root, "nok", "CEO"), [])
+        self.assertEqual(len(list(self.root.glob("spaces.json.corrupt-*"))), 1)
 
 
 if __name__ == "__main__":

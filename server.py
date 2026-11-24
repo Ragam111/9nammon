@@ -31,7 +31,7 @@ from urllib.parse import urlparse, parse_qs
 
 sys.path.insert(0, str(Path(__file__).parent))
 from local_coder import get_system_prompt  # noqa: E402
-from app.todo_store import load_todos, add_todo, toggle_todo, delete_todo, TodoSaveError  # noqa: E402
+from app.todo_store import load_todos, add_todo, toggle_todo, delete_todo, TodoSaveError, TodoReadError  # noqa: E402
 from app import org_store  # noqa: E402  (ระบบองค์กร: user/role/api key/quota)
 from sysmanager.sysinfo import get_system_info  # noqa: E402  (spec เครื่องสำหรับ dev view)
 from app import job_queue  # noqa: E402  (คิวงาน server เก็บด้วย SQLite)
@@ -1176,7 +1176,11 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             ident = self._require("USER")
             if ident is None:
                 return
-            spaces = space_store.list_spaces(project_root, ident["username"], ident["role"])
+            try:
+                spaces = space_store.list_spaces(project_root, ident["username"], ident["role"])
+            except space_store.SpaceReadError:
+                self._send_json(500, {"error": "อ่านพื้นที่ไม่สำเร็จ — ตรวจสิทธิ์ของไฟล์ spaces.json"})
+                return
             self._send_json(200, {"spaces": spaces})
 
         def _handle_space_create(self):
@@ -1191,11 +1195,18 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             except ValueError as e:
                 self._send_json(400, {"error": str(e)})
                 return
+            except space_store.SpaceReadError:
+                self._send_json(500, {"error": "อ่านพื้นที่ไม่สำเร็จ — ไฟล์ spaces.json ไม่ถูกเปลี่ยน"})
+                return
             self._send_json(200, {"space": space})
 
         def _space_or_403(self, ident, space_id):
             """คืน space ถ้าเข้าถึงได้, ไม่งั้นตอบ error แล้วคืน None"""
-            space = space_store.get_space(project_root, space_id)
+            try:
+                space = space_store.get_space(project_root, space_id)
+            except space_store.SpaceReadError:
+                self._send_json(500, {"error": "อ่านพื้นที่ไม่สำเร็จ — ตรวจสิทธิ์ของไฟล์ spaces.json"})
+                return None
             if space is None:
                 self._send_json(404, {"error": "ไม่พบพื้นที่"})
                 return None
@@ -1211,7 +1222,12 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             space_id = (parse_qs(parsed.query).get("space", [""])[0]).strip()
             if self._space_or_403(ident, space_id) is None:
                 return
-            self._send_json(200, {"items": space_store.list_items(project_root, space_id)})
+            try:
+                items = space_store.list_items(project_root, space_id)
+            except space_store.SpaceReadError:
+                self._send_json(500, {"error": "อ่านพื้นที่ไม่สำเร็จ — ตรวจสิทธิ์ของไฟล์ spaces.json"})
+                return
+            self._send_json(200, {"items": items})
 
         def _handle_space_item_add(self):
             ident = self._require("USER")
@@ -1227,6 +1243,9 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             except ValueError as e:
                 self._send_json(400, {"error": str(e)})
                 return
+            except space_store.SpaceReadError:
+                self._send_json(500, {"error": "อ่านพื้นที่ไม่สำเร็จ — ไฟล์ spaces.json ไม่ถูกเปลี่ยน"})
+                return
             self._send_json(200, {"item": item})
 
         def _handle_space_member_add(self):
@@ -1235,7 +1254,11 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 return
             data = self._read_json_body()
             space_id = (data.get("space") or "").strip()
-            space = space_store.get_space(project_root, space_id)
+            try:
+                space = space_store.get_space(project_root, space_id)
+            except space_store.SpaceReadError:
+                self._send_json(500, {"error": "อ่านพื้นที่ไม่สำเร็จ — ตรวจสิทธิ์ของไฟล์ spaces.json"})
+                return
             if space is None:
                 self._send_json(404, {"error": "ไม่พบพื้นที่"})
                 return
@@ -1247,6 +1270,9 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 updated = space_store.add_member(project_root, space_id, (data.get("member") or "").strip())
             except ValueError as e:
                 self._send_json(400, {"error": str(e)})
+                return
+            except space_store.SpaceReadError:
+                self._send_json(500, {"error": "อ่านพื้นที่ไม่สำเร็จ — ไฟล์ spaces.json ไม่ถูกเปลี่ยน"})
                 return
             self._send_json(200, {"space": updated})
 
@@ -2039,7 +2065,11 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             # โหมด local ส่ง session token ที่หน้าเว็บได้รับตอนโหลด จึงยังเป็น CEO ได้
             if self._require("USER") is None:
                 return
-            todos = load_todos(project_root)
+            try:
+                todos = load_todos(project_root)
+            except TodoReadError:
+                self._send_json(500, {"error": "อ่าน todo ไม่สำเร็จ — ตรวจสิทธิ์ของไฟล์ todos.json ในโฟลเดอร์โปรเจกต์"})
+                return
             self._send_json(200, todos)
 
         def _todos_body(self):
@@ -2092,7 +2122,7 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 return
             try:
                 item = add_todo(project_root, text)
-            except TodoSaveError:
+            except (TodoSaveError, TodoReadError):
                 self._todos_save_failed()
                 return
             self._send_json(200, item)
@@ -2108,7 +2138,7 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 return
             try:
                 ok = toggle_todo(project_root, todo_id)
-            except TodoSaveError:
+            except (TodoSaveError, TodoReadError):
                 self._todos_save_failed()
                 return
             self._send_json(200 if ok else 404, {"success": ok})
@@ -2124,7 +2154,7 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 return
             try:
                 ok = delete_todo(project_root, todo_id)
-            except TodoSaveError:
+            except (TodoSaveError, TodoReadError):
                 self._todos_save_failed()
                 return
             self._send_json(200 if ok else 404, {"success": ok})

@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -104,6 +105,47 @@ class TodoStoreTest(unittest.TestCase):
         backups = list(self.tmp.glob("todos.json.corrupt-*"))
         self.assertEqual(len(backups), 1)
         self.assertEqual(backups[0].read_text(encoding="utf-8"), '{"oops": true}')
+
+
+class TodoReadFailureTest(unittest.TestCase):
+    """อ่าน todos.json ด้วย OSError → write ต้องถูกปฏิเสธ และไฟล์เดิมต้องไม่ถูกแตะ"""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(_remove_tree, self.tmp)
+        self.path = self.tmp / todo_store.TODOS_FILE_NAME
+
+    def test_add_refused_when_file_cannot_be_read(self):
+        # todos.json เป็นโฟลเดอร์ → อ่านไม่ได้ (OSError) แต่ path ยัง exists()
+        self.path.mkdir()
+        with self.assertRaises(todo_store.TodoReadError):
+            todo_store.add_todo(self.tmp, "must be refused")
+        self.assertTrue(self.path.is_dir(), "ไฟล์/โฟลเดอร์เดิมต้องไม่ถูกแทนที่")
+        self.assertEqual(list(self.tmp.glob(".todos-*.tmp")), [])
+
+    def test_permission_error_on_read_keeps_file_unchanged(self):
+        original = b'[{"id": 1, "text": "keep me", "done": false}]'
+        self.path.write_bytes(original)
+        with patch.object(Path, "read_bytes", side_effect=PermissionError("locked")):
+            for op in (
+                lambda: todo_store.add_todo(self.tmp, "new"),
+                lambda: todo_store.toggle_todo(self.tmp, 1),
+                lambda: todo_store.delete_todo(self.tmp, 1),
+            ):
+                with self.assertRaises(todo_store.TodoReadError):
+                    op()
+        self.assertEqual(self.path.read_bytes(), original)
+
+    def test_read_error_is_not_reported_as_empty(self):
+        with patch.object(Path, "read_bytes", side_effect=PermissionError("locked")):
+            self.path.write_bytes(b"[]")
+            with self.assertRaises(OSError):
+                todo_store.load_todos(self.tmp)
+
+    def test_parse_error_still_backed_up_and_treated_as_empty(self):
+        self.path.write_text("{broken", encoding="utf-8")
+        self.assertEqual(todo_store.load_todos(self.tmp), [])
+        self.assertEqual(len(list(self.tmp.glob("todos.json.corrupt-*"))), 1)
 
 
 if __name__ == "__main__":
