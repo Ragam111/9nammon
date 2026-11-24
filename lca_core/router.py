@@ -61,20 +61,24 @@ def _normalize(result: dict | None) -> dict:
     status = result.get("status")
     if status not in ("up", "down", "not_implemented"):
         status = "down"
+    if status == "down":
+        return {"status": "down", "latency_ms": None}
     latency = result.get("latency_ms")
-    if status != "up":
-        latency_out = None if latency is None else _as_int(latency)
-        if status == "down":
-            latency_out = None
-        return {"status": status, "latency_ms": latency_out}
-    return {"status": "up", "latency_ms": 0 if latency is None else _as_int(latency)}
+    latency_out = None if latency is None else _as_int(latency)
+    if latency is not None and latency_out is None:
+        # latency ที่ไม่ใช่จำนวนจำกัด (inf, nan, ข้อความ) = probe ผิดปกติ → ถือว่า node นี้ down
+        return {"status": "down", "latency_ms": None}
+    if status == "up" and latency_out is None:
+        latency_out = 0
+    return {"status": status, "latency_ms": latency_out}
 
 
-def _as_int(value) -> int:
+def _as_int(value) -> int | None:
+    """แปลงเป็นจำนวนเต็ม — คืน None ถ้าไม่ใช่จำนวนจำกัด (inf/nan ทำให้ int() raise OverflowError/ValueError)"""
     try:
         return int(value)
-    except (TypeError, ValueError):
-        return 0
+    except (TypeError, ValueError, OverflowError):
+        return None
 
 
 def probe_node(spec: NodeSpec, probe: Probe, timeout: float = PROBE_TIMEOUT_S) -> dict:

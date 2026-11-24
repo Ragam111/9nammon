@@ -186,6 +186,21 @@ class RouterTest(unittest.TestCase):
         self.assertEqual([node["status"] for node in body["nodes"]], ["down", "down"])
         self.assertEqual([node["latency_ms"] for node in body["nodes"]], [None, None])
 
+    def test_non_finite_latency_reports_node_unhealthy_without_raising(self):
+        # inf / nan latency ต้องไม่ทำให้ cluster_status raise (เดิม int(inf) → OverflowError)
+        for bad in (float("inf"), float("-inf"), float("nan")):
+            with self.subTest(latency=bad):
+                def probe(host, port, timeout, _bad=bad):
+                    if port == 8420:
+                        return {"status": "up", "latency_ms": _bad}
+                    return {"status": "up", "latency_ms": 5}
+
+                body = cluster_status(probe, timeout=0.2)
+                worker = body["nodes"][0]
+                self.assertEqual(worker["status"], "down")
+                self.assertIsNone(worker["latency_ms"])
+                self.assertEqual(body["nodes"][1]["status"], "up")
+
     def test_not_implemented_does_not_fall_back(self):
         calls = []
 
