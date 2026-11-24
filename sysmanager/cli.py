@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 import time
 from typing import Optional
@@ -164,6 +165,18 @@ def _use_color(args: argparse.Namespace) -> bool:
     return sys.stdout.isatty()
 
 
+def _sampling_interval(text: str) -> float:
+    """argparse type สำหรับ -i/--interval: ต้องเป็นตัวเลขจำกัด (finite) และ > 0
+    ค่าผิดให้ argparse ตอบ usage + ข้อความสั้น ๆ แล้วจบด้วย exit 2 (ไม่มี traceback)"""
+    try:
+        value = float(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"interval ต้องเป็นตัวเลข (ได้ {text!r})")
+    if not math.isfinite(value) or value <= 0:
+        raise argparse.ArgumentTypeError(f"interval ต้องเป็นจำนวนจริงบวกและจำกัด (ได้ {text!r})")
+    return value
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="sysmanager",
@@ -174,7 +187,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     def add_common(p: argparse.ArgumentParser) -> None:
         p.add_argument(
-            "-i", "--interval", type=float, default=1.0,
+            "-i", "--interval", type=_sampling_interval, default=1.0,
             help="sampling window in seconds (default: 1.0)",
         )
         p.add_argument(

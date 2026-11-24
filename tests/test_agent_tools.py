@@ -111,8 +111,10 @@ class SandboxCommandAllowlistTest(unittest.TestCase):
             sb_off.run_command("echo hello")
 
     def test_allowed_command_runs(self):
-        result = self.sb.run_command("echo hello")
-        self.assertIn("hello", result)
+        # grep is on the allowlist and is available on Linux and Git Bash (echo is a cmd builtin on Windows).
+        (Path(self.tmp) / "greet.txt").write_text("hello world\n", encoding="utf-8")
+        result = self.sb.run_command(["grep", "hello", "greet.txt"])
+        self.assertIn("hello world", result)
         self.assertIn("exit 0", result)
 
     def test_disallowed_command_rejected(self):
@@ -128,7 +130,8 @@ class SandboxCommandAllowlistTest(unittest.TestCase):
             self.sb.run_command("")
 
     def test_list_args_form(self):
-        result = self.sb.run_command(["echo", "list", "form"])
+        (Path(self.tmp) / "words.txt").write_text("list form\nother\n", encoding="utf-8")
+        result = self.sb.run_command(["grep", "-n", "form", "words.txt"])
         self.assertIn("list form", result)
 
     def test_pwd_runs_in_workspace(self):

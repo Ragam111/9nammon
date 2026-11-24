@@ -59,6 +59,37 @@ class ResolveServerConfigTest(unittest.TestCase):
             server.resolve_server_config(
                 _args(host="0.0.0.0", token="x"), env={"PORT": "not-a-number"})
 
+    def test_port_out_of_range_rejected(self):
+        for bad in (65536, 99999, -1):
+            with self.subTest(port=bad), self.assertRaises(ValueError):
+                server.resolve_server_config(_args(port=bad), env={})
+
+    def test_env_port_out_of_range_rejected(self):
+        with self.assertRaises(ValueError):
+            server.resolve_server_config(
+                _args(host="0.0.0.0", token="x"), env={"PORT": "70000"})
+
+    def test_port_boundaries_accepted(self):
+        for ok in (0, 65535):
+            with self.subTest(port=ok):
+                cfg = server.resolve_server_config(_args(port=ok), env={})
+                self.assertEqual(cfg["port"], ok)
+
+    def test_main_exits_cleanly_on_bad_port(self):
+        # ต้องไม่มี traceback — แค่ข้อความ + exit code ไม่เป็น 0
+        import io
+        import contextlib
+        from unittest import mock
+        project = Path(__file__).resolve().parent
+        out = io.StringIO()
+        with mock.patch.object(sys, "argv", ["server.py", str(project), "--port", "99999"]), \
+                mock.patch.dict("os.environ", {}, clear=False), \
+                contextlib.redirect_stdout(out), \
+                self.assertRaises(SystemExit) as cm:
+            server.main()
+        self.assertNotEqual(cm.exception.code, 0)
+        self.assertIn("0-65535", out.getvalue())
+
     def test_localhost_needs_no_token(self):
         cfg = server.resolve_server_config(_args(host="127.0.0.1"), env={})
         self.assertIsNone(cfg["token"])

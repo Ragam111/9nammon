@@ -7,6 +7,7 @@ counters across that window, so a longer interval gives steadier numbers.
 
 from __future__ import annotations
 
+import math
 import platform
 import socket
 import time
@@ -39,8 +40,8 @@ class Collector:
 
     def collect(self, interval: float = 1.0) -> Snapshot:
         """Capture one snapshot over ``interval`` seconds (blocks that long)."""
-        if interval <= 0:
-            raise ValueError("interval must be > 0")
+        if not math.isfinite(interval) or interval <= 0:
+            raise ValueError("interval must be a finite number > 0")
 
         # --- counters at the start of the window ---------------------------
         disk_io_start = psutil.disk_io_counters(perdisk=True) or {}
