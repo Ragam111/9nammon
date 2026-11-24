@@ -79,6 +79,43 @@ class SpaceStoreTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             ss.add_item(self.root, "sp-nope", "a", "hi")
 
+    def test_concurrent_create_space_persists_all(self):
+        # 30 การสร้างพร้อมกัน ต้องไม่มีอันไหนหายเพราะเขียนทับกัน (read-modify-write ใต้ lock)
+        import threading
+        errors = []
+        barrier = threading.Barrier(30)
+
+        def worker(i):
+            try:
+                barrier.wait()
+                ss.create_space(self.root, f"ห้อง{i}", owner="nok", visibility="shared")
+            except Exception as e:  # noqa: BLE001
+                errors.append(e)
+
+        threads = [threading.Thread(target=worker, args=(i,)) for i in range(30)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual(errors, [])
+        spaces = ss.list_spaces(self.root, "nok", "CEO")
+        self.assertEqual(len(spaces), 30)
+        self.assertEqual(len({s["id"] for s in spaces}), 30)
+        self.assertEqual(sorted(s["name"] for s in spaces),
+                         sorted(f"ห้อง{i}" for i in range(30)))
+        # ไม่มีไฟล์ชั่วคราวค้าง
+        self.assertEqual(list(self.root.glob(".spaces-*.tmp")), [])
+
+    def test_corrupt_store_is_preserved_before_next_write(self):
+        truncated = '{"spaces": [{"id": "sp1", "name": "เก่า"'
+        (self.root / ss.STORE_FILE).write_text(truncated, encoding="utf-8")
+        self.assertEqual(ss.list_spaces(self.root, "nok", "CEO"), [])
+        ss.create_space(self.root, "ใหม่", owner="nok")
+        backups = sorted(self.root.glob(ss.STORE_FILE + ".corrupt-*"))
+        self.assertEqual(len(backups), 1)
+        self.assertEqual(backups[0].read_text(encoding="utf-8"), truncated)
+        self.assertEqual([s["name"] for s in ss.list_spaces(self.root, "nok", "CEO")], ["ใหม่"])
+
 
 if __name__ == "__main__":
     unittest.main()
