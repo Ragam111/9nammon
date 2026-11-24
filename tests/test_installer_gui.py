@@ -115,8 +115,10 @@ class DefaultInstallDirTest(unittest.TestCase):
             self.assertIn("AppData", result)
 
     def test_falls_back_to_home_when_no_localappdata(self):
-        with patch.dict(os.environ, {}, clear=True):
-            os.environ.pop("LOCALAPPDATA", None)
+        # Drop only LOCALAPPDATA. Clearing everything also removes USERPROFILE on
+        # Windows, and then Path.home() cannot resolve a home directory at all.
+        env = {k: v for k, v in os.environ.items() if k != "LOCALAPPDATA"}
+        with patch.dict(os.environ, env, clear=True):
             result = installer_gui.default_install_dir()
             self.assertIn("LocalCodeAssistant", result)
 
