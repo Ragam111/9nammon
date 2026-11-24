@@ -2030,6 +2030,33 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             todos = load_todos(project_root)
             self._send_json(200, todos)
 
+        def _todos_body(self):
+            """อ่าน body เป็น JSON object — ไม่ใช่ object หรือ JSON เสีย → ตอบ 400 แล้วคืน None"""
+            try:
+                data = self._read_json_body()
+            except ValueError:
+                self._send_json(400, {"error": "request body ต้องเป็น JSON ที่ถูกต้อง"})
+                return None
+            if not isinstance(data, dict):
+                self._send_json(400, {"error": "request body ต้องเป็น JSON object"})
+                return None
+            return data
+
+        def _todos_id(self, data):
+            """อ่าน id เป็นจำนวนเต็ม — ไม่ถูกต้องตอบ 400 แล้วคืน None (ไม่ส่งข้อความ exception ดิบ)"""
+            raw = data.get("id")
+            if raw is None:
+                self._send_json(400, {"error": "ต้องระบุ id"})
+                return None
+            if isinstance(raw, bool) or not isinstance(raw, (int, str)):
+                self._send_json(400, {"error": "id ต้องเป็นตัวเลข"})
+                return None
+            try:
+                return int(raw)
+            except ValueError:
+                self._send_json(400, {"error": "id ต้องเป็นตัวเลข"})
+                return None
+
         def _todos_save_failed(self):
             self._send_json(500, {"error": "บันทึก todo ไม่สำเร็จ — ตรวจสิทธิ์/พื้นที่ดิสก์ของโฟลเดอร์โปรเจกต์"})
 
