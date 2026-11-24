@@ -16,6 +16,8 @@ import tempfile
 import threading
 from pathlib import Path
 
+from app.corrupt_file import preserve_corrupt_copy
+
 TODOS_FILE_NAME = "todos.json"
 
 # กัน read-modify-write ชนกันเมื่อหลาย request (ThreadingHTTPServer) เขียนพร้อมกัน
@@ -34,20 +36,30 @@ def _todos_path(project_root: Path) -> Path:
     return project_root / TODOS_FILE_NAME
 
 
+def _preserve_corrupt(path: Path, reason: str) -> None:
+    """เก็บสำเนาไฟล์ที่เสียไว้ก่อนจะถูกเขียนทับ — ไม่ให้ข้อมูลหายเงียบ ๆ"""
+    try:
+        dest = preserve_corrupt_copy(path, log=lambda _msg: None)
+        _log(f"[todo][warn] {TODOS_FILE_NAME} {reason} — ถือว่าว่างเปล่า (สำเนาเดิม: {dest.name})")
+    except OSError as e:
+        _log(f"[todo][warn] {TODOS_FILE_NAME} {reason} และคัดลอกสำรองไม่ได้: {e} — ถือว่าว่างเปล่า")
+
+
 def load_todos(project_root: Path) -> list:
-    """อ่าน todos.json — ถ้าไม่มีไฟล์คืน list ว่าง, ถ้าไฟล์เสีย (JSON พัง) เตือนแล้วคืน list ว่าง"""
+    """อ่าน todos.json — ไม่มีไฟล์คืน list ว่าง. ถ้าไฟล์เสีย (JSON พัง / ไม่ใช่ list)
+    คัดลอกเก็บเป็น todos.json.corrupt-<timestamp> เตือนแล้วคืน list ว่าง"""
     path = _todos_path(project_root)
     if not path.exists():
         return []
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(data, list):
-            _log(f"[todo][warn] {TODOS_FILE_NAME} รูปแบบผิด (ไม่ใช่ list) — ถือว่าว่างเปล่า")
-            return []
-        return data
-    except (OSError, json.JSONDecodeError) as e:
-        _log(f"[todo][warn] อ่าน {TODOS_FILE_NAME} ไม่ได้: {e} — ถือว่าว่างเปล่า")
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as e:
+        _preserve_corrupt(path, f"อ่านไม่ได้: {e}")
         return []
+    if not isinstance(data, list):
+        _preserve_corrupt(path, "รูปแบบผิด (ไม่ใช่ list)")
+        return []
+    return data
 
 
 class TodoSaveError(OSError):

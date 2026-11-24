@@ -81,6 +81,30 @@ class TodoStoreTest(unittest.TestCase):
         todos = todo_store.load_todos(self.tmp)
         self.assertEqual(todos, [])
 
+    def test_truncated_file_is_preserved_before_add(self):
+        # todos.json ที่ถูกตัดกลางคัน (เช่นดิสก์เต็ม/โปรแกรมดับ) ต้องไม่ถูกทิ้งเมื่อ add ครั้งถัดไป
+        truncated = '[{"id": 1, "text": "สำคัญ", "done": fa'
+        (self.tmp / "todos.json").write_text(truncated, encoding="utf-8")
+        item = todo_store.add_todo(self.tmp, "ใหม่")
+        self.assertEqual(item["id"], 1)
+        self.assertEqual([t["text"] for t in todo_store.load_todos(self.tmp)], ["ใหม่"])
+        backups = sorted(self.tmp.glob("todos.json.corrupt-*"))
+        self.assertEqual(len(backups), 1)
+        self.assertEqual(backups[0].read_text(encoding="utf-8"), truncated)
+
+    def test_repeated_load_of_corrupt_file_does_not_multiply_backups(self):
+        (self.tmp / "todos.json").write_text("{broken", encoding="utf-8")
+        for _ in range(3):
+            todo_store.load_todos(self.tmp)
+        self.assertEqual(len(list(self.tmp.glob("todos.json.corrupt-*"))), 1)
+
+    def test_non_list_json_is_preserved(self):
+        (self.tmp / "todos.json").write_text('{"oops": true}', encoding="utf-8")
+        self.assertEqual(todo_store.load_todos(self.tmp), [])
+        backups = list(self.tmp.glob("todos.json.corrupt-*"))
+        self.assertEqual(len(backups), 1)
+        self.assertEqual(backups[0].read_text(encoding="utf-8"), '{"oops": true}')
+
 
 if __name__ == "__main__":
     unittest.main()
