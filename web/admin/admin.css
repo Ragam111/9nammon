@@ -1,0 +1,156 @@
+/*
+ * Admin dashboard — static page, no build step.
+ * No webfonts, blur, shadow, or looping animation.
+ */
+
+:root {
+  --bg: #f4f6f3;
+  --surface: #ffffff;
+  --line: #d5ddd6;
+  --fg: #1b241c;
+  --muted: #5c675e;
+  --accent: #1f6b3a;
+  --accent-fg: #f4fff6;
+  --ok: #1f6b3a;
+  --warn: #8a5a10;
+  --bad: #a33b32;
+  --sans: system-ui, "Segoe UI", "Leelawadee UI", Tahoma, "Noto Sans Thai", sans-serif;
+  --mono: ui-monospace, "Cascadia Mono", Consolas, "Courier New", monospace;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #101510;
+    --surface: #182018;
+    --line: #314033;
+    --fg: #e7eee6;
+    --muted: #9aa89a;
+    --accent: #3cba6a;
+    --accent-fg: #06210f;
+    --ok: #3cba6a;
+    --warn: #e0ad4e;
+    --bad: #ef6b63;
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.5;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+body > header,
+main {
+  width: min(720px, calc(100% - 24px));
+  margin-inline: auto;
+}
+
+body > header {
+  padding: 16px 0 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+h1 { font-size: 1.25rem; line-height: 1.3; margin: 0 0 4px; }
+h2 { font-size: 1.05rem; margin: 0 0 8px; }
+h3 { font-size: 1rem; margin: 0; }
+p { margin: 0; }
+
+.muted { color: var(--muted); font-size: 0.92rem; }
+
+form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+label {
+  flex: 1 1 100%;
+  font-size: 0.92rem;
+}
+
+input,
+button {
+  font: inherit;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+
+input {
+  flex: 1 1 16rem;
+  font-family: var(--mono);
+  min-width: 0;
+}
+
+button {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+  cursor: pointer;
+}
+
+#error {
+  border: 1px solid var(--bad);
+  color: var(--bad);
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 0 0 12px;
+}
+
+dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 8px;
+  margin: 0 0 16px;
+}
+
+dl div,
+article {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+dt { color: var(--muted); font-size: 0.85rem; }
+dd {
+  margin: 2px 0 0;
+  font-family: var(--mono);
+  font-size: 0.92rem;
+  white-space: nowrap;
+}
+
+.health-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 8px;
+}
+
+.state {
+  margin-top: 6px;
+  font-family: var(--mono);
+  font-weight: 650;
+}
+
+.detail {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+[data-state="up"] .state { color: var(--ok); }
+[data-state="degraded"] .state { color: var(--warn); }
+[data-state="down"] .state { color: var(--bad); }
+[data-state="unknown"] .state { color: var(--muted); }
