@@ -1,0 +1,155 @@
+/* Design tokens for the backend-frontend app. Every color, space, radius and motion value
+   used by components must come from here. See ../../DESIGN.md for usage rules.
+   Light is the default. Dark applies under prefers-color-scheme unless data-theme="light",
+   or when data-theme="dark" is set explicitly. data-theme works on any element, so one
+   page can show a light and a dark panel side by side (the showcase does this). */
+
+:root,
+[data-theme="light"] {
+  /* Neutral: cool gray-blue, one set only */
+  --bg: #f7f8fa;
+  --surface: #ffffff;
+  --surface-2: #eef1f5;
+  --line: #d9dee7;
+  --fg: #18202b;
+  --muted: #5b6678;
+
+  /* Accent: one color */
+  --accent: #0e7490;
+  --accent-fg: #ffffff;
+  --accent-weak: #e0f2f7;
+
+  /* Status: each state has a color and a background; components add a text label or icon */
+  --ok: #15713b;
+  --ok-bg: #e6f4ec;
+  --warn: #8a5a12;
+  --warn-bg: #fbf1de;
+  --bad: #a8322b;
+  --bad-bg: #fbe7e5;
+
+  --focus: #0e7490;
+
+  /* Type */
+  --font-sans: "Noto Sans Thai", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", Consolas, "Courier New", monospace;
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --text-md: 16px;
+  --text-lg: 20px;
+  --text-xl: 24px;
+  --leading: 1.5;
+
+  /* Spacing: 4px scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* Layout: reading width for message content (760px) */
+  --content-max: 47.5rem;
+
+  /* Radius: two levels only */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+
+  /* Shadow: one level only */
+  --shadow-1: 0 1px 2px rgb(16 24 40 / 0.08);
+
+  /* Motion */
+  --motion-fast: 120ms ease-out;
+  --motion-base: 200ms ease-out;
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1419;
+    --surface: #171d24;
+    --surface-2: #1e2630;
+    --line: #2c3644;
+    --fg: #e6ebf2;
+    --muted: #9aa6b6;
+
+    --accent: #5fb8d6;
+    --accent-fg: #0b1116;
+    --accent-weak: #15303b;
+
+    --ok: #6fd295;
+    --ok-bg: #13291c;
+    --warn: #f0c070;
+    --warn-bg: #2d2412;
+    --bad: #ff8a80;
+    --bad-bg: #3a1a18;
+
+    --focus: #5fb8d6;
+    --shadow-1: 0 1px 2px rgb(0 0 0 / 0.4);
+    color-scheme: dark;
+  }
+}
+
+[data-theme="dark"] {
+  --bg: #0f1419;
+  --surface: #171d24;
+  --surface-2: #1e2630;
+  --line: #2c3644;
+  --fg: #e6ebf2;
+  --muted: #9aa6b6;
+
+  --accent: #5fb8d6;
+  --accent-fg: #0b1116;
+  --accent-weak: #15303b;
+
+  --ok: #6fd295;
+  --ok-bg: #13291c;
+  --warn: #f0c070;
+  --warn-bg: #2d2412;
+  --bad: #ff8a80;
+  --bad-bg: #3a1a18;
+
+  --focus: #5fb8d6;
+  --shadow-1: 0 1px 2px rgb(0 0 0 / 0.4);
+  color-scheme: dark;
+}
+
+/* Base */
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
+  line-height: var(--leading);
+}
+
+/* Utilities */
+.tabular { font-variant-numeric: tabular-nums; }
+.mono { font-family: var(--font-mono); }
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* Motion: respect the user's setting */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0ms;
+    --motion-base: 0ms;
+  }
+  /* !important is deliberate: the user's reduced-motion setting must win over any component animation. */
+  *, *::before, *::after {
+    /* biome-ignore lint/complexity/noImportantStyles: reduced-motion override must win */
+    animation-duration: 0.01ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: reduced-motion override must win */
+    animation-iteration-count: 1 !important;
+    /* biome-ignore lint/complexity/noImportantStyles: reduced-motion override must win */
+    transition-duration: 0.01ms !important;
+  }
+}

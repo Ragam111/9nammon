@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from contextlib import closing
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -35,6 +35,18 @@ _MAX_LEN = 20000
 
 def _now() -> str:
     return datetime.now().isoformat(timespec="seconds")
+
+
+@contextmanager
+def _session(project_root: Path):
+    """Open, commit/rollback, then always close. A bare `with sqlite3.connect()`
+    only commits; it never closes, so the file stays locked (Windows) until GC."""
+    conn = _connect(project_root)
+    try:
+        with conn:
+            yield conn
+    finally:
+        conn.close()
 
 
 def _connect(project_root: Path) -> sqlite3.Connection:
@@ -73,7 +85,7 @@ def add_sample(project_root: Path, prompt: str, response: str,
         if not 1 <= rating <= 5:
             raise ValueError("rating ต้องอยู่ระหว่าง 1-5")
     now = _now()
-    with closing(_connect(project_root)) as conn, conn:
+    with _session(project_root) as conn:
         cur = conn.execute(
             "INSERT INTO samples (created_at, model, prompt, response, rating, source) "
             "VALUES (?, ?, ?, ?, ?, ?)",
@@ -95,18 +107,18 @@ def list_samples(project_root: Path, limit: int = 100, min_rating=None) -> list:
         sql += " WHERE " + " AND ".join(where)
     sql += " ORDER BY id DESC LIMIT ?"
     params.append(int(limit))
-    with closing(_connect(project_root)) as conn, conn:
+    with _session(project_root) as conn:
         rows = conn.execute(sql, tuple(params)).fetchall()
     return [dict(r) for r in rows]
 
 
 def count(project_root: Path) -> int:
-    with closing(_connect(project_root)) as conn, conn:
+    with _session(project_root) as conn:
         return int(conn.execute("SELECT COUNT(*) FROM samples").fetchone()[0])
 
 
 def delete_sample(project_root: Path, sample_id: int) -> bool:
-    with closing(_connect(project_root)) as conn, conn:
+    with _session(project_root) as conn:
         cur = conn.execute("DELETE FROM samples WHERE id = ?", (int(sample_id),))
         return cur.rowcount > 0
 
@@ -127,7 +139,7 @@ def export_jsonl(project_root: Path, fmt: str = "messages", min_rating=None) -> 
     if where:
         sql += " WHERE " + " AND ".join(where)
     sql += " ORDER BY id ASC"
-    with closing(_connect(project_root)) as conn, conn:
+    with _session(project_root) as conn:
         rows = conn.execute(sql, tuple(params)).fetchall()
     lines = []
     for r in rows:

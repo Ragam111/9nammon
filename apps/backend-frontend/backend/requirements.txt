@@ -1,0 +1,6 @@
+# Direct dependencies, pinned. Full resolved set (with transitive pins) is in requirements.lock.
+# Install with: uv pip install --exclude-newer 2026-11-06 -r requirements.lock
+fastapi==0.162.0
+uvicorn==0.54.0
+httpx==0.28.1
+pydantic==2.14.3

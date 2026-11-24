@@ -73,3 +73,14 @@ bots.json
 bots.json.tmp
 # sandbox ของ bot-agent (ไฟล์ที่ agent อ่าน/เขียน — ไม่ commit)
 agent_workspace/
+
+# local secrets for docker compose
+.env
+
+
+# agents_team runtime queue
+/state/
+
+
+# Task runner output
+apps/backend-frontend/backend/task-runs/

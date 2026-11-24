@@ -288,5 +288,33 @@ class QueryTest(unittest.TestCase):
             self.assertEqual(conn.execute("SELECT count(*) FROM conversations").fetchone()[0], 2)
 
 
+class OwnerLimitTest(unittest.TestCase):
+    def test_own_room_survives_when_others_fill_the_limit(self):
+        tmp, root = _root()
+        self.addCleanup(tmp.cleanup)
+        with chat_store.write_txn(root) as conn:
+            chat_store.create_conversation(conn, title="alice-old", owner="alice")
+            conn.execute("UPDATE conversations SET updated_at=0 WHERE owner='alice'")
+            for i in range(55):
+                chat_store.create_conversation(conn, title=f"bob-{i}", owner="bob")
+        with chat_store.read_txn(root) as conn:
+            rows = chat_store.list_conversations(
+                conn, folder_id="all", limit=50, restrict_owner=True, owner="alice",
+            )
+        titles = [r["title"] for r in rows]
+        self.assertIn("alice-old", titles)
+        self.assertTrue(all(r["owner"] in (None, "", "alice") for r in rows))
+
+    def test_unrestricted_list_keeps_old_behaviour(self):
+        tmp, root = _root()
+        self.addCleanup(tmp.cleanup)
+        with chat_store.write_txn(root) as conn:
+            chat_store.create_conversation(conn, title="shared", owner=None)
+            chat_store.create_conversation(conn, title="bob", owner="bob")
+        with chat_store.read_txn(root) as conn:
+            rows = chat_store.list_conversations(conn, folder_id="all", limit=50)
+        self.assertEqual({r["title"] for r in rows}, {"shared", "bob"})
+
+
 if __name__ == "__main__":
     unittest.main()

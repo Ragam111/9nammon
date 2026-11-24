@@ -1,0 +1,28 @@
+{
+  "skill": "rapid-iteration-ecosystem",
+  "version": "0.1.0",
+  "company": "Token LCA",
+  "token": "T-LCA",
+  "brief": "อยากได้แอปแชตแบบ ChatGPT ก่อนมันจะเป็นเว็บ",
+  "reached": 8,
+  "hands": 8,
+  "space": "public-hall",
+  "charged": false,
+  "rooms": ["สตูดิโอ", "ไฟล์", "แชต", "ติดตั้ง", "คอนโซล"],
+  "note": "ม้วนสาธารณะไม่หัก T-LCA และไม่จำชื่อคน บัญชีใหม่ได้ 8000 เก็บม้วนส่วนตัวหักเท่า hands เก็บบทแชตหรือมติหัก 1 ของแขกอยู่แค่หน้า สมองบนเว็บเป็นแผนที่ไฟล์ ไม่แทน server.py และไม่ย้ายตัวติดตั้ง Windows",
+  "steps": [
+    { "n": 1, "title": "รับโจทย์จากคน", "files": [], "done": true },
+    { "n": 2, "title": "เปิดม้วนเทป", "files": ["sessions/tape.json"], "done": true },
+    { "n": 3, "title": "เขียนหน้าที่คนเห็น", "files": ["app/", "lca_app.py"], "done": true },
+    { "n": 4, "title": "ต่อสายตอบทีละคำ", "files": ["server.py", "local_coder.py", "sysmanager/"], "done": true },
+    { "n": 5, "title": "แช่แข็งสกิล", "files": ["SKILL.md"], "done": true },
+    { "n": 6, "title": "แยกพื้นที่", "files": [], "done": true },
+    { "n": 7, "title": "หักเหรียญ", "files": [], "done": true },
+    { "n": 8, "title": "แพ็กเปิดตัว", "files": ["install/pack.json", "installer_gui.py", "install.ps1", "start-lca.bat", "Dockerfile"], "done": true }
+  ],
+  "notConnected": [
+    "กุญแจของ Ollama",
+    "รหัสไททันของแอดมิน",
+    "โทเคนเข้าเครื่อง"
+  ]
+}

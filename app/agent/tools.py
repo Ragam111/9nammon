@@ -16,6 +16,7 @@ stdlib ล้วน (subprocess/pathlib).
 from __future__ import annotations
 
 import ipaddress
+import shutil
 import socket
 import subprocess
 import urllib.error
@@ -81,9 +82,17 @@ class Sandbox:
         name = Path(args[0]).name   # กัน path เต็ม /usr/bin/rm เลี่ยง allowlist
         if name not in self.allowed:
             raise ToolError(f"ปฏิเสธคำสั่ง '{name}' (อนุญาตเฉพาะ: {', '.join(self.allowed)})")
+        exe = shutil.which(name)
+        if exe is None:
+            # Windows has no ls/pwd/echo/... executables (echo and pwd are cmd built-ins).
+            # Run a pure-Python version instead: still no shell, paths still confined.
+            builtin = _BUILTINS.get(name)
+            if builtin is None:
+                raise ToolError(f"ไม่พบคำสั่ง '{name}' ในเครื่องนี้")
+            return f"(exit 0)\n{builtin(self, args[1:])[:MAX_OUTPUT_CHARS]}".strip()
         try:
             proc = subprocess.run(
-                [name] + args[1:], cwd=str(self.root), capture_output=True,
+                [exe] + args[1:], cwd=str(self.root), capture_output=True,
                 text=True, timeout=COMMAND_TIMEOUT, shell=False,   # shell=False = กัน injection
             )
         except subprocess.TimeoutExpired:
@@ -105,6 +114,74 @@ class Sandbox:
         except OSError as e:
             raise ToolError(f"เขียนไฟล์ไม่ได้: {e.__class__.__name__}")
         return f"เขียนไฟล์แล้ว: {path} ({len(content or '')} ตัวอักษร)"
+
+
+# ---------- pure-Python fallbacks for read-only commands (used when no executable exists) ----------
+def _count_and_files(args: list) -> tuple:
+    """Parse head/tail args: -n N, -N, then file names. Default 10 lines."""
+    n, files, i = 10, [], 0
+    try:
+        while i < len(args):
+            a = args[i]
+            if a == "-n" and i + 1 < len(args):
+                n, i = int(args[i + 1]), i + 2
+            elif a.startswith("-") and a[1:].isdigit():
+                n, i = int(a[1:]), i + 1
+            else:
+                files.append(a)
+                i += 1
+    except ValueError:
+        raise ToolError("จำนวนบรรทัดต้องเป็นตัวเลข")
+    if not files:
+        raise ToolError("ต้องระบุไฟล์")
+    return n, files
+
+
+def _lines(sb: "Sandbox", path: str) -> list:
+    return sb.read_file(path).splitlines()
+
+
+def _bi_ls(sb: "Sandbox", args: list) -> str:
+    paths = [a for a in args if not a.startswith("-")] or ["."]
+    return "\n".join(sb.list_dir(p) for p in paths)
+
+
+def _bi_cat(sb: "Sandbox", args: list) -> str:
+    if not args:
+        raise ToolError("ต้องระบุไฟล์")
+    return "".join(sb.read_file(p) for p in args)
+
+
+def _bi_head(sb: "Sandbox", args: list) -> str:
+    n, files = _count_and_files(args)
+    return "\n".join("\n".join(_lines(sb, f)[:n]) for f in files)
+
+
+def _bi_tail(sb: "Sandbox", args: list) -> str:
+    n, files = _count_and_files(args)
+    return "\n".join("\n".join(_lines(sb, f)[-n:] if n else []) for f in files)
+
+
+def _bi_wc(sb: "Sandbox", args: list) -> str:
+    files = [a for a in args if not a.startswith("-")]
+    if not files:
+        raise ToolError("ต้องระบุไฟล์")
+    rows = []
+    for f in files:
+        text = sb.read_file(f)
+        rows.append(f"{len(text.splitlines())} {len(text.split())} {len(text)} {f}")
+    return "\n".join(rows)
+
+
+_BUILTINS = {
+    "ls": _bi_ls,
+    "cat": _bi_cat,
+    "pwd": lambda sb, args: str(sb.root),
+    "echo": lambda sb, args: " ".join(args),
+    "head": _bi_head,
+    "tail": _bi_tail,
+    "wc": _bi_wc,
+}
 
 
 def _assert_public_url(url: str):

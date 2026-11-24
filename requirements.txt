@@ -1,3 +1,7 @@
-# windows-package / system manager — runtime dependencies
-# Cross-platform metrics backend (Windows + Linux).
-psutil>=5.9
+fastapi==0.163.0
+uvicorn==0.54.0
+slowapi==0.1.10
+SQLAlchemy[asyncio]==2.1.8
+asyncpg==0.32.0
+httpx==0.28.1
+psutil==7.2.2

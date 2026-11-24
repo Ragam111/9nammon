@@ -1,0 +1,190 @@
+"""Users, password hashing (scrypt, stdlib) and server-side sessions behind an httpOnly cookie."""
+
+from __future__ import annotations
+
+import hashlib
+import hmac
+import secrets
+import time
+from dataclasses import dataclass
+
+from .db import Database
+from .errors import AppError
+
+SESSION_COOKIE = "bf_session"
+_SCRYPT = {"n": 2**14, "r": 8, "p": 1, "dklen": 32}
+_MIN_PASSWORD = 10
+_dummy_hash = ""  # built on first use; compared against when the username does not exist
+
+
+@dataclass(frozen=True)
+class User:
+    id: int
+    username: str
+    role: str
+
+
+def hash_password(password: str) -> str:
+    """Return 'scrypt$<salt hex>$<hash hex>'."""
+    salt = secrets.token_bytes(16)
+    digest = hashlib.scrypt(password.encode("utf-8"), salt=salt, **_SCRYPT)
+    return f"scrypt${salt.hex()}${digest.hex()}"
+
+
+def verify_password(password: str, stored: str) -> bool:
+    """Constant-time check of a password against a stored scrypt hash."""
+    try:
+        scheme, salt_hex, digest_hex = stored.split("$")
+    except ValueError:
+        return False
+    if scheme != "scrypt":
+        return False
+    digest = hashlib.scrypt(password.encode("utf-8"), salt=bytes.fromhex(salt_hex), **_SCRYPT)
+    return hmac.compare_digest(digest.hex(), digest_hex)
+
+
+def create_user(db: Database, username: str, password: str, role: str = "user") -> User:
+    """Create a user. Raises AppError('validation') for a short password or a taken name."""
+    if len(password) < _MIN_PASSWORD:
+        raise AppError("validation", f"รหัสผ่านต้องยาวอย่างน้อย {_MIN_PASSWORD} ตัวอักษร")
+    try:
+        with db.session() as conn:
+            cur = conn.execute(
+                "INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)",
+                (username, hash_password(password), role),
+            )
+            return User(int(cur.lastrowid or 0), username, role)
+    except Exception as exc:
+        if "UNIQUE" in str(exc):
+            raise AppError("validation", "ชื่อผู้ใช้นี้มีอยู่แล้ว") from exc
+        raise
+
+
+def _token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode("ascii")).hexdigest()
+
+
+def login(db: Database, username: str, password: str, ttl_hours: int) -> str:
+    """Check credentials and return a new raw session token (only its hash is stored)."""
+    with db.session() as conn:
+        row = conn.execute("SELECT id, password_hash FROM users WHERE username = ?", (username,)).fetchone()
+    # Exactly one scrypt run on both paths, so timing does not reveal which usernames exist.
+    global _dummy_hash
+    if not row and not _dummy_hash:
+        _dummy_hash = hash_password(secrets.token_hex(16))
+    stored = row["password_hash"] if row else _dummy_hash
+    if not verify_password(password, stored) or row is None:
+        raise AppError("auth", "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง")
+    return _issue_session(db, row["id"], ttl_hours)
+
+
+def _issue_session(db: Database, user_id: int, ttl_hours: int) -> str:
+    token = secrets.token_urlsafe(32)
+    with db.session() as conn:
+        conn.execute("DELETE FROM sessions WHERE expires_at < ?", (time.time(),))
+        conn.execute(
+            "INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)",
+            (_token_hash(token), user_id, time.time() + ttl_hours * 3600),
+        )
+    return token
+
+
+NO_PASSWORD = "!no-password"  # noqa: S105 - a marker, not a password; never a valid scrypt hash
+
+
+def has_password(db: Database, user_id: int) -> bool:
+    with db.session() as conn:
+        row = conn.execute("SELECT password_hash FROM users WHERE id = ?", (user_id,)).fetchone()
+    return bool(row) and str(row["password_hash"]).startswith("scrypt$")
+
+
+def linked_providers(db: Database, user_id: int) -> list[str]:
+    with db.session() as conn:
+        rows = conn.execute(
+            "SELECT provider FROM oauth_identities WHERE user_id = ? ORDER BY provider", (user_id,)
+        ).fetchall()
+    return [str(r["provider"]) for r in rows]
+
+
+def link_oauth(db: Database, user_id: int, provider: str, subject: str) -> None:
+    """Attach a provider identity to a signed-in user. One identity per provider per user."""
+    with db.session() as conn:
+        owner = conn.execute(
+            "SELECT user_id FROM oauth_identities WHERE provider = ? AND subject = ?", (provider, subject)
+        ).fetchone()
+        if owner is not None:
+            if int(owner["user_id"]) == user_id:
+                return
+            raise AppError("validation", f"บัญชี {provider} นี้ถูกผูกกับบัญชีอื่นแล้ว")
+        same = conn.execute(
+            "SELECT 1 FROM oauth_identities WHERE user_id = ? AND provider = ?", (user_id, provider)
+        ).fetchone()
+        if same is not None:
+            raise AppError("validation", f"บัญชีนี้ผูกกับ {provider} อยู่แล้ว ถอดการผูกเดิมก่อนจึงจะเปลี่ยนได้")
+        conn.execute(
+            "INSERT INTO oauth_identities (provider, subject, user_id) VALUES (?, ?, ?)",
+            (provider, subject, user_id),
+        )
+
+
+def unlink_oauth(db: Database, user_id: int, provider: str) -> None:
+    """Remove a provider identity, but never the last way to sign in."""
+    linked = linked_providers(db, user_id)
+    if provider not in linked:
+        raise AppError("validation", "ยังไม่ได้ผูกผู้ให้บริการนี้")
+    if len(linked) == 1 and not has_password(db, user_id):
+        raise AppError("validation", "ต้องมีวิธีเข้าสู่ระบบอย่างน้อยหนึ่งวิธี ผูกวิธีอื่นก่อนแล้วค่อยถอดวิธีนี้")
+    with db.session() as conn:
+        conn.execute("DELETE FROM oauth_identities WHERE user_id = ? AND provider = ?", (user_id, provider))
+
+
+def delete_user(db: Database, user_id: int) -> None:
+    """Delete the account. Sessions, usage, runs and identities go with it (ON DELETE CASCADE)."""
+    with db.session() as conn:
+        conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+
+
+def login_oauth(db: Database, provider: str, subject: str, display: str, ttl_hours: int) -> str:
+    """Sign in with a provider identity. The first sign-in creates a user with no usable password."""
+    with db.session() as conn:
+        row = conn.execute(
+            "SELECT user_id FROM oauth_identities WHERE provider = ? AND subject = ?", (provider, subject)
+        ).fetchone()
+        if row is not None:
+            user_id = int(row["user_id"])
+        else:
+            candidate = f"{provider}:{display or subject}"
+            taken = conn.execute("SELECT 1 FROM users WHERE username = ?", (candidate,)).fetchone()
+            username = f"{provider}:{subject}" if taken else candidate
+            cur = conn.execute(
+                "INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'user')",
+                (username, NO_PASSWORD),
+            )
+            user_id = int(cur.lastrowid or 0)
+            conn.execute(
+                "INSERT INTO oauth_identities (provider, subject, user_id) VALUES (?, ?, ?)",
+                (provider, subject, user_id),
+            )
+    return _issue_session(db, user_id, ttl_hours)
+
+
+def user_for_token(db: Database, token: str | None) -> User:
+    """Return the user for a session token, or raise AppError('auth')."""
+    if not token:
+        raise AppError("auth")
+    with db.session() as conn:
+        row = conn.execute(
+            "SELECT u.id, u.username, u.role FROM sessions s JOIN users u ON u.id = s.user_id "
+            "WHERE s.token_hash = ? AND s.expires_at > ?",
+            (_token_hash(token), time.time()),
+        ).fetchone()
+    if row is None:
+        raise AppError("auth")
+    return User(row["id"], row["username"], row["role"])
+
+
+def logout(db: Database, token: str | None) -> None:
+    """Delete the session if it exists. Safe to call twice."""
+    if token:
+        with db.session() as conn:
+            conn.execute("DELETE FROM sessions WHERE token_hash = ?", (_token_hash(token),))

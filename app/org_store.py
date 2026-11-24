@@ -408,3 +408,125 @@ def list_api_keys(project_root: Path) -> list:
         })
     out.sort(key=lambda r: r.get("created_at") or "")
     return out
+
+
+# ---------- test compatibility helpers ----------
+
+def get_user_by_api_key(raw_key: str, project_root: Path | str | None = None) -> dict | None:
+    """Compatibility wrapper for Phase 1 auth tests.
+
+    Supports the simplified API used in tests: get_user_by_api_key(raw_key) and
+    fail-closed semantics when the key is missing, revoked, or owned by an inactive user.
+    """
+    root = Path(project_root) if project_root is not None else Path.cwd()
+    rec = verify_api_key(root, raw_key)
+    if not rec:
+        return None
+    data = _load(root)
+    user = data["users"].get(rec["owner"])
+    if not user or not user.get("active", False):
+        return None
+    out = dict(rec)
+    out["username"] = rec.get("username") or rec.get("owner")
+    out["tier"] = rec.get("tier")
+    out["active"] = bool(user.get("active", False))
+    return out
+
+
+def check_and_consume_quota(username: str, tier: str = "free", project_root: Path | str | None = None) -> bool:
+    """Compatibility wrapper used by Phase 1 tests.
+
+    This function performs a simplified quota guard for a user-level quota bucket.
+    It is intentionally fail-closed: a free-tier user exceeding the daily limit is rejected.
+    """
+    root = Path(project_root) if project_root is not None else Path.cwd()
+    data = _load(root)
+    if tier not in VALID_TIERS:
+        return True
+    if tier == "paid":
+        return True
+
+    today = _today_str()
+    bucket = data.setdefault("usage", {})
+    entry = bucket.get(username)
+    if isinstance(entry, dict) and entry.get("date") == today:
+        count = int(entry.get("count", 0))
+    else:
+        count = 0
+    if count >= TIER_DAILY_LIMIT[tier]:
+        bucket[username] = {"date": today, "count": count}
+        _save(root, data)
+        return False
+    bucket[username] = {"date": today, "count": count + 1}
+    _save(root, data)
+    return True
+
+
+# ---------- google oauth ----------
+
+def create_or_update_google_user(project_root: Path, email: str, display_name: str) -> dict:
+    """Create or update a Google-authenticated user in the existing org.json schema.
+
+    This keeps the repository's structure consistent with the rest of the app:
+    {
+      "users": {"username": {...}},
+      "api_keys": {"key_id": {...}}
+    }
+    """
+    email = (email or "").strip().lower()
+    if not email or "@" not in email:
+        raise ValueError("อีเมล Google ไม่ถูกต้อง")
+
+    data = _load(project_root)
+    username = email
+    user = data["users"].get(username)
+    display = (display_name or email.split("@")[0]).strip() or email.split("@")[0]
+
+    if user is None:
+        data["users"][username] = {
+            "role": "USER",
+            "password": _hash_password(secrets.token_urlsafe(24)),
+            "active": True,
+            "display_name": display,
+            "google_email": email,
+            "created_at": datetime.now().isoformat(timespec="seconds"),
+        }
+        _save(project_root, data)
+        return {"username": username, "role": "USER", "tier": "free"}
+
+    user["display_name"] = display
+    user["google_email"] = email
+    user["active"] = True
+    _save(project_root, data)
+    return {"username": username, "role": user.get("role", "USER"), "tier": "free"}
+
+
+def issue_google_internal_token(project_root: Path, username: str, tier: str = "free") -> str:
+    """Issue a fresh internal LCA key for a Google-authenticated user.
+
+    Unlike create_api_key(), this path does not require an ADMIN/CEO actor because
+    the user is authenticating through OAuth and needs an internal token immediately.
+    """
+    project_root = Path(project_root)
+    if tier not in VALID_TIERS:
+        raise ValueError(f"tier ไม่ถูกต้อง: {tier} (ต้องเป็น {sorted(VALID_TIERS)})")
+
+    data = _load(project_root)
+    if username not in data["users"]:
+        raise ValueError(f"ไม่พบ user: {username}")
+
+    raw_key = f"lca_f_g_{secrets.token_urlsafe(16)}"
+    key_id = secrets.token_hex(8)
+    data["api_keys"][key_id] = {
+        "key_hash": _hash_key(raw_key),
+        "prefix": raw_key[:_KEY_PREFIX_SHOW],
+        "owner": username,
+        "tier": tier,
+        "daily_limit": TIER_DAILY_LIMIT[tier],
+        "used_today": 0,
+        "usage_date": _today_str(),
+        "active": True,
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    _save(project_root, data)
+    return raw_key

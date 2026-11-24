@@ -1,0 +1,75 @@
+{
+  "title": "ห้องอัดเว็บห้าห้อง 20 พ.ย. 2026",
+  "source": "studio",
+  "space": "studio",
+  "skill": "rapid-iteration-ecosystem",
+  "version": "0.1.0",
+  "company": "Token LCA",
+  "token": "T-LCA",
+  "repo": "Ragam111/9nammon",
+  "brief": "สตูดิโอเว็บห้าห้อง เดินทีละไฟล์ก่อนแชทจะเป็นแอป แขกใช้ฟรีบนหน้า บัญชีแยกคลัง",
+  "charged": false,
+  "notConnected": [
+    "กุญแจของ Ollama",
+    "รหัสไททันของแอดมิน",
+    "โทเคนเข้าเครื่องใน Dockerfile"
+  ],
+  "steps": [
+    {
+      "at": "2026-11-20T04:16:00.000Z",
+      "layer": "frontend",
+      "file": "app/chat.js",
+      "action": "ส่งข้อความ",
+      "detail": "ห้องแชทบนเว็บส่งได้ทันที คำตอบของแขกอยู่แค่หน้า"
+    },
+    {
+      "at": "2026-11-20T04:16:01.000Z",
+      "layer": "backend",
+      "file": "server.py",
+      "action": "จัดเส้นทาง",
+      "detail": "สตูดิโอเว็บไม่แทน server.py และไม่ย้ายตัวติดตั้ง Windows"
+    },
+    {
+      "at": "2026-11-20T04:16:02.000Z",
+      "layer": "backend",
+      "file": "app/auth_backend.py",
+      "action": "รู้ว่าใคร",
+      "detail": "เข้าบัญชีแล้วคลังจึงผูกกับตัวตนที่ตรวจแล้ว"
+    },
+    {
+      "at": "2026-11-20T04:16:03.000Z",
+      "layer": "backend",
+      "file": "app/space_store.py",
+      "action": "เลือกถัง",
+      "detail": "ถังส่วนตัวกับถังบริษัทแยกกัน ของแขกไม่ถูกยกเข้าบัญชีที่หลัง"
+    },
+    {
+      "at": "2026-11-20T04:16:04.000Z",
+      "layer": "backend",
+      "file": "app/admission.py",
+      "action": "ยามเครื่อง",
+      "detail": "บนเว็บสมองยังเป็นแผนที่ไฟล์ ยังไม่เรียก Ollama"
+    },
+    {
+      "at": "2026-11-20T04:16:05.000Z",
+      "layer": "backend",
+      "file": "app/context_manager.py",
+      "action": "ตัดความจำ",
+      "detail": "ม้วนจำโจทย์และชื่อไฟล์ ไม่ยัดทั้งคลังเข้าสมอง"
+    },
+    {
+      "at": "2026-11-20T04:16:06.000Z",
+      "layer": "core",
+      "file": "app/model_backend.py",
+      "action": "สมอง",
+      "detail": "สมองจริงยังต่อที่เดสก์ท็อป ผ่าน connections.py กุญแจไม่ย้อนกลับหน้า"
+    },
+    {
+      "at": "2026-11-20T04:16:07.000Z",
+      "layer": "backend",
+      "file": "app/history_store.py",
+      "action": "บันทึกหรือไม่",
+      "detail": "เก็บบทแชทหรือมติสภาหัก 1 T-LCA ม้วนสตูดิโอไม่หัก เริ่ม 8,000 ต่อบัญชี"
+    }
+  ]
+}
