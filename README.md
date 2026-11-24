@@ -1,6 +1,6 @@
 # Local Code Assistant (LCA) — Windows Package
 
-**Version:** 0.2.7 (Storage Slim 2026-11-04) · 1101 tests pass · [CHANGELOG](CHANGELOG.md)
+**Version:** 0.3.4 · [CHANGELOG](CHANGELOG.md)
 
 ตัวติดตั้ง AI Coding Assistant แบบฟรี รันด้วย Ollama บนเครื่อง (Windows 10/11, AMD64)
 
@@ -122,16 +122,10 @@ lca-desktop.bat   — เปิดในหน้าต่างแอป (Edge/
 
 ## Develop in VS Code
 
-เปิดโฟลเดอร์นี้ใน VS Code บน Windows (CI ใช้ Python 3.13):
-
 ```powershell
-py -3.13 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt pytest ruff
-code .
+powershell -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1
 ```
 
-`pytest` กับ `ruff` เป็นเครื่องมือตอนพัฒนา ไม่ได้อยู่ใน `requirements.txt` และ CI ไม่รัน ruff
 แชตต้องมี Ollama ที่ `127.0.0.1:11434`
 
 | Run and Debug / Run Task | คำสั่งจริง |
