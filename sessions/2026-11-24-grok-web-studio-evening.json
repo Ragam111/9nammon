@@ -1,0 +1,33 @@
+{
+  "skill": "rapid-iteration-ecosystem",
+  "version": "0.1.0",
+  "company": "Token LCA",
+  "token": "T-LCA",
+  "title": "ห้องอัดเว็บห้าห้อง ย่ำ 24 พ.ย. 2026",
+  "source": "studio",
+  "space": "public-hall",
+  "repo": "Ragam111/9nammon",
+  "brief": "อัดเซสชันเป็นไฟล์ เดินทีละขั้นว่าแต่ละไฟล์ทำหน้าที่ ก่อนแชทจะเป็นแอป แขกใช้ฟรี บัญชีแยกถัง",
+  "charged": false,
+  "reached": 8,
+  "hands": 8,
+  "rooms": ["สตูดิโอ", "แชท", "ไฟล์", "ติดตั้ง", "คอนโซล"],
+  "loop": ["Read", "Re-check", "Fix", "Report"],
+  "ledger": {
+    "name": "T-LCA",
+    "initial": 8000,
+    "deduction": "หัก 1 เมื่อเก็บบทแชทหรือมติสภา ไม่หักม้วนสตูดิโอ"
+  },
+  "steps": [
+    { "n": 1, "title": "รับโจทย์จากคน", "files": ["README.md", "docs/ARCHITECTURE.md", "docs/9ARM_PRINCIPLES.md"], "done": true },
+    { "n": 2, "title": "เปิดม้วนเทป", "files": ["sessions/tape.json"], "done": true },
+    { "n": 3, "title": "เขียนหน้าที่คนเห็น", "files": ["app/index.html", "app/chat.js", "lca_app.py"], "done": true },
+    { "n": 4, "title": "ต่อสายตอบทีละคำ", "files": ["server.py", "app/auth_backend.py", "app/space_store.py", "app/admission.py", "app/context_manager.py", "app/model_backend.py", "app/history_store.py"], "done": true },
+    { "n": 5, "title": "แช่แข็งสกิล", "files": ["skills/rapid-iteration-ecosystem/SKILL.md", "app/agent/core.py"], "done": true },
+    { "n": 6, "title": "แยกพื้นที่", "files": ["app/login.html", "app/space_store.py"], "done": true },
+    { "n": 7, "title": "หักเหรียญ T-LCA", "files": ["app/usage_store.py"], "done": true },
+    { "n": 8, "title": "แพ็กเปิดตัว", "files": ["install/pack.json", "lca_app.py", "Dockerfile"], "done": true }
+  ],
+  "notConnected": ["กุญแจของ Ollama", "รหัสไททันของแอดมิน", "โทเคนเข้าเครื่อง"],
+  "note": "ห้าห้องบนเว็บ แขกใช้ฟรีคำตอบอยู่แค่หน้า บัญชีแยกถัง private กับ company เริ่ม 8000 T-LCA หักเฉพาะเก็บแชทหรือมติ ม้วนสตูดิโอไม่หัก สมองบนเว็บเป็นแผนที่ไฟล์ ไม่แทน server.py และไม่ย้ายตัวติดตั้ง Windows"
+}
