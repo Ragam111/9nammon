@@ -419,7 +419,12 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             if length > self.MAX_BODY_BYTES:
                 raise ValueError(f"request body ใหญ่เกิน {self.MAX_BODY_BYTES} bytes")
             raw = self.rfile.read(length)
-            return json.loads(raw.decode("utf-8"))
+            data = json.loads(raw.decode("utf-8"))
+            # route ทั้งหมดที่ใช้ helper นี้อ่าน field ด้วย .get() → ต้องเป็น object เท่านั้น
+            # ไม่งั้น list/string/number ทำให้ AttributeError แล้วทิ้ง socket เงียบ ๆ
+            if not isinstance(data, dict):
+                raise ValueError("request body ต้องเป็น JSON object")
+            return data
 
         def _rate_limited(self, parsed) -> bool:
             """จำกัดเฉพาะ /api/ ต่อ IP — ถ้าเกินโควตาตอบ 429 แล้วคืน True (ผู้เรียกต้อง return)"""
@@ -1500,6 +1505,13 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             except ValueError as e:
                 # org_store โยน ValueError เมื่อ input ผิด/สิทธิ์ไม่พอ/ชื่อซ้ำ
                 self._send_json(400, {"error": str(e)})
+            except OSError:
+                raise  # socket หลุด/timeout (เช่น client ค้างตอนส่ง body) → ปิดการเชื่อมต่อตามเดิม
+            except Exception as e:  # noqa: BLE001 — ด่านสุดท้าย: ไม่ให้ socket ถูกทิ้งเงียบ
+                try:
+                    self._send_json(500, {"error": f"internal error: {type(e).__name__}"})
+                except Exception:
+                    pass  # header ถูกส่งไปแล้ว (เช่น stream) — ทำอะไรต่อไม่ได้
 
         def _unused_write_method(self):
             # ไม่มี route PUT/PATCH/DELETE — ยังต้องกัน Host/Origin ก่อนตอบ 404
