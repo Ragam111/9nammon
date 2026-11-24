@@ -458,8 +458,10 @@ class StorageTest(unittest.TestCase):
             link = root / "link.db.tmp"
             try:
                 link.symlink_to(foreign)
-            except OSError:
-                self.skipTest("creating symlinks needs admin or Developer Mode on Windows")
+            except (OSError, NotImplementedError) as exc:
+                # Windows needs Developer Mode or admin to create symlinks (WinError 1314).
+                # All assertions above already ran; only the symlink-refusal check is skipped.
+                self.skipTest(f"symlink creation not permitted on this host: {exc}")
             register(link)
             skipped = cleanup_stale(root, dry_run=False)
             self.assertTrue(link.exists())
@@ -502,6 +504,35 @@ class StorageTest(unittest.TestCase):
             checkpoint_and_close(conn)
             with self.assertRaises(Exception):
                 conn.execute("SELECT 1")
+
+    def test_concurrent_register_has_no_errors_and_keeps_all_names(self):
+        # 20 thread register() พร้อมกัน: ต้องไม่มี PermissionError (temp ชื่อคงที่เคยชนบน Windows)
+        # และ manifest ต้องมีชื่อครบทั้ง 20
+        import json
+        import tempfile
+        import threading
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            errors = []
+            barrier = threading.Barrier(20)
+
+            def worker(i):
+                try:
+                    barrier.wait()
+                    register(root / f"owned-{i}.db")
+                except Exception as e:  # noqa: BLE001
+                    errors.append(e)
+
+            threads = [threading.Thread(target=worker, args=(i,)) for i in range(20)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+            self.assertEqual(errors, [])
+            manifest = json.loads((root / ".lca_core_owned.json").read_text(encoding="utf-8"))
+            self.assertEqual(sorted(manifest["files"]), sorted(f"owned-{i}.db" for i in range(20)))
+            self.assertEqual([p.name for p in root.glob("*.tmp")], [])
 
 
 class ExecutorAndLoopTest(unittest.TestCase):
@@ -722,6 +753,54 @@ class DispatchTest(unittest.TestCase):
             self.assertEqual(logged_out["body"], {"ok": True})
             self.assertIn("Max-Age=0", logged_out["headers"]["Set-Cookie"])
             self.assertIn("SameSite=Lax", logged_out["headers"]["Set-Cookie"])
+
+    def test_auth_start_then_callback_round_trip(self):
+        # login start ต้องจำ state ที่สร้าง → callback ที่ส่ง state นั้นกลับมาต้องผ่าน (และใช้ได้ครั้งเดียว)
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = self._ctx(Path(tmp))
+            started = dispatch(
+                "GET",
+                "/auth/google",
+                {
+                    "mode": "start",
+                    "redirect_uri": "http://127.0.0.1:8421/auth/google",
+                    "client_id": GOOGLE_CLIENT_ID,
+                },
+                ctx=ctx,
+            )
+            self.assertEqual(started["status"], 200)
+            state = started["state"]
+            self.assertTrue(state)
+            self.assertEqual(ctx.expected_state, state)
+            self.assertIn(f"state={state}", started["body"]["url"])
+
+            wrong = dispatch("GET", "/auth/google", {"code": "abc", "state": "forged"}, ctx=ctx)
+            self.assertEqual(wrong["status"], 400)
+            self.assertEqual(wrong["body"], {"error": "bad state"})
+
+            ok = dispatch("GET", "/auth/google", {"code": "abc", "state": state}, ctx=ctx)
+            self.assertEqual(ok["status"], 200)
+            self.assertEqual(ok["location"], "/#/account")
+            self.assertIsNone(ctx.expected_state)
+
+            replay = dispatch("GET", "/auth/google", {"code": "abc", "state": state}, ctx=ctx)
+            self.assertEqual(replay["status"], 400)
+
+    def test_auth_start_refused_does_not_store_state(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = self._ctx(Path(tmp))
+            bad = dispatch(
+                "GET",
+                "/auth/google",
+                {"mode": "start", "redirect_uri": "https://evil.test/auth/google"},
+                ctx=ctx,
+            )
+            self.assertEqual(bad["status"], 400)
+            self.assertIsNone(ctx.expected_state)
 
     def test_cluster_and_logs_routes(self):
         import tempfile

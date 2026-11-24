@@ -179,8 +179,12 @@ def _auth(method: str, query: dict, ctx: GatewayContext) -> dict:
             "body": auth_status_body(ctx.session),
         }
     if method == "GET" and mode == "start":
-        state = ctx.expected_state or secrets.token_urlsafe(16)
-        return auth_start(query.get("redirect_uri"), query.get("client_id"), state)
+        # state ใหม่ทุกครั้งที่เริ่ม login แล้วจำไว้ให้ callback เทียบ (CSRF/กัน code ถูกสลับ)
+        state = secrets.token_urlsafe(16)
+        result = auth_start(query.get("redirect_uri"), query.get("client_id"), state)
+        if result.get("status") == 200:
+            ctx.expected_state = state
+        return result
     if method == "GET" and query.get("code"):
         return _callback(query, ctx)
     if method == "POST" and mode == "logout":
@@ -203,6 +207,7 @@ def _callback(query: dict, ctx: GatewayContext) -> dict:
     expected = ctx.expected_state or ""
     if not state or not expected or not hmac.compare_digest(state, expected):
         return {"status": 400, "headers": _json_headers(), "body": {"error": "bad state"}}
+    ctx.expected_state = None  # ใช้ได้ครั้งเดียว — callback ซ้ำด้วย state เดิมต้องถูกปฏิเสธ
     return {
         "status": 200,
         "headers": _json_headers(),

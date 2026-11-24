@@ -37,6 +37,9 @@ def _safe_key(key: str) -> str:
     # Check with both path flavours so the guard does not depend on the OS:
     # on Windows "/etc/passwd" is not is_absolute() (no drive) but still has a root,
     # and "C:x" is drive-relative. Any anchor (root or drive) or ".." is rejected.
+    # The native Path check from our branch is kept as well.
+    if Path(key).is_absolute():
+        raise StorageError(f"key ไม่ปลอดภัย: {key!r}")
     for p in (PurePosixPath(key), PureWindowsPath(key)):
         if p.anchor or ".." in p.parts:
             raise StorageError(f"key ไม่ปลอดภัย: {key!r}")

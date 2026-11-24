@@ -49,7 +49,7 @@ from pathlib import Path
 from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).parent / "app"))
-from todo_store import load_todos, add_todo, toggle_todo, delete_todo  # noqa: E402
+from todo_store import load_todos, add_todo, toggle_todo, delete_todo, TodoReadError, TodoSaveError  # noqa: E402
 from linear_connector import fetch_my_issues  # noqa: E402
 from desktop_archive import sync_project, get_archive_root  # noqa: E402
 import web_search  # noqa: E402
@@ -689,12 +689,20 @@ def main():
             print(f"[linear] พบ {len(issues)} issue — เพิ่มเข้า todo list ให้แล้ว")
             for issue in issues:
                 text = f"[{issue['identifier']}] {issue['title']} ({issue['state']['name']}) — {issue['url']}"
-                add_todo(project_root, text)
+                try:
+                    add_todo(project_root, text)
+                except (TodoReadError, TodoSaveError) as e:
+                    print(f"[todo][error] {e}")
+                    break
                 print(f"  + {text}")
             sync_project(project_root)
             continue
         if user_input == "/todo list":
-            todos = load_todos(project_root)
+            try:
+                todos = load_todos(project_root)
+            except TodoReadError as e:
+                print(f"[todo][error] {e}")
+                continue
             if not todos:
                 print("[todo] ยังไม่มีรายการ")
             for t in todos:
@@ -703,7 +711,11 @@ def main():
             continue
         if user_input.startswith("/todo add "):
             text = user_input[len("/todo add "):].strip()
-            item = add_todo(project_root, text)
+            try:
+                item = add_todo(project_root, text)
+            except (TodoReadError, TodoSaveError) as e:
+                print(f"[todo][error] {e}")
+                continue
             print(f"[todo] เพิ่มแล้ว #{item['id']}: {item['text']}")
             sync_project(project_root)
             continue
@@ -713,7 +725,12 @@ def main():
             except ValueError:
                 print("[todo][error] ต้องระบุ id เป็นตัวเลข")
                 continue
-            print(f"[todo] toggle สำเร็จ #{tid}" if toggle_todo(project_root, tid) else f"[todo] ไม่พบ #{tid}")
+            try:
+                found = toggle_todo(project_root, tid)
+            except (TodoReadError, TodoSaveError) as e:
+                print(f"[todo][error] {e}")
+                continue
+            print(f"[todo] toggle สำเร็จ #{tid}" if found else f"[todo] ไม่พบ #{tid}")
             sync_project(project_root)
             continue
         if user_input.startswith("/todo del "):
@@ -722,7 +739,12 @@ def main():
             except ValueError:
                 print("[todo][error] ต้องระบุ id เป็นตัวเลข")
                 continue
-            print(f"[todo] ลบแล้ว #{tid}" if delete_todo(project_root, tid) else f"[todo] ไม่พบ #{tid}")
+            try:
+                deleted = delete_todo(project_root, tid)
+            except (TodoReadError, TodoSaveError) as e:
+                print(f"[todo][error] {e}")
+                continue
+            print(f"[todo] ลบแล้ว #{tid}" if deleted else f"[todo] ไม่พบ #{tid}")
             sync_project(project_root)
             continue
         if user_input.startswith("/add "):

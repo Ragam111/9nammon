@@ -31,7 +31,7 @@ from urllib.parse import urlparse, parse_qs
 
 sys.path.insert(0, str(Path(__file__).parent))
 from local_coder import get_system_prompt  # noqa: E402
-from app.todo_store import load_todos, add_todo, toggle_todo, delete_todo  # noqa: E402
+from app.todo_store import load_todos, add_todo, toggle_todo, delete_todo, TodoSaveError, TodoReadError  # noqa: E402
 from app import org_store  # noqa: E402  (ระบบองค์กร: user/role/api key/quota)
 from sysmanager.sysinfo import get_system_info  # noqa: E402  (spec เครื่องสำหรับ dev view)
 from app import job_queue  # noqa: E402  (คิวงาน server เก็บด้วย SQLite)
@@ -372,6 +372,9 @@ def make_handler(project_root: Path, auth_token: Optional[str],
         print("[watchdog] เปิดการเฝ้าระบบ 24/7 (RAM/Ollama/cluster) — แจ้งเตือนเมื่อผิดปกติ")
 
     class LocalAssistantHandler(BaseHTTPRequestHandler):
+        # socket timeout: body ที่ client ส่งไม่ครบ/ค้าง ต้องถูกตัดการเชื่อมต่อ ไม่จองเธรดไว้ตลอดกาล
+        timeout = 10
+
         # ปิด log เริ่มต้นของ http.server ที่รก stdout — ใช้ log สั้นแทน
         def log_message(self, fmt, *args):
             print(f"[server] {self.address_string()} - {fmt % args}")
@@ -474,7 +477,12 @@ def make_handler(project_root: Path, auth_token: Optional[str],
         def _fail_last_resort(self, exc: BaseException) -> None:
             """ข้อผิดพลาดที่ไม่มีใครดัก: เดิม socket ถูกปิดเงียบ ๆ = curl error 52 "Empty reply".
             ตอนนี้: ยังไม่ส่ง header → 500 JSON อ่านรู้เรื่อง; ส่งไปแล้ว (เช่นกลาง SSE) → เงียบ
-            (เปลี่ยน status ไม่ได้แล้ว) — ทั้งสองกรณีลง error_log ให้ /dev เห็น"""
+            (เปลี่ยน status ไม่ได้แล้ว) — ทั้งสองกรณีลง error_log ให้ /dev เห็น
+            ยกเว้น socket timeout (client ค้างกลาง request): client อ่านคำตอบไม่ได้อยู่แล้ว
+            จึงปิดการเชื่อมต่อเงียบ ๆ ไม่ตอบ 500 และไม่ลง error log"""
+            if isinstance(exc, (TimeoutError, socket.timeout)):
+                self.close_connection = True
+                return
             msg = f"{exc.__class__.__name__}: {exc}"
             print(f"[server][error] {self.command} {self.path} → {msg}")
             try:
@@ -550,7 +558,12 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             if length > self.MAX_BODY_BYTES:
                 raise ValueError(f"request body ใหญ่เกิน {self.MAX_BODY_BYTES} bytes")
             raw = self.rfile.read(length)
-            return json.loads(raw.decode("utf-8"))
+            data = json.loads(raw.decode("utf-8"))
+            # route ทั้งหมดที่ใช้ helper นี้อ่าน field ด้วย .get() → ต้องเป็น object เท่านั้น
+            # ไม่งั้น list/string/number ทำให้ AttributeError แล้วทิ้ง socket เงียบ ๆ
+            if not isinstance(data, dict):
+                raise ValueError("request body ต้องเป็น JSON object")
+            return data
 
         def _rate_limited(self, parsed) -> bool:
             """จำกัดเฉพาะ /api/ ต่อ IP — ถ้าเกินโควตาตอบ 429 แล้วคืน True (ผู้เรียกต้อง return)"""
@@ -1352,7 +1365,11 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             ident = self._require("USER")
             if ident is None:
                 return
-            spaces = space_store.list_spaces(project_root, ident["username"], ident["role"])
+            try:
+                spaces = space_store.list_spaces(project_root, ident["username"], ident["role"])
+            except space_store.SpaceReadError:
+                self._send_json(500, {"error": "อ่านพื้นที่ไม่สำเร็จ — ตรวจสิทธิ์ของไฟล์ spaces.json"})
+                return
             self._send_json(200, {"spaces": spaces})
 
         def _handle_space_create(self):
@@ -1367,11 +1384,18 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             except ValueError as e:
                 self._send_json(400, {"error": str(e)})
                 return
+            except space_store.SpaceReadError:
+                self._send_json(500, {"error": "อ่านพื้นที่ไม่สำเร็จ — ไฟล์ spaces.json ไม่ถูกเปลี่ยน"})
+                return
             self._send_json(200, {"space": space})
 
         def _space_or_403(self, ident, space_id):
             """คืน space ถ้าเข้าถึงได้, ไม่งั้นตอบ error แล้วคืน None"""
-            space = space_store.get_space(project_root, space_id)
+            try:
+                space = space_store.get_space(project_root, space_id)
+            except space_store.SpaceReadError:
+                self._send_json(500, {"error": "อ่านพื้นที่ไม่สำเร็จ — ตรวจสิทธิ์ของไฟล์ spaces.json"})
+                return None
             if space is None:
                 self._send_json(404, {"error": "ไม่พบพื้นที่"})
                 return None
@@ -1387,7 +1411,12 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             space_id = (parse_qs(parsed.query).get("space", [""])[0]).strip()
             if self._space_or_403(ident, space_id) is None:
                 return
-            self._send_json(200, {"items": space_store.list_items(project_root, space_id)})
+            try:
+                items = space_store.list_items(project_root, space_id)
+            except space_store.SpaceReadError:
+                self._send_json(500, {"error": "อ่านพื้นที่ไม่สำเร็จ — ตรวจสิทธิ์ของไฟล์ spaces.json"})
+                return
+            self._send_json(200, {"items": items})
 
         def _handle_space_item_add(self):
             ident = self._require("USER")
@@ -1403,6 +1432,9 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             except ValueError as e:
                 self._send_json(400, {"error": str(e)})
                 return
+            except space_store.SpaceReadError:
+                self._send_json(500, {"error": "อ่านพื้นที่ไม่สำเร็จ — ไฟล์ spaces.json ไม่ถูกเปลี่ยน"})
+                return
             self._send_json(200, {"item": item})
 
         def _handle_space_member_add(self):
@@ -1411,7 +1443,11 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 return
             data = self._read_json_body()
             space_id = (data.get("space") or "").strip()
-            space = space_store.get_space(project_root, space_id)
+            try:
+                space = space_store.get_space(project_root, space_id)
+            except space_store.SpaceReadError:
+                self._send_json(500, {"error": "อ่านพื้นที่ไม่สำเร็จ — ตรวจสิทธิ์ของไฟล์ spaces.json"})
+                return
             if space is None:
                 self._send_json(404, {"error": "ไม่พบพื้นที่"})
                 return
@@ -1423,6 +1459,9 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 updated = space_store.add_member(project_root, space_id, (data.get("member") or "").strip())
             except ValueError as e:
                 self._send_json(400, {"error": str(e)})
+                return
+            except space_store.SpaceReadError:
+                self._send_json(500, {"error": "อ่านพื้นที่ไม่สำเร็จ — ไฟล์ spaces.json ไม่ถูกเปลี่ยน"})
                 return
             self._send_json(200, {"space": updated})
 
@@ -1694,6 +1733,20 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             except ValueError as e:
                 # org_store โยน ValueError เมื่อ input ผิด/สิทธิ์ไม่พอ/ชื่อซ้ำ
                 self._send_json(400, {"error": str(e)})
+            except OSError:
+                raise  # socket หลุด/timeout (เช่น client ค้างตอนส่ง body) → ปิดการเชื่อมต่อตามเดิม
+            except Exception as e:  # noqa: BLE001 — ด่านสุดท้าย: ไม่ให้ socket ถูกทิ้งเงียบ
+                # ลง error log ให้ /dev เห็น (เหมือน _fail_last_resort ฝั่ง main)
+                try:
+                    history_store.log_error(project_root, "error", f"{self.command} {self.path}",
+                                            f"{type(e).__name__}: {e}")
+                except Exception:
+                    pass
+                try:
+                    self._send_json(500, {"error": f"internal error: {type(e).__name__}",
+                                          "type": type(e).__name__})
+                except Exception:
+                    pass  # header ถูกส่งไปแล้ว (เช่น stream) — ทำอะไรต่อไม่ได้
 
         def _unused_write_method(self):
             # ไม่มี route PUT/PATCH/DELETE — ยังต้องกัน Host/Origin ก่อนตอบ 404
@@ -2236,40 +2289,98 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             # โหมด local ส่ง session token ที่หน้าเว็บได้รับตอนโหลด จึงยังเป็น CEO ได้
             if self._require("USER") is None:
                 return
-            todos = load_todos(project_root)
+            try:
+                todos = load_todos(project_root)
+            except TodoReadError:
+                self._send_json(500, {"error": "อ่าน todo ไม่สำเร็จ — ตรวจสิทธิ์ของไฟล์ todos.json ในโฟลเดอร์โปรเจกต์"})
+                return
             self._send_json(200, todos)
+
+        def _todos_body(self):
+            """อ่าน body เป็น JSON object — ไม่ใช่ object หรือ JSON เสีย → ตอบ 400 แล้วคืน None"""
+            try:
+                data = self._read_json_body()
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                self._send_json(400, {"error": "request body ต้องเป็น JSON ที่ถูกต้อง"})
+                return None
+            except ValueError as e:
+                # ขนาด body เกินลิมิต — ข้อความนี้เราเขียนเอง อ่านรู้เรื่อง จึงส่งต่อได้
+                self._send_json(400, {"error": str(e)})
+                return None
+            if not isinstance(data, dict):
+                self._send_json(400, {"error": "request body ต้องเป็น JSON object"})
+                return None
+            return data
+
+        def _todos_id(self, data):
+            """อ่าน id เป็นจำนวนเต็ม — ไม่ถูกต้องตอบ 400 แล้วคืน None (ไม่ส่งข้อความ exception ดิบ)"""
+            raw = data.get("id")
+            if raw is None:
+                self._send_json(400, {"error": "ต้องระบุ id"})
+                return None
+            if isinstance(raw, bool) or not isinstance(raw, (int, str)):
+                self._send_json(400, {"error": "id ต้องเป็นตัวเลข"})
+                return None
+            try:
+                return int(raw)
+            except ValueError:
+                self._send_json(400, {"error": "id ต้องเป็นตัวเลข"})
+                return None
+
+        def _todos_save_failed(self):
+            self._send_json(500, {"error": "บันทึก todo ไม่สำเร็จ — ตรวจสิทธิ์/พื้นที่ดิสก์ของโฟลเดอร์โปรเจกต์"})
 
         def _handle_todos_post(self):
             if self._require("USER") is None:
                 return
-            data = self._read_json_body()
-            text = data.get("text", "").strip()
+            data = self._todos_body()
+            if data is None:
+                return
+            text = data.get("text", "")
+            if not isinstance(text, str):
+                self._send_json(400, {"error": "text ต้องเป็นสตริง"})
+                return
+            text = text.strip()
             if not text:
                 self._send_json(400, {"error": "ต้องระบุ text"})
                 return
-            item = add_todo(project_root, text)
+            try:
+                item = add_todo(project_root, text)
+            except (TodoSaveError, TodoReadError):
+                self._todos_save_failed()
+                return
             self._send_json(200, item)
 
         def _handle_todos_toggle(self):
             if self._require("USER") is None:
                 return
-            data = self._read_json_body()
-            todo_id = data.get("id")
-            if todo_id is None:
-                self._send_json(400, {"error": "ต้องระบุ id"})
+            data = self._todos_body()
+            if data is None:
                 return
-            ok = toggle_todo(project_root, int(todo_id))
+            todo_id = self._todos_id(data)
+            if todo_id is None:
+                return
+            try:
+                ok = toggle_todo(project_root, todo_id)
+            except (TodoSaveError, TodoReadError):
+                self._todos_save_failed()
+                return
             self._send_json(200 if ok else 404, {"success": ok})
 
         def _handle_todos_delete(self):
             if self._require("USER") is None:
                 return
-            data = self._read_json_body()
-            todo_id = data.get("id")
-            if todo_id is None:
-                self._send_json(400, {"error": "ต้องระบุ id"})
+            data = self._todos_body()
+            if data is None:
                 return
-            ok = delete_todo(project_root, int(todo_id))
+            todo_id = self._todos_id(data)
+            if todo_id is None:
+                return
+            try:
+                ok = delete_todo(project_root, todo_id)
+            except (TodoSaveError, TodoReadError):
+                self._todos_save_failed()
+                return
             self._send_json(200 if ok else 404, {"success": ok})
 
     LocalAssistantHandler.session_token = auth_token
@@ -2283,6 +2394,7 @@ def find_free_port(preferred: int, host: str = "127.0.0.1", tries: int = 20) -> 
     หา tries พอร์ตไม่เจอ → สุดท้ายให้ OS เลือกพอร์ตว่างเอง (port 0)"""
     for p in range(preferred, preferred + tries):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            # ไม่ตั้ง SO_REUSEADDR: บน Windows มันทำให้ bind ซ้ำพอร์ตที่มีคน listen อยู่ได้ → ตรวจพอร์ตไม่แม่น
             # Windows SO_REUSEADDR lets us bind a port another process is listening on,
             # so the probe would report a busy port as free. Use exclusive bind there.
             if os.name == "nt" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
@@ -2325,6 +2437,9 @@ def resolve_server_config(args, env=None):
             port = int(env["PORT"])
         except (TypeError, ValueError):
             raise ValueError(f"$PORT ไม่ใช่ตัวเลข: {env['PORT']!r}")
+    if not (0 <= port <= 65535):
+        raise ValueError(
+            f"พอร์ตต้องอยู่ระหว่าง 0-65535 (ได้ {port}) — Port must be in range 0-65535")
     token = args.token or env.get("LCA_TOKEN") or None
     if host != "127.0.0.1" and not token:
         raise ValueError(

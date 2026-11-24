@@ -89,6 +89,8 @@ class DpapiCallTest(unittest.TestCase):
         self.assertEqual(fake.flags[1], secrets.CRYPTPROTECT_UI_FORBIDDEN)
         self.assertEqual(len(fake.freed), 2)
 
+    @unittest.skipIf(sys.platform == "win32",
+                     "protect() is real DPAPI on Windows; this asserts the non-Windows guard")
     def test_protect_off_windows_raises_and_does_not_echo_secret(self):
         buf = io.StringIO()
         with mock.patch.object(secrets, "using_dpapi", return_value=False), redirect_stdout(buf):
@@ -98,6 +100,13 @@ class DpapiCallTest(unittest.TestCase):
 
 
 class FileFallbackTest(unittest.TestCase):
+    """The non-Windows storage path (0600 file, optional keyring).
+
+    `using_dpapi` is pinned to False so these tests exercise the file/keyring
+    branch on every host. On Windows the real code path is DPAPI, which has
+    its own tests above and in DpapiMigrationTest.
+    """
+
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.root = Path(self._tmp.name)
@@ -125,10 +134,15 @@ class FileFallbackTest(unittest.TestCase):
         self.assertIn("0600", text)
         self.assertNotIn(SENTINEL, text)
         stored = self.root / "secrets.bin"
-        mode = os.stat(stored).st_mode & 0o777
-        self.assertEqual(mode, 0o600)
         # documented fallback: the secret is in the 0600 file, not in the warning
         self.assertIn(SENTINEL, stored.read_text(encoding="utf-8"))
+
+    @unittest.skipIf(os.name != "posix", "POSIX file modes; Windows does not honour 0600")
+    def test_secrets_file_is_mode_0600(self):
+        with mock.patch.dict(sys.modules, {"keyring": mock.Mock()}), redirect_stdout(io.StringIO()):
+            secrets.store(self.root, "config:OPENAI_API_KEY", SENTINEL)
+        mode = os.stat(self.root / "secrets.bin").st_mode & 0o777
+        self.assertEqual(mode, 0o600)
 
     def test_keyring_used_only_when_declared(self):
         fake = mock.Mock()
