@@ -64,7 +64,7 @@ class BuiltinCommandFallbackTest(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
-        self.sb = Sandbox(self.tmp)
+        self.sb = Sandbox(self.tmp, allow_commands=True)
         Path(self.tmp, "a.txt").write_text("one\ntwo three\nfour\n", encoding="utf-8")
         which_none = patch("app.agent.tools.shutil.which", return_value=None)
         which_none.start()
@@ -95,14 +95,20 @@ class BuiltinCommandFallbackTest(unittest.TestCase):
                     self.sb.run_command(cmd)
 
     def test_allowed_but_unavailable_command_is_reported(self):
-        with self.assertRaises(ToolError):
-            self.sb.run_command("git status")       # allowed, no fallback, not installed
+        with self.assertRaises(ToolError) as ctx:
+            self.sb.run_command("grep foo a.txt")   # allowed, no fallback for grep, not installed
+        self.assertIn("ไม่พบคำสั่ง", str(ctx.exception))
 
 
 class SandboxCommandAllowlistTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
-        self.sb = Sandbox(self.tmp)
+        self.sb = Sandbox(self.tmp, allow_commands=True)
+
+    def test_commands_disabled_by_default_rejected(self):
+        sb_off = Sandbox(self.tmp)   # allow_commands defaults to False
+        with self.assertRaises(ToolError):
+            sb_off.run_command("echo hello")
 
     def test_allowed_command_runs(self):
         result = self.sb.run_command("echo hello")
@@ -126,18 +132,29 @@ class SandboxCommandAllowlistTest(unittest.TestCase):
         self.assertIn("list form", result)
 
     def test_pwd_runs_in_workspace(self):
+        # Git-for-Windows pwd.EXE prints POSIX form (/d/...), so match the unique
+        # temp-dir name instead of the full Windows path; still proves cwd = workspace.
         result = self.sb.run_command("pwd")
-        self.assertIn(self.tmp, result)
+        self.assertIn(Path(self.tmp).name, result)
 
     def test_custom_allowlist(self):
-        sb2 = Sandbox(self.tmp, allowed_commands=("echo",))
+        sb2 = Sandbox(self.tmp, allowed_commands=("echo",), allow_commands=True)
         sb2.run_command("echo ok")
         with self.assertRaises(ToolError):
             sb2.run_command("ls")
 
     def test_default_allowed_commands_present(self):
-        for cmd in ("ls", "cat", "grep", "git"):
+        for cmd in ("ls", "cat", "grep"):
             self.assertIn(cmd, DEFAULT_ALLOWED_COMMANDS)
+
+    def test_default_allowed_commands_exclude_risky(self):
+        for cmd in ("git", "python", "python3", "find", "pytest"):
+            self.assertNotIn(cmd, DEFAULT_ALLOWED_COMMANDS)
+
+    def test_pytest_rejected_by_default_allowlist(self):
+        with self.assertRaises(ToolError) as ctx:
+            self.sb.run_command("pytest -q")
+        self.assertIn("pytest", str(ctx.exception))
 
 
 class SandboxWriteFileTest(unittest.TestCase):

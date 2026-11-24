@@ -16,6 +16,7 @@ stdlib ล้วน (subprocess/pathlib).
 from __future__ import annotations
 
 import ipaddress
+import re
 import shutil
 import socket
 import subprocess
@@ -28,10 +29,12 @@ HTTP_TIMEOUT = 15            # วินาที/คำขอ
 MAX_HTTP_CHARS = 8000        # ตัดเนื้อหายาว ๆ กัน context ระเบิด
 
 # คำสั่งที่อนุญาต (อ่าน/ตรวจอย่างเดียว — ไม่มีคำสั่งเขียน/ลบ/ติดตั้ง/เครือข่าย)
+# ไม่รวม python/python3/find/git/pytest: ใช้รันโค้ดหรือเลี่ยง path ได้ (python -c, find -exec, pytest รัน test code)
 DEFAULT_ALLOWED_COMMANDS = (
     "ls", "cat", "pwd", "echo", "head", "tail", "wc",
-    "grep", "find", "python", "python3", "pytest", "git",
+    "grep",
 )
+_DRIVE_RE = re.compile(r"^[A-Za-z]:")
 COMMAND_TIMEOUT = 30          # วินาที/คำสั่ง
 MAX_OUTPUT_CHARS = 4000       # ตัด output ยาว ๆ กัน context ระเบิด
 
@@ -43,9 +46,11 @@ class ToolError(Exception):
 class Sandbox:
     """ขอบเขตของงาน 1 งาน: ทุก path ต้องอยู่ใต้ root; คำสั่งต้องอยู่ใน allowlist"""
 
-    def __init__(self, root, allowed_commands=DEFAULT_ALLOWED_COMMANDS):
+    def __init__(self, root, allowed_commands=DEFAULT_ALLOWED_COMMANDS, allow_commands: bool = False):
+        """allow_commands=False (ค่าเริ่มต้น) = ปิด run_command ทั้งหมด; ต้องส่ง True ชัดเจนเพื่อเปิด"""
         self.root = Path(root).resolve()
         self.allowed = tuple(allowed_commands)
+        self.allow_commands = bool(allow_commands)
 
     def _safe_path(self, rel: str) -> Path:
         """แปลง path ที่ agent ขอ → path จริงใต้ root; หลุดออกนอก = ToolError"""
@@ -74,14 +79,27 @@ class Sandbox:
         names = sorted(x.name + ("/" if x.is_dir() else "") for x in p.iterdir())
         return "\n".join(names) if names else "(ว่าง)"
 
+    def _check_args(self, args: list) -> None:
+        """ทุก arg (รวมค่าหลัง '=' ของ option) ต้องไม่ใช่ absolute path และต้องอยู่ใต้ root.
+        _safe_path resolve symlink จึงกัน link ที่ชี้ออกนอกได้ด้วย"""
+        for raw in args[1:]:
+            value = raw.split("=", 1)[-1] if raw.startswith("-") else raw
+            if value.startswith(("/", "\\", "~")) or _DRIVE_RE.match(value) or Path(value).is_absolute():
+                raise ToolError(f"ปฏิเสธ: absolute path '{value}' ไม่อนุญาต (ใช้ path ภายใน workspace)")
+            self._safe_path(value)   # ทุก arg ผ่าน confine (แม้ไม่มี / ก็กัน symlink ที่ชี้ออกนอก)
+
     def run_command(self, command) -> str:
-        """รันคำสั่ง (list ของ args หรือ string) — เฉพาะใน allowlist, ไม่ผ่าน shell"""
+        """รันคำสั่ง (list ของ args หรือ string) — ปิดเป็นค่าเริ่มต้น; เปิดแล้วเฉพาะ allowlist,
+        ไม่ผ่าน shell, arg ทุกตัวต้องเป็น path ภายใน workspace"""
+        if not self.allow_commands:
+            raise ToolError("run_command ปิดอยู่ (ค่าเริ่มต้น) — ต้องเปิดด้วย allow_commands=True อย่างชัดเจน")
         args = command.split() if isinstance(command, str) else list(command)
         if not args:
             raise ToolError("ไม่มีคำสั่ง")
         name = Path(args[0]).name   # กัน path เต็ม /usr/bin/rm เลี่ยง allowlist
         if name not in self.allowed:
             raise ToolError(f"ปฏิเสธคำสั่ง '{name}' (อนุญาตเฉพาะ: {', '.join(self.allowed)})")
+        self._check_args(args)
         exe = shutil.which(name)
         if exe is None:
             # Windows has no ls/pwd/echo/... executables (echo and pwd are cmd built-ins).
