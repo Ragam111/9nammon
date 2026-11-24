@@ -65,7 +65,8 @@ class SandboxCommandAllowlistTest(unittest.TestCase):
         self.sb = Sandbox(self.tmp)
 
     def test_allowed_command_runs(self):
-        result = self.sb.run_command("echo hello")
+        # echo is a cmd builtin on Windows, so use `python`, which is allowlisted on every host.
+        result = self.sb.run_command(["python", "-c", "print('hello')"])
         self.assertIn("hello", result)
         self.assertIn("exit 0", result)
 
@@ -82,16 +83,17 @@ class SandboxCommandAllowlistTest(unittest.TestCase):
             self.sb.run_command("")
 
     def test_list_args_form(self):
-        result = self.sb.run_command(["echo", "list", "form"])
+        result = self.sb.run_command(["python", "-c", "import sys; print(*sys.argv[1:])", "list", "form"])
         self.assertIn("list form", result)
 
     def test_pwd_runs_in_workspace(self):
-        result = self.sb.run_command("pwd")
-        self.assertIn(self.tmp, result)
+        # pwd is a POSIX binary; read the working directory from `python` instead.
+        result = self.sb.run_command(["python", "-c", "import os; print(os.getcwd())"])
+        self.assertIn(str(Path(self.tmp).resolve()), result)
 
     def test_custom_allowlist(self):
-        sb2 = Sandbox(self.tmp, allowed_commands=("echo",))
-        sb2.run_command("echo ok")
+        sb2 = Sandbox(self.tmp, allowed_commands=("python",))
+        sb2.run_command(["python", "-c", "print('ok')"])
         with self.assertRaises(ToolError):
             sb2.run_command("ls")
 
