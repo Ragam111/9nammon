@@ -328,6 +328,9 @@ def make_handler(project_root: Path, auth_token: Optional[str],
         print("[watchdog] เปิดการเฝ้าระบบ 24/7 (RAM/Ollama/cluster) — แจ้งเตือนเมื่อผิดปกติ")
 
     class LocalAssistantHandler(BaseHTTPRequestHandler):
+        # socket timeout: body ที่ client ส่งไม่ครบ/ค้าง ต้องถูกตัดการเชื่อมต่อ ไม่จองเธรดไว้ตลอดกาล
+        timeout = 10
+
         # ปิด log เริ่มต้นของ http.server ที่รก stdout — ใช้ log สั้นแทน
         def log_message(self, fmt, *args):
             print(f"[server] {self.address_string()} - {fmt % args}")
