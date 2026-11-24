@@ -1,6 +1,9 @@
 """test_todo_store.py — CRUD for todo items + corrupted file handling"""
 
 import json
+import os
+import shutil
+import stat
 import sys
 import tempfile
 import unittest
@@ -11,9 +14,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app import todo_store  # noqa: E402
 
 
+def _remove_tree(path):
+    """Delete a temp tree, clearing read-only bits first (Windows refuses to unlink them)."""
+    def _clear_readonly(func, p, _exc):
+        os.chmod(p, stat.S_IWRITE)
+        func(p)
+    shutil.rmtree(path, onerror=_clear_readonly)
+
+
 class TodoStoreTest(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(_remove_tree, self.tmp)
 
     def test_load_empty(self):
         todos = todo_store.load_todos(self.tmp)

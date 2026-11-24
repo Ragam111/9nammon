@@ -4,6 +4,9 @@
 2. Concurrent add_todo calls must not lose items (read-modify-write has no lock).
 """
 
+import os
+import shutil
+import stat
 import sys
 import tempfile
 import threading
@@ -15,9 +18,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app import todo_store  # noqa: E402
 
 
+def _remove_tree(path):
+    """Delete a temp tree, clearing read-only bits first (Windows refuses to unlink them)."""
+    def _clear_readonly(func, p, _exc):
+        os.chmod(p, stat.S_IWRITE)
+        func(p)
+    shutil.rmtree(path, onerror=_clear_readonly)
+
+
 class BreakerTodoStoreTest(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(_remove_tree, self.tmp)
 
     def test_write_failure_is_not_reported_as_success(self):
         # todos.json occupied by a directory -> the write must fail, and the caller must hear about it.
