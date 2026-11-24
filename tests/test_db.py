@@ -18,6 +18,11 @@ from app.db import (
 )
 
 
+def _tmp_root(name: str) -> Path:
+    """A portable project root under the OS temp dir (no hard-coded /tmp)."""
+    return Path(tempfile.gettempdir()) / name
+
+
 # ---------------------------------------------------------------------------
 # split_sql
 # ---------------------------------------------------------------------------
@@ -149,8 +154,9 @@ class TestDbPath(unittest.TestCase):
         self.assertEqual(result.parent.name, "data")
 
     def test_path_under_project_root(self):
-        result = db_path("/my/project")
-        self.assertTrue(str(result).startswith("/my/project"))
+        root = Path(tempfile.gettempdir()) / "lca-project"
+        result = db_path(root)
+        self.assertTrue(result.is_relative_to(root))
 
     def test_relative_root_works(self):
         result = db_path(".")
@@ -165,27 +171,27 @@ class TestDbPath(unittest.TestCase):
 
 class TestWriteLock(unittest.TestCase):
     def test_returns_lock(self):
-        lock = write_lock("/tmp/testroot_a")
+        lock = write_lock(_tmp_root("testroot_a"))
         # threading.Lock is a factory function on 3.12. The instance type is stable on 3.12 and 3.13.
         self.assertIsInstance(lock, type(threading.Lock()))
 
 
     def test_same_root_same_lock(self):
-        lock1 = write_lock("/tmp/testroot_b")
-        lock2 = write_lock("/tmp/testroot_b")
+        lock1 = write_lock(_tmp_root("testroot_b"))
+        lock2 = write_lock(_tmp_root("testroot_b"))
 
         self.assertIs(lock1, lock2)
 
 
     def test_different_root_different_lock(self):
-        lock1 = write_lock("/tmp/testroot_c1")
-        lock2 = write_lock("/tmp/testroot_c2")
+        lock1 = write_lock(_tmp_root("testroot_c1"))
+        lock2 = write_lock(_tmp_root("testroot_c2"))
 
         self.assertIsNot(lock1, lock2)
 
 
     def test_lock_is_acquirable(self):
-        lock = write_lock("/tmp/testroot_d")
+        lock = write_lock(_tmp_root("testroot_d"))
         acquired = lock.acquire(blocking=False)
         if acquired:
             lock.release()
