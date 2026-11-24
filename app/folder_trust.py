@@ -9,6 +9,7 @@ Marker file: <project_root>/.lca_trust — เก็บ timestamp ตอนย�
 เปิดโปรเจกต์เดิมซ้ำ (มี marker แล้ว) จะไม่ถามอีก ตามเงื่อนไขผ่านเฟสที่ตั้งไว้
 """
 
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -49,7 +50,15 @@ def ensure_trusted(project_root: Path) -> bool:
     print("[trust] Local Code Assistant จะอ่าน/แก้ไฟล์ในโฟลเดอร์นี้ได้ตั้งแต่ตอนนี้เป็นต้นไป")
     try:
         answer = input("[trust] ยืนยันว่าเป็นโปรเจกต์ที่ต้องการทำงานด้วยจริง? (y/n): ").strip().lower()
-    except (EOFError, KeyboardInterrupt):
+    except EOFError:
+        # stdin ปิดแล้ว (ไม่มี input เลย) ถือเป็นการปฏิเสธ — แจ้ง stderr แล้วออกด้วย rc=1
+        # ไม่ให้จบแบบเงียบ ๆ ด้วย rc=0 เหมือนผู้ใช้กด n
+        print(
+            "[trust][error] ไม่ได้รับคำตอบยืนยันโปรเจกต์ (stdin ปิดแล้ว) — ไม่เริ่มทำงาน",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    except KeyboardInterrupt:
         print()
         return False
 
