@@ -725,6 +725,54 @@ class DispatchTest(unittest.TestCase):
             self.assertIn("Max-Age=0", logged_out["headers"]["Set-Cookie"])
             self.assertIn("SameSite=Lax", logged_out["headers"]["Set-Cookie"])
 
+    def test_auth_start_then_callback_round_trip(self):
+        # login start ต้องจำ state ที่สร้าง → callback ที่ส่ง state นั้นกลับมาต้องผ่าน (และใช้ได้ครั้งเดียว)
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = self._ctx(Path(tmp))
+            started = dispatch(
+                "GET",
+                "/auth/google",
+                {
+                    "mode": "start",
+                    "redirect_uri": "http://127.0.0.1:8421/auth/google",
+                    "client_id": GOOGLE_CLIENT_ID,
+                },
+                ctx=ctx,
+            )
+            self.assertEqual(started["status"], 200)
+            state = started["state"]
+            self.assertTrue(state)
+            self.assertEqual(ctx.expected_state, state)
+            self.assertIn(f"state={state}", started["body"]["url"])
+
+            wrong = dispatch("GET", "/auth/google", {"code": "abc", "state": "forged"}, ctx=ctx)
+            self.assertEqual(wrong["status"], 400)
+            self.assertEqual(wrong["body"], {"error": "bad state"})
+
+            ok = dispatch("GET", "/auth/google", {"code": "abc", "state": state}, ctx=ctx)
+            self.assertEqual(ok["status"], 200)
+            self.assertEqual(ok["location"], "/#/account")
+            self.assertIsNone(ctx.expected_state)
+
+            replay = dispatch("GET", "/auth/google", {"code": "abc", "state": state}, ctx=ctx)
+            self.assertEqual(replay["status"], 400)
+
+    def test_auth_start_refused_does_not_store_state(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = self._ctx(Path(tmp))
+            bad = dispatch(
+                "GET",
+                "/auth/google",
+                {"mode": "start", "redirect_uri": "https://evil.test/auth/google"},
+                ctx=ctx,
+            )
+            self.assertEqual(bad["status"], 400)
+            self.assertIsNone(ctx.expected_state)
+
     def test_cluster_and_logs_routes(self):
         import tempfile
 
