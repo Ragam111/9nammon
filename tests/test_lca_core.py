@@ -456,7 +456,12 @@ class StorageTest(unittest.TestCase):
             self.assertTrue(db.exists())
 
             link = root / "link.db.tmp"
-            link.symlink_to(foreign)
+            try:
+                link.symlink_to(foreign)
+            except (OSError, NotImplementedError) as exc:
+                # Windows needs Developer Mode or admin to create symlinks (WinError 1314).
+                # All assertions above already ran; only the symlink-refusal check is skipped.
+                self.skipTest(f"symlink creation not permitted on this host: {exc}")
             register(link)
             skipped = cleanup_stale(root, dry_run=False)
             self.assertTrue(link.exists())
