@@ -2108,6 +2108,9 @@ def resolve_server_config(args, env=None):
             port = int(env["PORT"])
         except (TypeError, ValueError):
             raise ValueError(f"$PORT ไม่ใช่ตัวเลข: {env['PORT']!r}")
+    if not (0 <= port <= 65535):
+        raise ValueError(
+            f"พอร์ตต้องอยู่ระหว่าง 0-65535 (ได้ {port}) — Port must be in range 0-65535")
     token = args.token or env.get("LCA_TOKEN") or None
     if host != "127.0.0.1" and not token:
         raise ValueError(
