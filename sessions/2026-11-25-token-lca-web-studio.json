@@ -1,0 +1,34 @@
+{
+  "title": "ห้องอัดเว็บหกห้อง 25 พ.ย. 2026",
+  "source": "studio",
+  "space": "public",
+  "skill": "rapid-iteration-ecosystem",
+  "version": "0.1.0",
+  "company": "Token LCA",
+  "token": "T-LCA",
+  "repo": "Ragam111/9nammon",
+  "brief": "อยากได้แอปแชต ก่อนมันจะเป็นเว็บ คนพิมพ์แล้วได้คำตอบทีละคำ และอาร์มภาพให้เห็นคนทำงาน",
+  "charged": false,
+  "reached": 8,
+  "hands": 8,
+  "rooms": ["สตูดิโอ", "แชต", "ไฟล์", "ติดตั้ง", "คอนโซล", "คลัง"],
+  "loop": ["Read", "Re-check", "Fix", "Report"],
+  "ledger": {
+    "name": "T-LCA",
+    "initial": 8000,
+    "deduction": "เก็บม้วนส่วนตัวหักเท่าสเต็ปที่อัดถึง บทแชตหรือมติสภาหัก 1",
+    "free": "ม้วนบริษัทและคำตอบของแขกไม่หัก ไม่ซื้อขาย"
+  },
+  "steps": [
+    { "n": 1, "title": "รับโจทย์จากคน", "layer": "คน", "files": [], "done": true },
+    { "n": 2, "title": "เปิดม้วนเทป", "layer": "ม้วน", "files": ["sessions/tape.json"], "done": true },
+    { "n": 3, "title": "เขียนหน้าที่คนเห็น", "layer": "ฟรอนต์เอนด์", "files": ["app/", "lca_app.py"], "done": true },
+    { "n": 4, "title": "ต่อสายตอบทีละคำ", "layer": "แบ็กเอนด์", "files": ["server.py", "local_coder.py", "sysmanager/"], "done": true },
+    { "n": 5, "title": "แช่แข็งสกิล", "layer": "คอร์", "files": ["skills/rapid-iteration-ecosystem/SKILL.md", "skills/rapid-iteration-ecosystem/TAPE.md"], "done": true },
+    { "n": 6, "title": "แยกพื้นที่", "layer": "บัญชี", "files": ["app/auth_backend.py", "app/space_store.py", "org_store.py"], "done": true },
+    { "n": 7, "title": "หักเหรียญ", "layer": "เหรียญ", "files": ["app/history_store.py", "app/usage_store.py"], "done": true },
+    { "n": 8, "title": "แพ็กเปิดตัว", "layer": "ติดตั้ง", "files": ["install/pack.json", "installer_gui.py", "install.ps1", "start-lca.bat", "Dockerfile"], "done": true }
+  ],
+  "notConnected": ["กุญแจของ Ollama", "รหัสไททันของแอดมิน", "โทเคนเข้าเครื่อง"],
+  "note": "หกห้องสาธารณะไม่หัก T-LCA แขกใช้สตูดิโอ แชต และสภาได้ทันที คำตอบอยู่แค่หน้า อาร์มภาพอยู่แค่หน้า กล้องไม่ขึ้นคลัง บัญชีเริ่ม 8,000 T-LCA เก็บม้วนส่วนตัวหักเท่ามือ เก็บบทหรือมติหัก 1 ม้วนบริษัทไม่หัก สมองบนเว็บเป็นแผนที่ไฟล์ ไม่แทน server.py และไม่ถือกุญแจ Ollama รหัสไททัน หรือโทเคนเข้าเครื่อง"
+}
