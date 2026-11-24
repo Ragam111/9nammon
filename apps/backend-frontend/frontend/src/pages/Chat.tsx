@@ -720,7 +720,7 @@ export function Chat({ onAuthLost }: { onAuthLost: () => void }) {
               placeholder={selectedReady ? tr("chat.composer.placeholder") : tr("chat.composer.blocked")}
               aria-invalid={composerError ? true : undefined}
               aria-describedby={composerError ? errorId : undefined}
-              className="min-h-12 w-full resize-none rounded-sm border border-line bg-surface px-3 py-2 text-sm text-fg placeholder:text-muted disabled:opacity-60" />
+              className="min-h-12 w-full resize-none rounded-sm border border-line bg-surface px-3 py-2 text-sm text-fg placeholder:text-muted disabled:bg-surface-2" />
             {composerError && <p id={errorId} role="alert" className="text-sm text-bad">{composerError}</p>}
           </div>
           <div className="flex gap-2">

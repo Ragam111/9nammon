@@ -116,9 +116,14 @@ export function Onboarding({ user }: { user: User }) {
         {choice && <p className="mt-2 text-sm text-muted">{tr(choice === "local" ? "onboarding.choice.savedLocal" : "onboarding.choice.savedServer")}</p>}
         {saveFailed && <p className="mt-2 text-sm text-muted">{tr("onboarding.choice.notSaved")}</p>}
       </Card>
-      <div className="flex flex-wrap gap-2">
-        <Button variant="primary" disabled={!status?.configured} onClick={() => navigate("workbench")}>{tr("onboarding.goWork")}</Button>
-        <Button variant="ghost" onClick={() => navigate("workbench")}>{tr("onboarding.skip")}</Button>
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-wrap gap-2">
+          <Button variant="primary" disabled={!status?.configured} aria-describedby={status && !status.configured ? "go-work-hint" : undefined} onClick={() => navigate("workbench")}>{tr("onboarding.goWork")}</Button>
+          <Button variant="ghost" onClick={() => navigate("workbench")}>{tr("onboarding.skip")}</Button>
+        </div>
+        {status && !status.configured && (
+          <p id="go-work-hint" className="text-sm text-muted">ต้องตั้ง API key ก่อนจึงไปหน้าทำงานได้ หรือกด "ข้าม" ถ้าใช้โมเดลในเครื่อง</p>
+        )}
       </div>
     </div>
   );
