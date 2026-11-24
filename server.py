@@ -2034,8 +2034,12 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             """อ่าน body เป็น JSON object — ไม่ใช่ object หรือ JSON เสีย → ตอบ 400 แล้วคืน None"""
             try:
                 data = self._read_json_body()
-            except ValueError:
+            except (json.JSONDecodeError, UnicodeDecodeError):
                 self._send_json(400, {"error": "request body ต้องเป็น JSON ที่ถูกต้อง"})
+                return None
+            except ValueError as e:
+                # ขนาด body เกินลิมิต — ข้อความนี้เราเขียนเอง อ่านรู้เรื่อง จึงส่งต่อได้
+                self._send_json(400, {"error": str(e)})
                 return None
             if not isinstance(data, dict):
                 self._send_json(400, {"error": "request body ต้องเป็น JSON object"})
