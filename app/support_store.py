@@ -24,6 +24,7 @@ Interface:
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -80,7 +81,7 @@ def create_ticket(project_root: Path, reporter: str, subject: str, body: str,
         raise ValueError(f"channel ไม่ถูกต้อง: {channel} (ต้องเป็น {sorted(VALID_CHANNELS)})")
 
     now = _now()
-    with _connect(project_root) as conn:
+    with closing(_connect(project_root)) as conn, conn:
         cur = conn.execute(
             "INSERT INTO tickets (created_at, updated_at, channel, reporter, kind, subject, body, status) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, 'open')",
@@ -111,13 +112,13 @@ def list_tickets(project_root: Path, status: Optional[str] = None,
         sql += " WHERE " + " AND ".join(where)
     sql += " ORDER BY id DESC LIMIT ?"
     params.append(int(limit))
-    with _connect(project_root) as conn:
+    with closing(_connect(project_root)) as conn, conn:
         rows = conn.execute(sql, tuple(params)).fetchall()
     return [dict(r) for r in rows]
 
 
 def get_ticket(project_root: Path, ticket_id: int) -> Optional[dict]:
-    with _connect(project_root) as conn:
+    with closing(_connect(project_root)) as conn, conn:
         row = conn.execute("SELECT * FROM tickets WHERE id = ?", (int(ticket_id),)).fetchone()
     return dict(row) if row else None
 
@@ -127,7 +128,7 @@ def set_status(project_root: Path, ticket_id: int, status: str) -> Optional[dict
     status = (status or "").strip().lower()
     if status not in VALID_STATUSES:
         raise ValueError(f"status ไม่ถูกต้อง: {status} (ต้องเป็น {sorted(VALID_STATUSES)})")
-    with _connect(project_root) as conn:
+    with closing(_connect(project_root)) as conn, conn:
         cur = conn.execute(
             "UPDATE tickets SET status = ?, updated_at = ? WHERE id = ?",
             (status, _now(), int(ticket_id)),
@@ -141,7 +142,7 @@ def set_status(project_root: Path, ticket_id: int, status: str) -> Optional[dict
 def counts_by_status(project_root: Path) -> dict:
     """สรุปจำนวน ticket ต่อสถานะ (ทุกสถานะเริ่มที่ 0 เพื่อให้ dashboard แสดงครบ)"""
     out = {s: 0 for s in VALID_STATUSES}
-    with _connect(project_root) as conn:
+    with closing(_connect(project_root)) as conn, conn:
         rows = conn.execute(
             "SELECT status, COUNT(*) AS n FROM tickets GROUP BY status"
         ).fetchall()

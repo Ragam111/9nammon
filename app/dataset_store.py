@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import closing
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -72,7 +73,7 @@ def add_sample(project_root: Path, prompt: str, response: str,
         if not 1 <= rating <= 5:
             raise ValueError("rating ต้องอยู่ระหว่าง 1-5")
     now = _now()
-    with _connect(project_root) as conn:
+    with closing(_connect(project_root)) as conn, conn:
         cur = conn.execute(
             "INSERT INTO samples (created_at, model, prompt, response, rating, source) "
             "VALUES (?, ?, ?, ?, ?, ?)",
@@ -94,18 +95,18 @@ def list_samples(project_root: Path, limit: int = 100, min_rating=None) -> list:
         sql += " WHERE " + " AND ".join(where)
     sql += " ORDER BY id DESC LIMIT ?"
     params.append(int(limit))
-    with _connect(project_root) as conn:
+    with closing(_connect(project_root)) as conn, conn:
         rows = conn.execute(sql, tuple(params)).fetchall()
     return [dict(r) for r in rows]
 
 
 def count(project_root: Path) -> int:
-    with _connect(project_root) as conn:
+    with closing(_connect(project_root)) as conn, conn:
         return int(conn.execute("SELECT COUNT(*) FROM samples").fetchone()[0])
 
 
 def delete_sample(project_root: Path, sample_id: int) -> bool:
-    with _connect(project_root) as conn:
+    with closing(_connect(project_root)) as conn, conn:
         cur = conn.execute("DELETE FROM samples WHERE id = ?", (int(sample_id),))
         return cur.rowcount > 0
 
@@ -126,7 +127,7 @@ def export_jsonl(project_root: Path, fmt: str = "messages", min_rating=None) -> 
     if where:
         sql += " WHERE " + " AND ".join(where)
     sql += " ORDER BY id ASC"
-    with _connect(project_root) as conn:
+    with closing(_connect(project_root)) as conn, conn:
         rows = conn.execute(sql, tuple(params)).fetchall()
     lines = []
     for r in rows:

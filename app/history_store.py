@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import closing
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -68,7 +69,7 @@ def record_snapshot(project_root: Path, report: dict) -> dict:
     cpu = (snap.get("cpu") or {}).get("percent")
     mem = (snap.get("memory") or {}).get("percent")
     now = _now()
-    with _connect(project_root) as conn:
+    with closing(_connect(project_root)) as conn, conn:
         cur = conn.execute(
             "INSERT INTO snapshots (recorded_at, verdict, worst_severity, cpu_percent, mem_percent, raw) "
             "VALUES (?, ?, ?, ?, ?, ?)",
@@ -81,7 +82,7 @@ def record_snapshot(project_root: Path, report: dict) -> dict:
 
 def list_snapshots(project_root: Path, limit: int = 50) -> list:
     """คืน snapshot ล่าสุดก่อน (ไม่รวม raw json เพื่อไม่ให้ payload ใหญ่)"""
-    with _connect(project_root) as conn:
+    with closing(_connect(project_root)) as conn, conn:
         rows = conn.execute(
             "SELECT id, recorded_at, verdict, worst_severity, cpu_percent, mem_percent "
             "FROM snapshots ORDER BY id DESC LIMIT ?",
@@ -111,7 +112,7 @@ def log_error(project_root: Path, level: str, source: str, message: str) -> dict
     if not message:
         raise ValueError("ต้องระบุ message")
     now = _now()
-    with _connect(project_root) as conn:
+    with closing(_connect(project_root)) as conn, conn:
         cur = conn.execute(
             "INSERT INTO error_log (logged_at, level, source, message) VALUES (?, ?, ?, ?)",
             (now, level, (source or "").strip() or None, message),
@@ -126,7 +127,7 @@ def list_errors(project_root: Path, level: Optional[str] = None, limit: int = 10
         level = level.strip().lower()
         if level not in VALID_LEVELS:
             raise ValueError(f"level ไม่ถูกต้อง: {level}")
-    with _connect(project_root) as conn:
+    with closing(_connect(project_root)) as conn, conn:
         if level:
             rows = conn.execute(
                 "SELECT * FROM error_log WHERE level = ? ORDER BY id DESC LIMIT ?",
