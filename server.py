@@ -1731,8 +1731,15 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             except OSError:
                 raise  # socket หลุด/timeout (เช่น client ค้างตอนส่ง body) → ปิดการเชื่อมต่อตามเดิม
             except Exception as e:  # noqa: BLE001 — ด่านสุดท้าย: ไม่ให้ socket ถูกทิ้งเงียบ
+                # ลง error log ให้ /dev เห็น (เหมือน _fail_last_resort ฝั่ง main)
                 try:
-                    self._send_json(500, {"error": f"internal error: {type(e).__name__}"})
+                    history_store.log_error(project_root, "error", f"{self.command} {self.path}",
+                                            f"{type(e).__name__}: {e}")
+                except Exception:
+                    pass
+                try:
+                    self._send_json(500, {"error": f"internal error: {type(e).__name__}",
+                                          "type": type(e).__name__})
                 except Exception:
                     pass  # header ถูกส่งไปแล้ว (เช่น stream) — ทำอะไรต่อไม่ได้
 
