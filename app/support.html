@@ -83,11 +83,14 @@
             kind: qs("kind").value, channel: qs("channel").value.trim() || "web"
           })
         });
-        var data = await res.json();
+        // ตอบเป็นไม่ใช่ JSON (เช่น 502 หน้า HTML) ต้องไม่โยนไป catch แล้วหลงเป็น "เชื่อมต่อไม่ได้"
+        var data = await res.json().catch(function () { return {}; });
         if (res.ok) {
           qs("submit-msg").textContent = "ส่งแล้ว — #" + data.ticket.id;
           qs("subject").value = ""; qs("body").value = "";
           if (qs("admin").style.display !== "none") loadTickets();
+        } else if (res.status === 401 || res.status === 403) {
+          qs("submit-msg").textContent = "กรุณาเข้าสู่ระบบก่อนส่งเรื่อง";
         } else {
           qs("submit-msg").textContent = "ผิดพลาด: " + (data.error || res.status);
         }

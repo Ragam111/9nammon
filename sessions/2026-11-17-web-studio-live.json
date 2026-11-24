@@ -1,0 +1,71 @@
+{
+  "title": "เทปยืนยันสตูดิโเว็บที่เดินได้ 2026-11-17",
+  "source": "studio",
+  "space": "studio",
+  "skill": "rapid-iteration-ecosystem",
+  "steps": [
+    {
+      "at": "2026-11-17T06:30:00.000Z",
+      "layer": "frontend",
+      "file": "docs/WEB_STUDIO_LAUNCH.md",
+      "action": "รับโจทย์",
+      "detail": "Read สัญญาห้าหน้า: สตูดิโอ แชท ไฟล์ ติดตั้ง คอนโซล แขกใช้ฟรี บัญชีแยกถัง"
+    },
+    {
+      "at": "2026-11-17T06:30:00.040Z",
+      "layer": "core",
+      "file": "sessions/2026-11-17-web-studio-live.json",
+      "action": "เปิดเทป",
+      "detail": "Re-check ขั้นหัก T-LCA ในสตูดิโอ ไม่หักโทเคนบริษัท และไม่ยกข้อของแขกเข้าบัญชี"
+    },
+    {
+      "at": "2026-11-17T06:30:00.080Z",
+      "layer": "frontend",
+      "file": "app/chat.js",
+      "action": "หน้าบ้าน",
+      "detail": "คำถามวิดีโอคอลของแขกอยู่แค่หน้า ไม่ถูกเขียนเซิร์ฟเวอร์"
+    },
+    {
+      "at": "2026-11-17T06:30:00.120Z",
+      "layer": "backend",
+      "file": "app/admission.py",
+      "action": "หลังบ้าน",
+      "detail": "Fix สายวิดีโอให้ชี้ app/admission.py ก่อนถึงสมอง คู่กับ server.py และ space_store.py"
+    },
+    {
+      "at": "2026-11-17T06:30:00.160Z",
+      "layer": "core",
+      "file": "SKILL.md",
+      "action": "แช่แข็งสกิล",
+      "detail": "rapid-iteration-ecosystem: Read → Re-check → Fix → Report"
+    },
+    {
+      "at": "2026-11-17T06:30:00.200Z",
+      "layer": "backend",
+      "file": "app/space_store.py",
+      "action": "แยกถัง",
+      "detail": "บัญชีแยก private กับ company มติสภาไม่ปนแชท ข้อมูลของแขกไม่ถูกยกเข้าบัญชีที่หลัง"
+    },
+    {
+      "at": "2026-11-17T06:30:00.240Z",
+      "layer": "core",
+      "file": "app/usage_store.py",
+      "action": "หัก T-LCA",
+      "detail": "เริ่ม 8000 หัก 1 เฉพาะเก็บแชทหรือมติ ไม่หักเทปสตูดิโอ หมดแล้วไม่เรียกสมองต่อ"
+    },
+    {
+      "at": "2026-11-17T06:30:00.280Z",
+      "layer": "core",
+      "file": "app/agent/core.py",
+      "action": "สภา",
+      "detail": "มุมบริษัท วิศวกร ปฏิบัติการ รวมเป็นมติในเทป council ไม่ปนช่องแชท"
+    },
+    {
+      "at": "2026-11-17T06:30:00.320Z",
+      "layer": "frontend",
+      "file": "lca_app.py",
+      "action": "แพ็กเปิดตัว",
+      "detail": "Report ห้าหน้าเว็บซ้อมสัญญาแล้ว ตัวติดตั้ง Windows ยังอยู่ที่ lca_app.py และ LCA-Desktop.exe คลาวด์จริงยังผ่าน connections.py บนเดสก์ท็อป"
+    }
+  ]
+}

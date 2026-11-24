@@ -1,0 +1,82 @@
+{
+  "title": "ม้วนสตูดิโอเว็บ Grok อาเทลิเย่",
+  "source": "studio",
+  "space": "public",
+  "skill": "rapid-iteration-ecosystem",
+  "version": "0.1.0",
+  "company": "Token LCA",
+  "token": "T-LCA",
+  "repo": "Ragam111/9nammon",
+  "brief": "อยากได้แอปแชตก่อนมันจะเป็นเว็บ ต่อระบบหลังบ้านทีละชั้น",
+  "reached": 8,
+  "hands": 0,
+  "loop": ["Read", "Re-check", "Fix", "Report"],
+  "note": "ห้องสาธารณะใช้ฟรี ไม่หัก T-LCA และไม่จำชื่อ. สตูดิโอห้าห้องเดินได้ แขกอยู่แค่หน้า บัญชีแยกถัง. ไม่แทน server.py และไม่ย้ายตัวติดตั้ง Windows. T-LCA นับมือ ไม่ใช่เหรียญซื้อขาย.",
+  "steps": [
+    {
+      "n": 1,
+      "title": "รับโจทย์จากคน",
+      "layer": "people",
+      "files": [],
+      "done": true,
+      "detail": "อยากได้แอปแชตก่อนมันจะเป็นเว็บ ยังไม่มีไฟล์"
+    },
+    {
+      "n": 2,
+      "title": "เปิดม้วนเทป",
+      "layer": "tape",
+      "files": ["sessions/tape.json"],
+      "done": true,
+      "detail": "โจทย์ถูกจารลงม้วน รอบหน้าเดินตามม้วนได้โดยไม่เรียกสมองใหม่"
+    },
+    {
+      "n": 3,
+      "title": "เขียนหน้าที่คนเห็น",
+      "layer": "frontend",
+      "files": ["app/", "lca_app.py"],
+      "done": true,
+      "detail": "ห้าห้อง สตูดิโอ แชท ไฟล์ ติดตั้ง คอนโซล ยังไม่พูดกับโมเดล"
+    },
+    {
+      "n": 4,
+      "title": "ต่อสายตอบทีละคำ",
+      "layer": "backend",
+      "files": ["server.py", "local_coder.py", "sysmanager/"],
+      "done": true,
+      "detail": "ชีพจรหนึ่งข้อความเดิน server.py → auth_backend → space_store → admission → context_manager → model_backend → history_store"
+    },
+    {
+      "n": 5,
+      "title": "แช่แข็งสกิล",
+      "layer": "core",
+      "files": ["skills/rapid-iteration-ecosystem/SKILL.md"],
+      "done": true,
+      "detail": "Read → Re-check → Fix → Report สมองบนเว็บเป็นแผนที่ไฟล์ ไม่ใช่ Ollama"
+    },
+    {
+      "n": 6,
+      "title": "แยกพื้นที่",
+      "layer": "account",
+      "files": [],
+      "done": true,
+      "detail": "แขกอยู่แค่หน้า บัญชีแยกถังส่วนตัวกับถังบริษัท ของแขกไม่ถูกยกเข้าบัญชี"
+    },
+    {
+      "n": 7,
+      "title": "หักเหรียญ T-LCA",
+      "layer": "token",
+      "files": [],
+      "done": true,
+      "detail": "เริ่ม 8000 ม้วนสตูดิโอไม่หักกระเป๋า หัก 1 เมื่อเก็บบทแชทหรือมติสภา"
+    },
+    {
+      "n": 8,
+      "title": "แพ็กเปิดตัว",
+      "layer": "install",
+      "files": ["install/pack.json", "installer_gui.py", "install.ps1", "start-lca.bat", "Dockerfile"],
+      "done": true,
+      "detail": "ใบแพ็กบนเว็บดาวน์โหลดได้ ตัวติดตั้ง LCA-Desktop.exe ยังอยู่ที่รีโป"
+    }
+  ],
+  "notConnected": ["กุญแจของ Ollama", "รหัสไททันของแอดมิน", "โทเคนเข้าเครื่อง"]
+}

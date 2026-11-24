@@ -1,0 +1,134 @@
+/* Design tokens for the back-office (admin-ui-v2). Source: the phase-1 design proposal.
+   Every color, size and motion value used by components must come from here.
+   Dark is the default. Light applies only with data-theme="light".
+   Contrast values were calculated while drafting the proposal; re-measure with a tool before shipping. */
+
+:root,
+:root[data-theme="dark"] {
+  --bg: #15130f;
+  --surface: #211e19;
+  --surface-2: #2b261f;
+  --surface-3: #362f26;
+  --line: #4a4239;          /* decorative only, not a control boundary */
+  --line-strong: #9a9080;   /* input and button borders */
+  --fg: #f1e9d6;
+  --muted: #b9ae98;
+
+  --gold: #fcdb05;          /* focus ring, active nav frame */
+  --gold-fg: #15130f;
+
+  --grass: #5b8c3a;         /* primary fill */
+  --grass-fg: #0d0f0c;
+  --grass-hover: #6a9d47;
+  --stone: #7f7f7f;         /* secondary fill; always dark text on it */
+  --stone-fg: #15130f;
+  --stone-hover: #8f8f8f;
+  --wood: #b58a4e;          /* tertiary fill */
+  --wood-fg: #15130f;
+  --wood-hover: #c39a5e;
+
+  --danger-solid: #c0392b;
+  --danger-fg: #ffffff;
+  --info-solid: #2f66b8;
+  --info-fg: #ffffff;
+
+  --ok: #8fd16b;
+  --warn: #fcdb05;
+  --bad: #ff8a80;
+  --info: #7fb4f0;
+  --ok-bg: #1f3a18;
+  --warn-bg: #3a3212;
+  --bad-bg: #3a1a18;
+  --info-bg: #17283d;
+
+  --bevel-hi: #ffffff1f;
+  --bevel-lo: #00000080;
+  --focus: #fcdb05;
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --bg: #efe9dc;
+  --surface: #ffffff;
+  --surface-2: #f5f0e4;
+  --surface-3: #e8e0cc;
+  --line: #c9c0ac;
+  --line-strong: #6b6457;
+  --fg: #1b1b1b;
+  --muted: #4a4a4a;
+
+  --gold: #8a6a00;
+  --gold-fg: #ffffff;
+
+  --grass: #2f5a1c;
+  --grass-fg: #ffffff;
+  --grass-hover: #3a6d23;
+  --stone: #5f5f5f;
+  --stone-fg: #ffffff;
+  --stone-hover: #6f6f6f;
+  --wood: #8b5a2b;
+  --wood-fg: #ffffff;
+  --wood-hover: #9c6a36;
+
+  --danger-solid: #a8322b;
+  --danger-fg: #ffffff;
+  --info-solid: #1d4f9c;
+  --info-fg: #ffffff;
+
+  --ok: #2f5a1c;
+  --warn: #6b4a00;
+  --bad: #a93226;
+  --info: #1d4f9c;
+  --ok-bg: #e3efd9;
+  --warn-bg: #f6ecc8;
+  --bad-bg: #f6dfdb;
+  --info-bg: #dce9f8;
+
+  --bevel-hi: #ffffff;
+  --bevel-lo: #3a3a3a;
+  --focus: #1d4f9c;
+  color-scheme: light;
+}
+
+:root {
+  --font-sans: "Noto Sans Thai", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-pixel: "Press Start 2P", "Noto Sans Thai", sans-serif; /* Latin and digits only, never long text */
+  --font-mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --text-md: 16px;
+  --text-lg: 20px;
+  --text-xl: 24px;
+  --leading: 1.6;
+
+  --row-h: 40px;
+  --row-h-touch: 44px;
+  --control-h: 40px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  --frame-1: 2px;
+  --frame-2: 3px;
+  --frame-3: 4px;
+  --bevel-btn: inset 3px 3px 0 var(--bevel-hi), inset -3px -3px 0 var(--bevel-lo);
+  --bevel-btn-pressed: inset 3px 3px 0 var(--bevel-lo), inset -3px -3px 0 var(--bevel-hi);
+
+  --motion: 0ms; /* animation is off by default */
+}
+
+/* Opt-in only: set data-motion="on" on <html> to enable the stepped press animation.
+   The reduced-motion rule comes after and wins, so the user's OS setting is always respected. */
+:root[data-motion="on"] {
+  --motion: 120ms steps(3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-motion="on"] {
+    --motion: 0ms;
+  }
+}

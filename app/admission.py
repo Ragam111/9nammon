@@ -90,3 +90,32 @@ def gate_from_config(project_root, config_get=None) -> AdmissionGate:
         except (TypeError, ValueError):
             n = DEFAULT_MAX_CONCURRENT  # ค่าพัง → ปลอดภัยไว้ก่อน (1)
     return AdmissionGate(max_concurrent=n)
+
+
+class AdmissionController:
+    """Simple compatibility wrapper for Phase 1 tests.
+
+    It enforces a maximum number of concurrently-held slots and returns False when
+    the concurrency ceiling is reached before the timeout expires.
+    """
+
+    def __init__(self, max_concurrent: int = 1):
+        self.max_concurrent = max(1, int(max_concurrent))
+        self._lock = threading.Lock()
+        self._active = 0
+
+    def acquire(self, timeout: float = 0.1) -> bool:
+        start = __import__("time").time()
+        while True:
+            with self._lock:
+                if self._active < self.max_concurrent:
+                    self._active += 1
+                    return True
+            if __import__("time").time() - start >= timeout:
+                return False
+            __import__("time").sleep(0.01)
+
+    def release(self) -> None:
+        with self._lock:
+            if self._active > 0:
+                self._active -= 1

@@ -1,0 +1,79 @@
+{
+  "title": "ม้วนสตูดิโอเว็บ Token LCA 2026-11-19",
+  "source": "studio",
+  "space": "studio",
+  "skill": "rapid-iteration-ecosystem",
+  "version": "0.1.0",
+  "company": "Token LCA",
+  "token": "T-LCA",
+  "repo": "Ragam111/9nammon",
+  "brief": "อัดเซสชันเป็นไฟล์ แสดงหน้าที่ของแต่ละไฟล์ แล้วเดินแปดขั้นจนแชทถูกห่อเป็นเว็บ",
+  "reached": 8,
+  "loop": ["Read", "Re-check", "Fix", "Report"],
+  "note": "ห้าห้องเดินได้: สตูดิโอ แชท ไฟล์ ติดตั้ง คอนโซล. แขกใช้ฟรี คำตอบอยู่แค่หน้า ไม่ถูกเขียนเซิร์ฟเวอร์ และไม่ถูกยกเข้าบัญชี. บัญชีแยกถังส่วนตัวกับถังบริษัท. T-LCA เริ่ม 8000 หัก 1 เฉพาะเก็บบทแชทหรือมติสภา. ม้วนสตูดิโอไม่หัก. สมองบนเว็บเป็นแผนที่ไฟล์ ไม่ใช่ Ollama. ไม่แทน server.py และไม่ย้ายตัวติดตั้ง Windows.",
+  "steps": [
+    {
+      "at": "2026-11-19T14:30:00.000Z",
+      "layer": "frontend",
+      "file": "sessions/public-hall-tape.json",
+      "action": "รับโจทย์จากคน",
+      "detail": "ห้องสาธารณะดูวงจรได้ฟรี และไม่จำชื่อคน"
+    },
+    {
+      "at": "2026-11-19T14:30:00.000Z",
+      "layer": "core",
+      "file": "sessions/tape.json",
+      "action": "เปิดม้วนเทป",
+      "detail": "การอัดคือไฟล์จังหวะ ไม่ใช่คลิป"
+    },
+    {
+      "at": "2026-11-19T14:30:00.000Z",
+      "layer": "frontend",
+      "file": "app/chat.js",
+      "action": "เขียนหน้าที่คนเห็น",
+      "detail": "ห้าห้อง สตูดิโอ แชท ไฟล์ ติดตั้ง คอนโซล"
+    },
+    {
+      "at": "2026-11-19T14:30:00.000Z",
+      "layer": "backend",
+      "file": "server.py",
+      "action": "ต่อสายตอบทีละคำ",
+      "detail": "ชีพจร chat.js → server.py → auth_backend → space_store → admission → context_manager → model_backend → history_store"
+    },
+    {
+      "at": "2026-11-19T14:30:00.000Z",
+      "layer": "core",
+      "file": "SKILL.md",
+      "action": "แช่แข็งสกิล",
+      "detail": "Read → Re-check → Fix → Report"
+    },
+    {
+      "at": "2026-11-19T14:30:00.000Z",
+      "layer": "backend",
+      "file": "app/space_store.py",
+      "action": "แยกพื้นที่",
+      "detail": "ถังส่วนตัวกับถังบริษัท ผูกกับตัวตนที่ตรวจแล้ว"
+    },
+    {
+      "at": "2026-11-19T14:30:00.000Z",
+      "layer": "backend",
+      "file": "app/usage_store.py",
+      "action": "หักเหรียญ",
+      "detail": "เริ่ม 8000 หัก 1 เมื่อเก็บแชทหรือมติ ม้วนสตูดิโอไม่หัก หมดแล้วไม่เรียกสมองต่อ"
+    },
+    {
+      "at": "2026-11-19T14:30:00.000Z",
+      "layer": "core",
+      "file": "install/pack.json",
+      "action": "แพ็กเปิดตัว",
+      "detail": "ลำดับก่อนห่อ .exe ใบแพ็กไม่ใช่เหรียญ และไม่ใช่กุญแจเครื่อง"
+    }
+  ],
+  "notConnected": ["กุญแจของ Ollama", "รหัสไททันของแอดมิน", "โทเคนเข้าเครื่อง"],
+  "ledger": {
+    "name": "T-LCA",
+    "initial": 8000,
+    "deduction": "หัก 1 เมื่อเก็บบทแชทหรือมติสภา",
+    "free": "ม้วนสตูดิโอและคำตอบของแขกไม่หัก"
+  }
+}

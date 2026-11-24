@@ -1,4 +1,4 @@
-import { LOG_CAP, LOG_STREAM_PATH, POLL_MS } from "./config.js";
+import { LOG_CAP, LOG_STREAM_PATH, MAX_CHUNK_BYTES, POLL_MS } from "./config.js";
 import { el } from "./dom.js";
 import {
   appendLogLines,

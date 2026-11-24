@@ -71,28 +71,68 @@ function renderAccount() {
   );
 }
 
-async function show(next) {
+const BASE_TITLE = "LCA · แดชบอร์ดเครื่องนี้";
+const ROUTE_TITLES = Object.freeze({
+  "/logs": "ล็อกเทอร์มินัล",
+  "/nodes": "สถานะโหนด",
+  "/account": "บัญชี",
+});
+
+function titleFor(route) {
+  if (route == null) return "LCA · ไม่พบหน้า";
+  return ROUTE_TITLES[route] ? "LCA · " + ROUTE_TITLES[route] : BASE_TITLE;
+}
+
+// Moves focus to the view's heading so screen readers announce the new route.
+function focusHeading() {
+  const heading = view.querySelector("h2");
+  if (!heading) return;
+  heading.setAttribute("tabindex", "-1");
+  heading.focus();
+}
+
+function panelLoadError(err) {
+  const reason = err && err.message ? String(err.message) : String(err);
+  const retry = el("button", { type: "button", id: "panel-retry" }, "ลองใหม่");
+  retry.addEventListener("click", function () {
+    // A failed module import stays cached for this page, so reload to fetch it again.
+    window.location.reload();
+  });
+  const actions = el("p", null);
+  actions.append(retry, " ", el("a", { href: "#/" }, "กลับภาพรวม"));
+  return [
+    el("h2", null, "เปิดแผงไม่ได้"),
+    el("p", { role: "alert" }, "สาเหตุ: " + reason),
+    actions,
+  ];
+}
+
+async function show(next, moveFocus) {
   const ticket = ++generation;
   disposePanel();
   disposePanel = function () {};
   view.replaceChildren();
+  document.title = titleFor(next);
   document.querySelectorAll("nav a").forEach(function (link) {
     if (link.getAttribute("data-route") === next) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
   });
   if (next === "/") {
     renderHome();
+    if (moveFocus) focusHeading();
     return;
   }
   if (next === "/account") {
     renderAccount();
+    if (moveFocus) focusHeading();
     return;
   }
   if (next == null) {
     renderMissing();
+    if (moveFocus) focusHeading();
     return;
   }
-  view.append(el("p", null, "กำลังเปิดแผง…"));
+  view.append(el("p", { role: "status" }, "กำลังเปิดแผง…"));
   try {
     if (next === "/logs") {
       const mod = await import("./log-panel.js");
@@ -105,9 +145,11 @@ async function show(next) {
       view.replaceChildren();
       disposePanel = mod.mountNodePanel(view);
     }
+    if (moveFocus) focusHeading();
   } catch (err) {
     if (ticket !== generation) return;
-    view.replaceChildren(el("p", null, "เปิดแผงไม่ได้"));
+    view.replaceChildren(...panelLoadError(err));
+    if (moveFocus) focusHeading();
   }
 }
 
@@ -122,7 +164,7 @@ function bootOriginBanner() {
 }
 
 window.addEventListener("hashchange", function () {
-  show(parseRoute(window.location.hash));
+  show(parseRoute(window.location.hash), true);
 });
 
 auth.subscribe(paintAuth);

@@ -10,6 +10,54 @@
 - dependency ที่ปักใน `requirements.txt` มี `psutil` อย่างเดียว
 - ไฟล์ `.exe` ไม่ได้ถูก commit. `.github/workflows/build-exe.yml` บิลด์ `LCA-Desktop.exe` (จาก `lca_app.py`) และ `TokenLCAlimit.exe` (จาก `installer_gui.py`) เมื่อ `workflow_dispatch` หรือแท็ก `v*` บน `windows-latest` / Python 3.12 / PyInstaller `--onefile`
 
+## ภาพรวมจากแผนภาพอ้างอิง (สรุป + เทียบกับ LCA จริง)
+
+ส่วนนี้สรุปแผนภาพอ้างอิง 7 รูปที่ใช้ศึกษา และบอกว่าแต่ละหัวข้อเกี่ยวกับ LCA อย่างไร
+(ไม่ได้เปลี่ยนโค้ด ไม่ได้อ้างว่ามีระบบที่ยังไม่ได้สร้าง)
+
+### 1. สถาปัตยกรรมระบบแบบกระจาย (Clients → CDN → Load Balancer → Web/App → Cache → Queue → DB → Monitoring)
+| องค์ประกอบ | LCA ตอนนี้ | ความจำเป็น |
+|---|---|---|
+| Clients / Web/App Server | `server.py` (ThreadingHTTPServer) | มีแล้ว |
+| Message Queue | `job_queue` (SQLite, claim แบบ atomic) | มีแล้ว ใช้เป็นคิวงาน |
+| Database | SQLite (`chat_store`, `org_store`) ใช้ WAL | มีแล้ว เครื่องเดียว |
+| Caching Layer | ยังไม่มี | ยังไม่จำเป็น จนกว่าจะวัดแล้วพบคอขวด |
+| CDN / Load Balancer | ยังไม่มี | ไม่จำเป็นกับโหมดเครื่องเดียว |
+| DB Primary-Replica | ยังไม่มี | ไม่จำเป็นตอนนี้ (ต้องมีหลายเครื่อง) |
+| Monitoring | ยังไม่มีเมตริกรวมศูนย์ | **ควรทำถัดไป** |
+
+### 2. Transformer และขั้นตอนการสร้างข้อความ (Tokenizer → Embedding + Position → Attention → Transformer Blocks → Decoder)
+- ความเข้าใจนี้ใช้กับ `context_manager.py` (จัดงบ token ของ context) และคอลัมน์ `tokens_in` / `tokens_out` ใน `chat_store.py`
+- LCA ไม่ได้ฝึกโมเดลเอง โมเดลถูกเรียกผ่าน Ollama (local) หรือ provider ภายนอกผ่าน `model_backend`
+
+### 3. AI ⊃ Machine Learning ⊃ Deep Learning ⊃ Generative AI
+เป็นภาพรวมคำศัพท์ ใช้อธิบายในเอกสาร ไม่กระทบโค้ด
+
+### 4. การห่อหุ้มด้วย Container (Dockerfile → Image → Container → Container Engine)
+- รีโปมี `Dockerfile` และ `docker-compose.yml` อยู่แล้ว ใช้เป็นจุดเริ่มสำหรับบิลด์และรัน server ในคอนเทนเนอร์
+- ทดสอบแล้ว 2026-11-20 (Docker 29.9.3): `docker build` ผ่าน, คอนเทนเนอร์รันเป็น user `app`, `GET /docs` ตอบ 200, ใช้ RAM ราว 58 MiB จากเพดาน 384 MiB
+- แก้ healthcheck ใน `docker-compose.yml` จากพอร์ต 8001 เป็น 8000 (8001 คือพอร์ตฝั่ง host ข้างในคอนเทนเนอร์ไม่มีอะไรฟัง เดิมจึงขึ้น unhealthy ตลอด)
+- เพิ่ม `initdb/10-app-password.sh` (ตั้งรหัสของ role `lca_app` จาก `LCA_APP_PASSWORD`) และ `.env.example` แล้ว. `.gitattributes` บังคับ `*.sh` เป็น LF
+- พอร์ตฝั่ง host ตั้งได้ด้วย `LCA_API_PORT` (ค่าเริ่มต้น 8001)
+- ทดสอบ `docker compose up` เต็มชุด 2026-11-20:
+  - db และ api ขึ้น healthy, `GET /docs` 200, RAM api ~62 MiB, db ~37 MiB
+  - initdb ทำงาน: รหัสใหม่ต่อจาก api container ได้, รหัสเดิม `change-me` ถูกปฏิเสธ (`InvalidPasswordError`)
+  - RLS ทำงาน: `lca_app` insert แถวของ tenant อื่นไม่ได้
+  - `/v1/chat`: key ผิดได้ 401, key ถูกผ่าน auth และเช็ก quota ได้
+  - แก้บั๊ก `main.py`: SQL เขียน `AGND` แทน `AND` ทำให้ทุก request ที่มี key ได้ 500
+  - แก้ `main.py`: Ollama timeout/ต่อไม่ได้ ตอนนี้คืน 504/502 แทน 500
+  - ยังไม่ได้คำตอบจากโมเดลจริง: Ollama บนเครื่องนี้ตอบไม่ทันใน 280 วินาที (RAM ว่าง ~350 MB) และโมเดลค่าเริ่มต้น `qwen2.5-coder:1.5b` ไม่ได้ติดตั้งไว้
+- `api` ใช้เวลาเริ่ม ~20-30 วินาทีบนเครื่องนี้ ก่อนจะรับ request ได้
+
+### 5. โปสเตอร์ "Software Engineer" (Frontend, Backend, Database, APIs, Services, Monitoring)
+- รูปถูกเก็บไว้ที่ `docs/assets/software-engineer-poster.jpg` (commit แล้ว)
+- ใช้ประกอบภาพรวมของแอป ไม่ใช่สเปกของระบบ
+
+### สิ่งที่ยังไม่มีและควรทำต่อ (เรียงตามความคุ้มค่า)
+1. เมตริก/monitoring ของ server (เช่น จำนวนงานในคิว อัตราผิดพลาด ความหน่วงของ `/api/chat`)
+2. ทดสอบ `/v1/chat` จนได้คำตอบจากโมเดลบนเครื่องที่มี RAM ว่างพอ
+3. Caching และ load balancing: ทำเมื่อวัดแล้วพบคอขวดเท่านั้น
+
 แผนผังด้านล่างเป็นเอกสารเดิมสมัยที่หัวข้อยังเป็น v0.0.2. มันเป็นแผนที่โมดูลยุคนั้น ไม่ใช่แผนสามชั้นที่ใช้แทนโค้ดปัจจุบัน
 
 ## Module Map (เอกสารเดิม v0.0.2)

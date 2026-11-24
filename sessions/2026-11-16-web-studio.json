@@ -1,0 +1,69 @@
+{
+  "title": "ม้วนสตูดิโอเว็บ 2026-11-16",
+  "source": "studio",
+  "space": "studio",
+  "skill": "rapid-iteration-ecosystem",
+  "version": "0.1.0",
+  "company": "Token LCA",
+  "token": "T-LCA",
+  "loop": ["Read", "Re-check", "Fix", "Report"],
+  "note": "สตูดิโอเว็บเดินแปดสเต็ปของสกิล แขกไม่ถูกเขียน บัญชีแยกถัง ไม่แทน server.py และไม่ย้ายตัวติดตั้ง Windows. T-LCA นับมือ ไม่ใช่เหรียญซื้อขาย.",
+  "steps": [
+    {
+      "at": "2026-11-16T10:24:00.000Z",
+      "layer": "core",
+      "file": "skills/rapid-iteration-ecosystem/SKILL.md",
+      "action": "รับโจทย์",
+      "detail": "Read สกิลก่อนอัดเซสชันเป็นไฟล์ แล้วเดินแปดสเต็ปจนเป็นแอป"
+    },
+    {
+      "at": "2026-11-16T10:24:00.040Z",
+      "layer": "core",
+      "file": "sessions/tape.json",
+      "action": "เปิดเทป",
+      "detail": "โจทย์ถูกจารลงม้วน รอบหน้าเดินตามม้วนได้โดยไม่เรียกสมองใหม่"
+    },
+    {
+      "at": "2026-11-16T10:24:00.080Z",
+      "layer": "frontend",
+      "file": "app/",
+      "action": "หน้าบ้าน",
+      "detail": "ห้าห้องสตูดิโอ แชท ไฟล์ ติดตั้ง คอนโซล แสดงชั้นและหน้าที่ไฟล์ทำ"
+    },
+    {
+      "at": "2026-11-16T10:24:00.120Z",
+      "layer": "backend",
+      "file": "server.py",
+      "action": "หลังบ้าน",
+      "detail": "ชีพจรหนึ่งข้อความเดิน server.py → auth_backend → space_store → admission → context_manager → model_backend → history_store"
+    },
+    {
+      "at": "2026-11-16T10:24:00.160Z",
+      "layer": "core",
+      "file": "SKILL.md",
+      "action": "แช่แข็งสกิล",
+      "detail": "Re-check: Read → Re-check → Fix → Report สมองบนเว็บยังเป็นแผนที่ไฟล์ ไม่ใช่ Ollama"
+    },
+    {
+      "at": "2026-11-16T10:24:00.200Z",
+      "layer": "backend",
+      "file": "app/space_store.py",
+      "action": "แยกถัง",
+      "detail": "แขกอยู่แค่หน้า บัญชีแยกถังส่วนตัวกับถังบริษัท ของแขกไม่ถูกยกเข้าบัญชีที่หลัง"
+    },
+    {
+      "at": "2026-11-16T10:24:00.240Z",
+      "layer": "backend",
+      "file": "app/usage_store.py",
+      "action": "หัก T-LCA",
+      "detail": "เริ่ม 8000 หัก 1 เมื่อเก็บบทแชทหรือมติสภา ไม่หักเทปสตูดิโอ ไม่ใช่เหรียญซื้อขาย"
+    },
+    {
+      "at": "2026-11-16T10:24:00.280Z",
+      "layer": "core",
+      "file": "install/pack.json",
+      "action": "แพ็กเปิดตัว",
+      "detail": "Report: ใบแพ็กบนเว็บดาวน์โหลดได้ ตัวติดตั้ง LCA-Desktop.exe ยังอยู่ที่รีโป"
+    }
+  ]
+}

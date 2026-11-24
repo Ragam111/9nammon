@@ -33,6 +33,13 @@ class SafeKeyTest(unittest.TestCase):
         with self.assertRaises(StorageError):
             _safe_key("/etc/passwd")
 
+    def test_windows_rooted_and_drive_keys_rejected(self):
+        # These escape the root on Windows even though is_absolute() can be False
+        for key in ["\\Windows\\win.ini", "C:secret.txt", "C:\\secret.txt", "sub\\..\\..\\x"]:
+            with self.subTest(key=key):
+                with self.assertRaises(StorageError):
+                    _safe_key(key)
+
     def test_dotdot_rejected(self):
         with self.assertRaises(StorageError):
             _safe_key("../secret")

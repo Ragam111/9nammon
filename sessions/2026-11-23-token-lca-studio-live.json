@@ -1,0 +1,22 @@
+{
+  "title": "สตูดิโอห้าห้องสด 23 พ.ย. 2026",
+  "source": "grok-build",
+  "space": "public-hall",
+  "skill": "rapid-iteration-ecosystem",
+  "version": "0.1.0",
+  "company": "Token LCA",
+  "token": "T-LCA",
+  "repo": "Ragam111/9nammon",
+  "brief": "อยากได้แอปแชตหรือเว็บ ก่อนมันจะเป็นแอป",
+  "charged": false,
+  "reached": 8,
+  "hands": 8,
+  "note": "ม้วนสาธารณะไม่หัก T-LCA และไม่จำชื่อคน บัญชีใหม่ได้ 8000 เก็บม้วนส่วนตัวหักเท่า hands เก็บบทแชตหรือมติหัก 1 ของแขกอยู่แค่หน้า สมองบนเว็บเป็นแผนที่ไฟล์ ไม่แทน server.py และไม่ย้ายตัวติดตั้ง Windows",
+  "rooms": ["สตูดิโอ", "ไฟล์", "แชต", "ติดตั้ง", "คอนโซล"],
+  "notConnected": ["กุญแจของ Ollama", "รหัสไททันของแอดมิน", "โทเคนเข้าเครื่องใน Dockerfile"],
+  "ledger": {
+    "name": "T-LCA",
+    "initial": 8000,
+    "deduction": "ห้องสาธารณะไม่หัก เก็บม้วนส่วนตัวหักเท่า hands เก็บบทแชตหรือมติหัก 1"
+  }
+}

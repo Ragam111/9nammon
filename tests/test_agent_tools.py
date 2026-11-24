@@ -59,6 +59,46 @@ class SandboxPathConfinementTest(unittest.TestCase):
         self.assertEqual(result, "(ว่าง)")
 
 
+class BuiltinCommandFallbackTest(unittest.TestCase):
+    """Force the no-executable path (as on Windows) so it is tested on every OS."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.sb = Sandbox(self.tmp)
+        Path(self.tmp, "a.txt").write_text("one\ntwo three\nfour\n", encoding="utf-8")
+        which_none = patch("app.agent.tools.shutil.which", return_value=None)
+        which_none.start()
+        self.addCleanup(which_none.stop)
+
+    def test_echo_pwd_ls(self):
+        self.assertEqual(self.sb.run_command("echo hi ; rm a.txt"), "(exit 0)\nhi ; rm a.txt")
+        self.assertTrue(Path(self.tmp, "a.txt").exists())
+        self.assertIn(str(Path(self.tmp).resolve()), self.sb.run_command("pwd"))
+        self.assertIn("a.txt", self.sb.run_command("ls -la"))
+
+    def test_cat_head_tail_wc(self):
+        self.assertIn("two three", self.sb.run_command("cat a.txt"))
+        self.assertEqual(self.sb.run_command("head -n 1 a.txt"), "(exit 0)\none")
+        self.assertEqual(self.sb.run_command("tail -1 a.txt"), "(exit 0)\nfour")
+        self.assertEqual(self.sb.run_command("wc a.txt"), "(exit 0)\n3 4 19 a.txt")
+
+    def test_fallback_stays_inside_workspace(self):
+        for cmd in ("cat ../../etc/passwd", "head -n 1 ../x", "ls ..", "wc ../../x"):
+            with self.subTest(cmd=cmd):
+                with self.assertRaises(ToolError):
+                    self.sb.run_command(cmd)
+
+    def test_bad_line_count_and_missing_file_arg(self):
+        for cmd in ("head -n x a.txt", "tail", "cat"):
+            with self.subTest(cmd=cmd):
+                with self.assertRaises(ToolError):
+                    self.sb.run_command(cmd)
+
+    def test_allowed_but_unavailable_command_is_reported(self):
+        with self.assertRaises(ToolError):
+            self.sb.run_command("git status")       # allowed, no fallback, not installed
+
+
 class SandboxCommandAllowlistTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()

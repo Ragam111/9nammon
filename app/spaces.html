@@ -7,20 +7,25 @@
 <link rel="stylesheet" href="/app.css">
 <style>
   .layout { display:flex; gap:12px; height:calc(100vh - 80px); }
-  .sidebar { width:260px; flex:none; overflow-y:auto; border-right:1px solid #2a2e37; padding-right:10px; }
+  .sidebar { width:260px; flex:none; overflow-y:auto; border-right:1px solid var(--lca-line); padding-right:10px; }
   .main { flex:1; display:flex; flex-direction:column; min-width:0; }
-  .space-item { padding:8px 10px; border-radius:8px; cursor:pointer; margin-bottom:4px; }
-  .space-item:hover { background:#22262f; }
-  .space-item.active { background:#2563eb; color:#fff; }
+  .space-item { padding:8px 10px; border-radius:8px; cursor:pointer; margin-bottom:4px; width:100%; display:block; border:0; background:none; color:inherit; font:inherit; text-align:start; }
+  .space-item:hover { background:var(--lca-surface-2); }
+  .space-item.active { background:var(--lca-accent); color:var(--lca-accent-fg); }
   .badge { font-size:11px; opacity:.7; margin-left:6px; }
   #items { flex:1; overflow-y:auto; padding:10px 0; display:flex; flex-direction:column; gap:8px; }
-  .item { max-width:80%; padding:8px 12px; border-radius:10px; background:#22262f; border:1px solid #2a2e37; }
+  .item { max-width:80%; padding:8px 12px; border-radius:var(--lca-r); background:var(--lca-surface-2); border:1px solid var(--lca-line); }
   .item .who { font-size:11px; opacity:.6; margin-bottom:2px; }
-  .composer { display:flex; gap:8px; padding-top:8px; border-top:1px solid #2a2e37; }
+  .composer { display:flex; gap:8px; padding-top:8px; border-top:1px solid var(--lca-line); }
   .composer input { flex:1; }
-  .err { color:#e5534b; margin:6px 0; display:none; }
+  .err { color:var(--lca-bad); margin:6px 0; display:none; }
   .newspace { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
   .newspace input { flex:1; min-width:100px; }
+  @media (max-width: 720px) {
+    .layout { flex-direction:column; height:auto; min-height:calc(100vh - 80px); }
+    .sidebar { width:auto; flex:none; max-height:40vh; border-right:0; border-bottom:1px solid var(--lca-line); padding:0 0 10px; }
+    #items { min-height:40vh; }
+  }
 </style>
 </head>
 <body>
@@ -29,8 +34,8 @@
   <div class="layout">
     <div class="sidebar">
       <div class="newspace">
-        <input id="new-name" placeholder="ชื่อพื้นที่ใหม่">
-        <select id="new-vis">
+        <input id="new-name" placeholder="ชื่อพื้นที่ใหม่" aria-label="ชื่อพื้นที่ใหม่">
+        <select id="new-vis" aria-label="การเข้าถึงพื้นที่ใหม่">
           <option value="private">ส่วนตัว</option>
           <option value="shared">บริษัท (shared)</option>
         </select>
@@ -42,7 +47,7 @@
       <h2 id="space-title" style="margin:4px 0">เลือกพื้นที่</h2>
       <div id="items"></div>
       <div class="composer">
-        <input id="msg" placeholder="พิมพ์ข้อความ..." disabled>
+        <input id="msg" placeholder="พิมพ์ข้อความ..." aria-label="ข้อความ" disabled>
         <button id="send" type="button" disabled>ส่ง</button>
       </div>
     </div>
@@ -51,6 +56,8 @@
 <script>
 const $ = (id) => document.getElementById(id);
 let currentSpace = null;
+let sending = false;
+let creating = false;
 function showErr(t){ const e=$('err'); e.textContent=t||''; e.style.display=t?'':'none'; }
 function esc(s){ return String(s==null?'':s).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c])); }
 
@@ -65,20 +72,28 @@ async function loadSpaces(){
   } catch(e){ showErr('ต่อ server ไม่ได้'); }
 }
 function renderSpaces(spaces){
-  const box=$('space-list'); box.innerHTML='';
+  const box=$('space-list');
+  // Keep keyboard focus on the same row when the list is redrawn.
+  const focusedId=box.contains(document.activeElement)?document.activeElement.dataset.id:null;
+  box.innerHTML='';
   if(!spaces.length){ box.textContent='ยังไม่มีพื้นที่ — สร้างใหม่ด้านบน'; return; }
   spaces.forEach(s=>{
-    const d=document.createElement('div');
-    d.className='space-item'+(currentSpace&&currentSpace.id===s.id?' active':'');
+    const d=document.createElement('button');
+    d.type='button';
+    d.dataset.id=String(s.id);
+    const active=!!(currentSpace&&currentSpace.id===s.id);
+    d.className='space-item'+(active?' active':'');
+    if(active) d.setAttribute('aria-current','true');
     d.innerHTML=esc(s.name)+'<span class="badge">'+(s.visibility==='shared'?'บริษัท':'ส่วนตัว')+'</span>';
     d.addEventListener('click',()=>selectSpace(s));
     box.appendChild(d);
+    if(focusedId===d.dataset.id) d.focus();
   });
 }
 async function selectSpace(s){
   currentSpace=s; $('space-title').textContent=s.name+' ('+(s.visibility==='shared'?'บริษัท':'ส่วนตัว')+')';
-  $('msg').disabled=false; $('send').disabled=false;
-  document.querySelectorAll('.space-item').forEach(el=>el.classList.remove('active'));
+  setComposerBusy(sending);
+  document.querySelectorAll('.space-item').forEach(el=>{ el.classList.remove('active'); el.removeAttribute('aria-current'); });
   await loadItems();
   loadSpaces();
 }
@@ -97,21 +112,41 @@ async function loadItems(){
     box.scrollTop=box.scrollHeight;
   } catch(e){ showErr('ต่อ server ไม่ได้'); }
 }
+// The composer stays locked while a POST is in flight; it unlocks only when a space is selected.
+function setComposerBusy(busy){
+  sending=busy;
+  const off=!currentSpace||busy;
+  $('msg').disabled=off; $('send').disabled=off;
+}
+function setCreateBusy(busy){
+  creating=busy;
+  ['create','new-name','new-vis'].forEach(id=>{ $(id).disabled=busy; });
+}
 async function send(){
-  const text=$('msg').value.trim(); if(!text||!currentSpace) return;
-  $('msg').value='';
+  const text=$('msg').value.trim(); if(!text||!currentSpace||sending) return;
+  const space=currentSpace;
+  const hadFocus=document.activeElement===$('msg')||document.activeElement===$('send');
+  setComposerBusy(true);
   try {
     const res = await fetch('/api/spaces/items', {
       method:'POST', headers:Object.assign({'Content-Type':'application/json'},lca.authHeaders()),
-      body:JSON.stringify({space:currentSpace.id,text})
+      body:JSON.stringify({space:space.id,text})
     });
     const data=await res.json().catch(()=>({}));
     if(!res.ok){ showErr(data.error||('error '+res.status)); return; }
+    $('msg').value=''; // cleared only after the server accepted the message
     loadItems();
   } catch(e){ showErr('ต่อ server ไม่ได้'); }
+  finally {
+    setComposerBusy(false);
+    if(hadFocus && !$('msg').disabled) $('msg').focus();
+  }
 }
 async function createSpace(){
   const name=$('new-name').value.trim(); if(!name){ showErr('ใส่ชื่อพื้นที่ก่อน'); return; }
+  if(creating) return;
+  const hadFocus=document.activeElement===$('create');
+  setCreateBusy(true);
   try {
     const res = await fetch('/api/spaces', {
       method:'POST', headers:Object.assign({'Content-Type':'application/json'},lca.authHeaders()),
@@ -121,6 +156,10 @@ async function createSpace(){
     if(!res.ok){ showErr(data.error||('error '+res.status)); return; }
     $('new-name').value=''; loadSpaces();
   } catch(e){ showErr('ต่อ server ไม่ได้'); }
+  finally {
+    setCreateBusy(false);
+    if(hadFocus) $('create').focus();
+  }
 }
 $('create').addEventListener('click',createSpace);
 $('send').addEventListener('click',send);

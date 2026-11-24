@@ -29,8 +29,45 @@
         if (v) localStorage.setItem(KEY, v);
         else localStorage.removeItem(KEY);
       } catch (e) { /* storage ปิดอยู่ — ใช้งานต่อได้แบบไม่จำ key */ }
+      // cookie ใช้เฉพาะตอน browser เปิด "หน้า" ที่ต้องมีสิทธิ์ (/dev, /console) — navigation
+      // ส่ง header เองไม่ได้; server ไม่รับ cookie กับ /api/* (header-only กัน CSRF)
+      try {
+        if (v) document.cookie = KEY + "=" + encodeURIComponent(v) + "; path=/; SameSite=Strict";
+        else document.cookie = KEY + "=; path=/; Max-Age=0; SameSite=Strict";
+      } catch (e) { /* cookie ปิดอยู่ */ }
     },
     clearKey: function () { this.setKey(""); },
+
+    // ล็อกอินด้วย username/password → ได้ session token (อายุจำกัด) แล้วเก็บเหมือน key
+    // คืน {username,role,tier} หรือ null (รหัสผิด/ล็อกถี่เกิน) — error อยู่ใน this.lastError
+    login: async function (username, password) {
+      this.lastError = "";
+      try {
+        var res = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username: username, password: password })
+        });
+        // เซิร์ฟเวอร์ตอบไม่ใช่ JSON (เช่น หน้า HTML 502 จาก proxy) — ไม่ให้ SyntaxError หลุดไปถึงผู้ใช้
+        var data = await res.json().catch(function () { return {}; });
+        if (!res.ok || !data.token) { this.lastError = data.error || ("HTTP " + res.status); return null; }
+        this.setKey(data.token);
+        return data;
+      } catch (e) {
+        // ต่อ server ไม่ได้ (network/เครื่องปิด) — ใช้ข้อความไทยแทน TypeError ดิบ
+        console.error("login ไม่สำเร็จ:", e);
+        this.lastError = "ต่อเซิร์ฟเวอร์ไม่ได้ — ตรวจว่า LCA เปิดอยู่";
+        return null;
+      }
+    },
+
+    // ออกจากระบบ: เพิกถอน session ฝั่ง server (ถ้าเป็น session) แล้วล้าง key ฝั่ง browser
+    logout: async function () {
+      try {
+        await fetch("/api/auth/logout", { method: "POST", headers: this.authHeaders() });
+      } catch (e) { /* server ไม่ตอบก็ล้างฝั่งเราอยู่ดี */ }
+      this.clearKey();
+    },
 
     // แนบทั้งสอง header — วาง master token หรือ API key ช่องเดียวกันได้ server แยกเอง
     authHeaders: function () {

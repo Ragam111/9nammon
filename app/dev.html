@@ -9,6 +9,11 @@
 <body class="page-dev">
   <header>
     <h1>LCA — Dev View</h1>
+    <nav class="dev-nav" aria-label="หน้าอื่น">
+      <a href="/">Chat</a>
+      <a href="/console">Console</a>
+      <a href="/support">Support</a>
+    </nav>
     <span class="muted" id="who">ต้องเป็น ADMIN ขึ้นไป</span>
     <span style="flex:1"></span>
     <input id="token" type="password" placeholder="X-Auth-Token หรือ API key" autocomplete="off" />
@@ -58,7 +63,7 @@
         <button id="cfg-snapshot" type="button">เก็บ snapshot ตอนนี้</button>
       </div>
       <input id="cfg-label" type="text" placeholder="label (เช่น ก่อนปล่อย v1.2)" style="margin-bottom:10px;width:100%">
-      <div id="cfgver-err" style="display:none;color:#e5534b;margin-bottom:8px"></div>
+      <div id="cfgver-err" class="err" style="display:none;margin-bottom:8px"></div>
       <div id="cfgver-table">กำลังโหลด...</div>
     </section>
     <section id="hwprofile-wrap" class="card" style="margin-bottom:12px" hidden>
@@ -81,9 +86,10 @@
         <h2 style="margin:0">คำขออนุมัติจาก Agent (P6)</h2>
         <button id="refresh-approvals" type="button">รีเฟรช</button>
       </div>
-      <p style="color:#9aa0ac;font-size:13px;margin:0 0 8px">
+      <p class="muted" style="font-size:13px;margin:0 0 8px">
         agent เสนอเขียนไฟล์/รันคำสั่งที่ย้อนไม่ได้ — จะไม่ลงมือจนกว่าจะกดอนุมัติที่นี่</p>
       <p id="approvals-err" class="err" style="display:none"></p>
+      <p id="approvals-msg" class="muted" role="status" style="display:none"></p>
       <div id="approvals-list"></div>
     </section>
     <section id="cluster-wrap" class="card" style="margin-bottom:12px" hidden>
@@ -136,6 +142,10 @@
     .page-dev .tile { display:flex; flex-direction:column; gap:2px; min-width:72px; padding:10px 12px; border:1px solid var(--lca-line); border-radius:var(--lca-r); }
     .page-dev .tile .lca-num { font-size:20px; font-weight:600; }
     .page-dev .tile .muted { font-family:var(--lca-mono); font-size:11px; }
+    .page-dev .dev-nav { display:flex; gap:12px; font-size:13px; }
+    .page-dev .dev-nav a { color:var(--lca-accent); }
+    /* ปุ่มอนุมัติ = ปุ่มหลักสีเขียวจาก token (แทน hex ตรง ๆ ที่ไม่มีธีมมืด/สว่าง) */
+    .page-dev .btn-approve { background:var(--lca-ok); border-color:var(--lca-ok); color:var(--lca-accent-fg); }
   </style>
 
   <script>
@@ -379,9 +389,9 @@
     function renderFeatures(list) {
       $('features-list').innerHTML = (list || []).map(f => {
         const on = f.enabled;
-        return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #2a2e37">
-          <div><strong>${escapeHtml(f.name)}</strong> <span style="color:${on?'#4ade80':'#9aa0ac'}">${on?'● เปิด':'○ ปิด'}</span>
-          <div style="color:#9aa0ac;font-size:13px">${escapeHtml(f.desc)}</div></div>
+        return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--lca-line)">
+          <div><strong>${escapeHtml(f.name)}</strong> <span style="color:${on?'var(--lca-ok)':'var(--lca-muted)'}">${on?'● เปิด':'○ ปิด'}</span>
+          <div class="muted" style="font-size:13px">${escapeHtml(f.desc)}</div></div>
           <button type="button" data-feat="${escapeHtml(f.key)}" data-next="${on?'0':'1'}">${on?'ปิด':'เปิด'}</button>
         </div>`;
       }).join('') || '(ไม่มีฟีเจอร์)';
@@ -399,17 +409,24 @@
       $('features-wrap').hidden = false;
     }
     // ---------- Agent approvals (P6) ----------
+    let approvalsById = {};
+    // Plain-text summary of what the agent will do (used in the list and in the confirm dialog).
+    function describeApproval(a) {
+      const d = a.detail || {};
+      return a.kind === 'run_command'
+        ? ('รันคำสั่ง: ' + (d.command || ''))
+        : ('เขียนไฟล์: ' + (d.path || '') + ' (' + ((d.content || '').length) + ' ตัวอักษร)');
+    }
     function renderApprovals(pending) {
-      if (!pending || !pending.length) { $('approvals-list').innerHTML = '<p style="color:#9aa0ac">ไม่มีคำขอรออนุมัติ</p>'; return; }
+      approvalsById = {};
+      (pending || []).forEach(a => { approvalsById[a.id] = a; });
+      if (!pending || !pending.length) { $('approvals-list').innerHTML = '<p class="muted">ไม่มีคำขอรออนุมัติ</p>'; return; }
       $('approvals-list').innerHTML = pending.map(a => {
-        const d = a.detail || {};
-        const what = a.kind === 'run_command'
-          ? ('รันคำสั่ง: ' + escapeHtml(d.command || ''))
-          : ('เขียนไฟล์: ' + escapeHtml(d.path || '') + ' (' + ((d.content || '').length) + ' ตัวอักษร)');
-        return `<div style="border:1px solid #2a2e37;border-radius:10px;padding:10px 12px;margin-bottom:8px">
-          <div style="font-size:13px;color:#9aa0ac">id: ${escapeHtml(a.id)} · workspace: ${escapeHtml(a.workspace || '')}</div>
+        const what = escapeHtml(describeApproval(a));
+        return `<div style="border:1px solid var(--lca-line);border-radius:10px;padding:10px 12px;margin-bottom:8px">
+          <div class="muted" style="font-size:13px">id: ${escapeHtml(a.id)} · workspace: ${escapeHtml(a.workspace || '')}</div>
           <div style="margin:4px 0"><strong>${what}</strong></div>
-          <button type="button" data-apr="${escapeHtml(a.id)}" data-dec="approve" style="background:#16a34a;color:#fff">อนุมัติ (ลงมือจริง)</button>
+          <button type="button" class="btn-approve" data-apr="${escapeHtml(a.id)}" data-dec="approve">อนุมัติ (ลงมือจริง)</button>
           <button type="button" data-apr="${escapeHtml(a.id)}" data-dec="reject">ปฏิเสธ</button>
         </div>`;
       }).join('');
@@ -427,15 +444,34 @@
       $('approvals-wrap').hidden = false;
     }
     async function decideApproval(id, decision) {
+      // Both buttons of this item; skip if a decision for it is already in flight.
+      const btns = [...$('approvals-list').querySelectorAll('button[data-apr]')].filter(b => b.dataset.apr === String(id));
+      if (btns.some(b => b.disabled)) return;
+      if (decision === 'approve') {
+        const a = approvalsById[id];
+        const what = a ? describeApproval(a) : ('id: ' + id);
+        if (!confirm('อนุมัติให้ agent ลงมือจริง?\n\n' + what + '\n\nทำแล้วย้อนกลับไม่ได้')) return;
+      }
+      btns.forEach(b => { b.disabled = true; });
       $('approvals-err').style.display = 'none';
+      $('approvals-msg').style.display = 'none';
       try {
         const res = await fetch('/api/agent/approvals/decide', {
           method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
           body: JSON.stringify({ id, decision }),
         });
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) { $('approvals-err').textContent = data.error || ('error ' + res.status); $('approvals-err').style.display = ''; }
-      } catch (err) { $('approvals-err').textContent = 'ต่อ server ไม่ได้'; $('approvals-err').style.display = ''; }
+        if (!res.ok) {
+          $('approvals-err').textContent = data.error || ('error ' + res.status); $('approvals-err').style.display = '';
+          btns.forEach(b => { b.disabled = false; });
+        } else {
+          $('approvals-msg').textContent = decision === 'approve' ? 'อนุมัติแล้ว' : 'ปฏิเสธแล้ว';
+          $('approvals-msg').style.display = '';
+        }
+      } catch (err) {
+        $('approvals-err').textContent = 'ต่อ server ไม่ได้'; $('approvals-err').style.display = '';
+        btns.forEach(b => { b.disabled = false; });
+      }
       loadApprovals();
     }
     async function toggleFeature(key, enabled) {
@@ -477,12 +513,24 @@
       }
     }
     async function removeNode(name) {
+      if (!confirm('ลบ node ' + name + ' ออกจากรายการ?')) return;
+      $('cluster-err').style.display = 'none';
       try {
-        await fetch('/api/admin/cluster/nodes/remove', {
+        const res = await fetch('/api/admin/cluster/nodes/remove', {
           method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
           body: JSON.stringify({ name }),
         });
-      } catch (err) { /* degrade: reload จะสะท้อนสถานะจริง */ }
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          $('cluster-err').textContent = data.error || ('ลบ node ไม่สำเร็จ (error ' + res.status + ')');
+          $('cluster-err').style.display = '';
+          return;
+        }
+      } catch (err) {
+        $('cluster-err').textContent = 'ต่อ server ไม่ได้ — ลบ node ไม่สำเร็จ';
+        $('cluster-err').style.display = '';
+        return;
+      }
       loadCluster();
     }
 

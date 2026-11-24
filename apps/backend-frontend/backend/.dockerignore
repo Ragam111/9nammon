@@ -1,0 +1,14 @@
+.venv/
+data/
+data-dev/
+__pycache__/
+*.pyc
+.env
+.pytest_cache/
+.ruff_cache/
+tests/
+evals/
+ruff.toml
+requirements.txt
+requirements-dev.txt
+README.md

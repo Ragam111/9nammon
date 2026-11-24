@@ -1,0 +1,63 @@
+{
+  "title": "เซิร์ฟเวอร์อัดเซสชัน 20 พ.ย. 2026",
+  "source": "studio",
+  "space": "public",
+  "skill": "rapid-iteration-ecosystem",
+  "version": "0.1.0",
+  "company": "Token LCA",
+  "token": "T-LCA",
+  "repo": "Ragam111/9nammon",
+  "loop": ["Read", "Re-check", "Fix", "Report"],
+  "note": "ห้าห้องบนเว็บ แขกอยู่แค่หน้า บัญชีแยกข้อมูลส่วนตัว หัด T-LCA เฉพาะเก็บบทแชทหรือมติสภา ม้วนสตูดิโอไม่หัก ไม่แทน server.py และไม่ย้ายตัวติดตั้ง Windows. T-LCA นับมือ ไม่ใช่เหรียญซื้อขาย.",
+  "rooms": ["สตูดิโอ", "แชท", "ไฟล์", "ติดตั้ง", "คอนโซล"],
+  "ledger": {
+    "name": "T-LCA",
+    "initial": 8000,
+    "deductWhen": "เก็บบทแชทหรือมติสภา",
+    "free": "ม้วนสตูดิโอ คำตอบของแขก และการดูห้องสาธารณะ"
+  },
+  "steps": [
+    {
+      "at": "2026-11-20T05:10:00.000Z",
+      "layer": "core",
+      "file": "skills/rapid-iteration-ecosystem/SKILL.md",
+      "action": "รับโจทย์",
+      "detail": "Read สกิลก่อนอัดเซสชันเป็นไฟล์ แล้วเดินแปดสเต็ปจนเป็นแอป"
+    },
+    {
+      "at": "2026-11-20T05:10:00.100Z",
+      "layer": "frontend",
+      "file": "app/",
+      "action": "ห้าห้อง",
+      "detail": "สตูดิโอ แชท ไฟล์ ติดตั้ง คอนโซล แสดงชั้นและหน้าที่ไฟล์ทำ"
+    },
+    {
+      "at": "2026-11-20T05:10:00.200Z",
+      "layer": "backend",
+      "file": "server.py",
+      "action": "ชีพจรหนึ่งข้อความ",
+      "detail": "server.py → auth_backend → space_store → admission → context → model_backend → history → conn_usage สมองบนเว็บเป็นแผนที่ไฟล์ ไม่ใช่ Ollama"
+    },
+    {
+      "at": "2026-11-20T05:10:00.300Z",
+      "layer": "backend",
+      "file": "app/space_store.py",
+      "action": "แยกข้อมูล",
+      "detail": "แขกอยู่แค่หน้า บัญชีจำโจทย์และสเต็ป ของแขกไม่ถูกยกเข้าบัญชีที่หลัง"
+    },
+    {
+      "at": "2026-11-20T05:10:00.400Z",
+      "layer": "backend",
+      "file": "app/usage_store.py",
+      "action": "หัด T-LCA",
+      "detail": "เริ่ม 8000 หัด 1 เมื่อเก็บบทหรือมติ ไม่หัดม้วนสตูดิโอ ไม่ใช่เหรียญซื้อขาย ไม่ใช่รหัสไททัน"
+    },
+    {
+      "at": "2026-11-20T05:10:00.500Z",
+      "layer": "install",
+      "file": "install/pack.json",
+      "action": "แพ็กเปิดตัว",
+      "detail": "ใบแพ็กบนเว็บดาวน์โหลดได้ LCA-Desktop.exe ยังอยู่ที่เวิร์กโฟลว์ของรีโป ไม่ได้ถูก commit"
+    }
+  ]
+}

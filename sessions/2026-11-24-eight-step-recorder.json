@@ -1,0 +1,37 @@
+{
+  "skill": "rapid-iteration-ecosystem",
+  "version": "0.1.0",
+  "company": "Token LCA",
+  "token": "T-LCA",
+  "title": "ห้องอัดเว็บแปดขั้น 24 พ.ย. 2026",
+  "source": "studio",
+  "space": "public-hall",
+  "repo": "Ragam111/9nammon",
+  "brief": "อยากได้แอปแชท ก่อนมันจะเป็นแอปหรือเว็บ ต้องอัดเซสชันเป็นไฟล์ เดินทีละขั้นว่าแต่ละไฟล์ทำหน้าที่ ต่อหน้าเว็บ เซิร์ฟเวอร์ และแกน แขกใช้ฟรี คลังส่วนตัวแยกบัญชี",
+  "reached": 8,
+  "hands": 8,
+  "charged": false,
+  "rooms": ["สตูดิโอ", "แชท", "ไฟล์", "ติดตั้ง", "คอนโซล", "คลัง"],
+  "loop": ["Read", "Re-check", "Fix", "Report"],
+  "ledger": {
+    "name": "T-LCA",
+    "initial": 8000,
+    "deduction": "หัก 1 เมื่อเก็บบทแชทหรือมติสภา ไม่หักม้วนสตูดิโอ ไม่ซื้อ ไม่ขาย ไม่โอน"
+  },
+  "steps": [
+    { "n": 1, "title": "รับโจทย์จากคน", "files": ["README.md", "docs/ARCHITECTURE.md", "docs/9ARM_PRINCIPLES.md"], "done": true },
+    { "n": 2, "title": "เปิดม้วนเทป", "files": ["sessions/tape.json"], "done": true },
+    { "n": 3, "title": "เขียนหน้าที่คนเห็น", "files": ["app/index.html", "app/", "lca_app.py"], "done": true },
+    { "n": 4, "title": "ต่อสายตอบทีละคำ", "files": ["server.py", "server.py · /api/chat/stream", "local_coder.py", "app/model_backend.py", "app/index.html · ตัวอ่าน SSE", "sysmanager/", "app/resource_budget.py", "app/admission.py"], "done": true },
+    { "n": 5, "title": "แช่แข็งสกิล", "files": ["SKILL.md", "skills/rapid-iteration-ecosystem/SKILL.md", "app/skills_store.py", "app/agent/core.py", "app/agent/tools.py", "app/bots.py", "app/console.html"], "done": true },
+    { "n": 6, "title": "แยกพื้นที่", "files": ["app/login.html", "app/auth_backend.py", "app/org_store.py", "app/space_store.py"], "done": true },
+    { "n": 7, "title": "หักเหรียญ T-LCA", "files": ["app/org_store.py · รหัสไททัน", "app/conn_usage.py", "SKILL.md · context token", "docs/USAGE_BILLING.md"], "done": true },
+    { "n": 8, "title": "แพ็กเปิดตัว", "files": ["install/pack.json", "installer_gui.py", "install.ps1", "start-lca.bat", "Dockerfile", ".github/workflows/build-exe.yml"], "done": true }
+  ],
+  "notConnected": [
+    "กุญแจของ Ollama",
+    "รหัสไททันของแอดมิน",
+    "โทเคนเข้าเครื่องใน Dockerfile"
+  ],
+  "note": "ห้องสาธารณะใช้ฟรี ของแขกอยู่แค่หน้า ไม่ถูกยกเข้าบัญชี บัญชีเริ่ม 8000 T-LCA เก็บบทแชทหรือมติสภาหัก 1 ม้วนสตูดิโอไม่หัก T-LCA ไม่ใช่เหรียญซื้อขาย สมองบนเว็บเป็นแผนที่ไฟล์ ไม่แทน server.py และไม่ย้ายตัวติดตั้ง Windows"
+}

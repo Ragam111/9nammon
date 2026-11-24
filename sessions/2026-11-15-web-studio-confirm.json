@@ -1,0 +1,65 @@
+{
+  "title": "ม้วนสตูดิโเว็บ 2026-11-15",
+  "source": "studio",
+  "space": "studio",
+  "skill": "rapid-iteration-ecosystem",
+  "loop": ["Read", "Re-check", "Fix", "Report"],
+  "steps": [
+    {
+      "at": "2026-11-15T07:20:00.000Z",
+      "layer": "core",
+      "file": "docs/APP_WALKTHROUGH.md",
+      "action": "รับโจทย์",
+      "detail": "Read คอร์สก่อนห่อแชตจะถูกห่อเป็นแอป"
+    },
+    {
+      "at": "2026-11-15T07:20:00.040Z",
+      "layer": "core",
+      "file": "SKILL.md",
+      "action": "เปิดเทป",
+      "detail": "rapid-iteration-ecosystem: Read → Re-check → Fix → Report"
+    },
+    {
+      "at": "2026-11-15T07:20:00.080Z",
+      "layer": "frontend",
+      "file": "app/chat.js",
+      "action": "หน้าบ้าน",
+      "detail": "ห้าเว็บส่งข้อความ แขกไม่ถูกเขียนลงเซิร์ฟเวอร์"
+    },
+    {
+      "at": "2026-11-15T07:20:00.120Z",
+      "layer": "backend",
+      "file": "server.py",
+      "action": "หลังบ้าน",
+      "detail": "จัดเส้นทาง /api แล้วให้ auth_backend รู้ว่าใคร"
+    },
+    {
+      "at": "2026-11-15T07:20:00.160Z",
+      "layer": "core",
+      "file": "app/admission.py",
+      "action": "แช่แข็งสกิล",
+      "detail": "Re-check ยามเครื่องและสมองบนเว็บยังเป็นแผนที่ไฟล์"
+    },
+    {
+      "at": "2026-11-15T07:20:00.200Z",
+      "layer": "backend",
+      "file": "app/space_store.py",
+      "action": "แยกถัง",
+      "detail": "private กับ company คนละที่ ของแขกไม่ถูกยกเข้าบัญชีที่หลัง"
+    },
+    {
+      "at": "2026-11-15T07:20:00.240Z",
+      "layer": "backend",
+      "file": "app/usage_store.py",
+      "action": "หัก T-LCA",
+      "detail": "เริ่ม 8000 หัก 1 เมื่อเก็บบทแชทหรือมติสภา ไม่หักเทปสตูดิโอ"
+    },
+    {
+      "at": "2026-11-15T07:20:00.280Z",
+      "layer": "core",
+      "file": "lca_app.py",
+      "action": "แพ็กเปิดตัว",
+      "detail": "Report: สตูดิโเว็บไม่แทน server.py และไม่ย้ายตัวติดตั้ง Windows"
+    }
+  ]
+}

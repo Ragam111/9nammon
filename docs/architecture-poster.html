@@ -1,0 +1,756 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Software Engineer - Architecture Poster</title>
+<style>
+  :root {
+    --bg: #f4f1e8;
+    --paper: #fffdf6;
+    --ink: #1d2a24;
+    --muted: #55625b;
+    --line: #1d2a24;
+    --green: #3fa66b;
+    --green-deep: #2b7a4c;
+    --card: #ffffff;
+    --rack: #1b1f24;
+    --rack-2: #262c33;
+    --rack-ink: #e8eef2;
+    --cable-blue: #3b82f6;
+    --cable-yellow: #facc15;
+    --cable-red: #ef4444;
+    --cable-green: #22c55e;
+    --led: #22c55e;
+    --book-1: #e35d6a;
+    --book-2: #f2a541;
+    --book-3: #4f8ff7;
+    --book-4: #8e6cf0;
+    --focus: #f97316;
+    --code-bg: #14201a;
+    --code-ink: #d7f5e2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1512;
+      --paper: #17201b;
+      --ink: #e8f3ec;
+      --muted: #a9b8af;
+      --line: #7fd1a0;
+      --green: #4cc27f;
+      --green-deep: #2f8f5a;
+      --card: #1e2a23;
+      --rack: #0b0e11;
+      --rack-2: #161b20;
+      --rack-ink: #e8eef2;
+      --focus: #fb923c;
+      --code-bg: #0a120e;
+      --code-ink: #b8f2cf;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f1512;
+    --paper: #17201b;
+    --ink: #e8f3ec;
+    --muted: #a9b8af;
+    --line: #7fd1a0;
+    --green: #4cc27f;
+    --green-deep: #2f8f5a;
+    --card: #1e2a23;
+    --rack: #0b0e11;
+    --rack-2: #161b20;
+    --rack-ink: #e8eef2;
+    --focus: #fb923c;
+    --code-bg: #0a120e;
+    --code-ink: #b8f2cf;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Segoe UI", "Tahoma", "Leelawadee UI", system-ui, sans-serif;
+    line-height: 1.55;
+    overflow-x: hidden;
+  }
+  :focus-visible {
+    outline: 3px solid var(--focus);
+    outline-offset: 3px;
+  }
+  .poster {
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 24px 16px 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+  h1, h2, h3 { line-height: 1.25; margin: 0; overflow-wrap: anywhere; }
+  code, pre { font-family: Consolas, "Courier New", monospace; }
+  p { margin: 0; }
+
+  /* 1. Title pill */
+  .hero { text-align: center; }
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    max-width: 100%;
+    padding: 14px 28px;
+    border-radius: 999px;
+    background: var(--green);
+    color: #fff;
+    border: 3px solid var(--line);
+    box-shadow: 6px 6px 0 var(--line);
+  }
+  .pill h1 { font-size: clamp(1.6rem, 6vw, 2.6rem); font-weight: 800; letter-spacing: .01em; }
+  .gear { width: 40px; height: 40px; flex: 0 0 40px; }
+  .subtitle { margin-top: 14px; font-size: 1.05rem; color: var(--muted); font-weight: 600; letter-spacing: .04em; }
+
+  .panel {
+    background: var(--paper);
+    border: 3px solid var(--line);
+    border-radius: 24px;
+    padding: 20px 16px;
+    box-shadow: 6px 6px 0 var(--line);
+  }
+  .panel > h2 {
+    font-size: 1.3rem;
+    margin-bottom: 14px;
+    display: inline-block;
+    padding: 4px 14px;
+    border: 2px solid var(--line);
+    border-radius: 10px;
+    background: var(--card);
+  }
+
+  /* 2. Desk scene */
+  .desk {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    align-items: stretch;
+  }
+  .console {
+    flex: 1 1 auto;
+    min-width: 0;
+    background: var(--card);
+    border: 2px solid var(--line);
+    border-radius: 16px;
+    overflow: hidden;
+  }
+  .console-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 12px;
+    background: var(--green-deep);
+    color: #fff;
+    font-weight: 700;
+    font-size: .95rem;
+  }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: #fff; opacity: .85; }
+  .console-body { display: grid; grid-template-columns: 96px 1fr; min-height: 200px; }
+  .sidebar {
+    background: var(--rack-2);
+    color: var(--rack-ink);
+    padding: 10px 8px;
+    font-size: .8rem;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .sidebar span {
+    display: block;
+    padding: 6px 6px;
+    border-radius: 6px;
+    background: rgba(255,255,255,.06);
+    overflow-wrap: anywhere;
+  }
+  .sidebar span.active { background: var(--green); color: #fff; }
+  .tiles {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    padding: 10px;
+  }
+  .tile {
+    border: 2px solid var(--line);
+    border-radius: 12px;
+    padding: 10px;
+    background: var(--paper);
+    min-width: 0;
+  }
+  .tile b { display: block; font-size: .85rem; overflow-wrap: anywhere; }
+  .tile i {
+    display: block;
+    margin-top: 8px;
+    height: 26px;
+    border-radius: 6px;
+    background: linear-gradient(90deg, var(--green) 0 62%, transparent 62%) , repeating-linear-gradient(90deg, var(--muted) 0 2px, transparent 2px 9px);
+    opacity: .75;
+  }
+  .books {
+    display: flex;
+    justify-content: center;
+    align-items: flex-end;
+    gap: 6px;
+    padding: 6px 4px 0;
+  }
+  .book {
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    height: 170px;
+    width: 40px;
+    border: 2px solid var(--line);
+    border-radius: 6px;
+    color: #fff;
+    font-size: .72rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 2px;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  .book:nth-child(1) { background: var(--book-1); height: 176px; }
+  .book:nth-child(2) { background: var(--book-2); height: 158px; color: #1d2a24; }
+  .book:nth-child(3) { background: var(--book-3); height: 182px; }
+  .book:nth-child(4) { background: var(--book-4); height: 150px; }
+  .desk-scene { display: flex; flex-direction: column; gap: 18px; }
+  @media (min-width: 640px) {
+    .desk { flex-direction: row; align-items: flex-end; }
+    .books { flex: 0 0 auto; }
+  }
+
+  /* 3. Server rack */
+  .rack-panel {
+    background: var(--rack);
+    color: var(--rack-ink);
+    border-radius: 18px;
+    padding: 18px 12px;
+    border: 3px solid var(--line);
+    position: relative;
+    overflow: hidden;
+  }
+  .rack-panel h2 { background: var(--rack-2); color: var(--rack-ink); border-color: #444; }
+  .cables {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    opacity: .9;
+  }
+  .cables path { fill: none; stroke-width: 5; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+  .cable-blue { stroke: var(--cable-blue); }
+  .cable-yellow { stroke: var(--cable-yellow); }
+  .cable-red { stroke: var(--cable-red); }
+  .cable-green { stroke: var(--cable-green); }
+  .units { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 10px; }
+  .unit {
+    background: linear-gradient(180deg, var(--rack-2), #101418);
+    border: 2px solid #3b434c;
+    border-radius: 10px;
+    padding: 0;
+    overflow: hidden;
+  }
+  .unit h3 { font-size: 1rem; }
+  .unit-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    background: transparent;
+    color: var(--rack-ink);
+    border: 0;
+    padding: 12px 14px;
+    font: inherit;
+    font-weight: 700;
+    text-align: left;
+    cursor: pointer;
+  }
+  .unit-btn:hover { background: rgba(255,255,255,.05); }
+  .unit-btn:focus-visible { outline: 3px solid var(--focus); outline-offset: -4px; }
+  .led-row { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+  .led { width: 9px; height: 9px; border-radius: 50%; background: var(--led); box-shadow: 0 0 8px var(--led); }
+  .chev { font-size: .85rem; transition: transform .2s ease; color: #9fb0bb; }
+  .unit-btn[aria-expanded="true"] .chev { transform: rotate(180deg); }
+  .unit-panel { padding: 0 14px 14px; border-top: 1px dashed #3b434c; }
+  .unit-panel[hidden] { display: none; }
+  .unit-panel ul { margin: 10px 0 0; padding-left: 18px; font-size: .9rem; }
+  .unit-panel li { margin-bottom: 6px; overflow-wrap: anywhere; }
+  .unit-panel code { color: #9ee6b8; }
+  .vents {
+    margin-top: 14px;
+    height: 16px;
+    border-radius: 6px;
+    background: repeating-linear-gradient(90deg, #2e353d 0 6px, transparent 6px 12px);
+    position: relative; z-index: 1;
+  }
+
+  /* 4. Features grid */
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+  .feature {
+    background: var(--card);
+    border: 2px solid var(--line);
+    border-radius: 16px;
+    padding: 14px;
+    min-width: 0;
+  }
+  .feature h3 { font-size: 1.05rem; margin-bottom: 6px; }
+  .feature p { font-size: .92rem; color: var(--muted); }
+  .feature .tag {
+    display: inline-block;
+    margin-bottom: 8px;
+    font-size: .72rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--green);
+    color: #fff;
+  }
+  .quick { grid-column: 1 / -1; }
+  .codebox {
+    margin-top: 10px;
+    display: flex;
+    align-items: stretch;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  pre.code {
+    margin: 0;
+    flex: 1 1 180px;
+    min-width: 0;
+    background: var(--code-bg);
+    color: var(--code-ink);
+    border-radius: 10px;
+    padding: 12px 14px;
+    overflow-x: auto;
+    font-size: 1rem;
+  }
+  .copy-btn {
+    font: inherit;
+    font-weight: 700;
+    padding: 10px 14px;
+    border-radius: 10px;
+    border: 2px solid var(--line);
+    background: var(--green);
+    color: #fff;
+    cursor: pointer;
+    min-height: 44px;
+  }
+  .copy-btn:hover { background: var(--green-deep); }
+  .caption { margin-top: 10px; font-size: .9rem; color: var(--muted); }
+  .status { min-height: 1.2em; font-size: .85rem; color: var(--muted); margin-top: 6px; }
+
+  @media (min-width: 640px) {
+    .grid { grid-template-columns: 1fr 1fr; }
+  }
+  @media (min-width: 900px) {
+    .grid { grid-template-columns: 1fr 1fr 1fr; }
+  }
+
+  /* 5. Footer */
+  .footer {
+    background: var(--green);
+    color: #fff;
+    border: 3px solid var(--line);
+    border-radius: 24px;
+    padding: 18px 16px;
+    box-shadow: 6px 6px 0 var(--line);
+    text-align: center;
+  }
+  .footer nav { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 10px; }
+  .footer a {
+    color: #fff;
+    font-weight: 800;
+    background: rgba(0,0,0,.18);
+    border: 2px solid #fff;
+    border-radius: 999px;
+    padding: 10px 18px;
+    text-decoration: none;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+  .footer a:hover { background: rgba(0,0,0,.32); }
+  .footer a:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+  .footer small { display: block; margin-top: 12px; opacity: .9; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .chev { transition: none; }
+  }
+</style>
+</head>
+<body>
+<main class="poster">
+
+  <!-- 1. Title -->
+  <header class="hero">
+    <div class="pill">
+      <svg class="gear" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+        <g fill="#fffdf6" stroke="#1d2a24" stroke-width="2">
+          <rect x="28" y="2" width="8" height="14" rx="2" transform="rotate(0 32 32)"/>
+          <rect x="28" y="2" width="8" height="14" rx="2" transform="rotate(45 32 32)"/>
+          <rect x="28" y="2" width="8" height="14" rx="2" transform="rotate(90 32 32)"/>
+          <rect x="28" y="2" width="8" height="14" rx="2" transform="rotate(135 32 32)"/>
+          <rect x="28" y="2" width="8" height="14" rx="2" transform="rotate(180 32 32)"/>
+          <rect x="28" y="2" width="8" height="14" rx="2" transform="rotate(225 32 32)"/>
+          <rect x="28" y="2" width="8" height="14" rx="2" transform="rotate(270 32 32)"/>
+          <rect x="28" y="2" width="8" height="14" rx="2" transform="rotate(315 32 32)"/>
+          <circle cx="32" cy="32" r="18"/>
+        </g>
+        <circle cx="32" cy="32" r="7" fill="#3fa66b" stroke="#1d2a24" stroke-width="2"/>
+      </svg>
+      <h1>Software Engineer</h1>
+    </div>
+    <p class="subtitle">Plan. Design. Structure. Scale.</p>
+  </header>
+
+  <!-- 2. Desk scene -->
+  <section class="panel" aria-labelledby="desk-title">
+    <h2 id="desk-title">Desk</h2>
+    <div class="desk">
+      <div class="console" role="img" aria-label="TokenLCA Console dashboard mock">
+        <div class="console-bar"><span class="dot" aria-hidden="true"></span>TokenLCA Console</div>
+        <div class="console-body">
+          <aside class="sidebar" aria-hidden="true">
+            <span class="active">Home</span>
+            <span>Chat</span>
+            <span>Keys</span>
+            <span>Usage</span>
+          </aside>
+          <div class="tiles">
+            <div class="tile"><b>Observability</b><i></i></div>
+            <div class="tile"><b>Usage &amp; limits</b><i></i></div>
+            <div class="tile"><b>API keys</b><i></i></div>
+            <div class="tile"><b>Playground</b><i></i></div>
+          </div>
+        </div>
+      </div>
+      <div class="books" aria-label="Book stack">
+        <div class="book">Architecture</div>
+        <div class="book">Documentation</div>
+        <div class="book">Testing</div>
+        <div class="book">Deployment</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3. Server rack -->
+  <section class="rack-panel" aria-labelledby="rack-title">
+    <h2 id="rack-title" class="panel-h2" style="font-size:1.3rem;margin-bottom:14px;display:inline-block;padding:4px 14px;border:2px solid #444;border-radius:10px;">Server Rack</h2>
+    <svg class="cables" viewBox="0 0 400 600" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+      <path class="cable-blue" d="M-10 80 C 80 40, 140 160, 220 120 S 360 60, 410 110"/>
+      <path class="cable-yellow" d="M-10 260 C 60 300, 120 220, 200 280 S 330 340, 410 260"/>
+      <path class="cable-red" d="M-10 420 C 90 460, 150 380, 230 440 S 340 500, 410 430"/>
+      <path class="cable-green" d="M-10 560 C 70 520, 160 600, 250 540 S 350 520, 410 570"/>
+    </svg>
+
+    <div class="units">
+      <div class="unit">
+        <h3>
+          <button class="unit-btn" type="button" aria-expanded="false" aria-controls="unit-frontend" id="btn-frontend">
+            <span>Frontend</span>
+            <span class="led-row"><span class="led" aria-hidden="true"></span><span class="chev" aria-hidden="true">&#9662;</span></span>
+          </button>
+        </h3>
+        <div class="unit-panel" id="unit-frontend" role="region" aria-labelledby="btn-frontend" hidden>
+          <ul>
+            <li>Portal และ Chat Hub</li>
+            <li>Console pages: Observability, Usage &amp; limits, API keys, Playground</li>
+            <li>Responsive layout</li>
+            <li>Dark theme ด้วย <code>CSS variables</code></li>
+            <li>ปุ่มและ panel ใช้ <code>aria-expanded</code> และ <code>hidden</code> ให้ตัวอ่านหน้าจออ่านสถานะได้</li>
+            <li>ทดสอบบนความกว้างมือถือก่อนเดสก์ท็อป ไม่มีการเลื่อนแนวนอน</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="unit">
+        <h3>
+          <button class="unit-btn" type="button" aria-expanded="false" aria-controls="unit-backend" id="btn-backend">
+            <span>Backend</span>
+            <span class="led-row"><span class="led" aria-hidden="true"></span><span class="chev" aria-hidden="true">&#9662;</span></span>
+          </button>
+        </h3>
+        <div class="unit-panel" id="unit-backend" role="region" aria-labelledby="btn-backend" hidden>
+          <ul>
+            <li><code>server.py</code> บน Python <code>http.server</code> (stdlib only)</li>
+            <li>Session login แบ่งบทบาท USER, ADMIN และ CEO</li>
+            <li>Rate limit</li>
+            <li>RAM-pause guard ตอบ <code>503</code> เมื่อหน่วยความจำเต็ม</li>
+            <li>Ollama model backend รันบน CPU</li>
+            <li>ตรวจ Origin ของคำขอที่เปลี่ยนสถานะ (POST, PUT, DELETE) ก่อนรับงาน</li>
+            <li>แยก route สาธารณะกับ route ที่ต้อง login ชัดเจน และตอบ <code>401</code> เมื่อไม่มี session</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="unit">
+        <h3>
+          <button class="unit-btn" type="button" aria-expanded="false" aria-controls="unit-database" id="btn-database">
+            <span>Database</span>
+            <span class="led-row"><span class="led" aria-hidden="true"></span><span class="chev" aria-hidden="true">&#9662;</span></span>
+          </button>
+        </h3>
+        <div class="unit-panel" id="unit-database" role="region" aria-labelledby="btn-database" hidden>
+          <ul>
+            <li>Per-user usage store และ conversation store</li>
+            <li>ผู้ใช้อื่นเข้าแชทของคนอื่นจะได้ <code>403</code> หรือ <code>404</code> และไม่มีเนื้อหารั่วไหล</li>
+            <li>Config files เขียนแบบ atomic</li>
+            <li>สำรองไฟล์ข้อมูลก่อนย้ายโครงสร้าง (migration) ทุกครั้ง</li>
+            <li>ข้อมูลส่วนตัวของผู้ใช้เก็บแยกตาม user id และไม่ส่งออกนอกเครื่องโดยไม่ได้รับอนุญาต</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="unit">
+        <h3>
+          <button class="unit-btn" type="button" aria-expanded="false" aria-controls="unit-apis" id="btn-apis">
+            <span>APIs</span>
+            <span class="led-row"><span class="led" aria-hidden="true"></span><span class="chev" aria-hidden="true">&#9662;</span></span>
+          </button>
+        </h3>
+        <div class="unit-panel" id="unit-apis" role="region" aria-labelledby="btn-apis" hidden>
+          <ul>
+            <li>OpenAI-compatible: <code>/v1/chat/completions</code> และ <code>/v1/models</code></li>
+            <li>Bearer auth</li>
+            <li>Error envelope <code>{error:{message,type,param,code}}</code></li>
+            <li>Streaming ผ่าน SSE จบด้วย <code>[DONE]</code></li>
+            <li>Rate-limit headers</li>
+            <li>รุ่นของ API ระบุใน path หรือ header และแจ้งล่วงหน้าก่อนเลิกใช้</li>
+            <li>ตัวอย่างคำขอและการตอบกลับอยู่ในเอกสาร และตรวจด้วย test ได้</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="unit">
+        <h3>
+          <button class="unit-btn" type="button" aria-expanded="false" aria-controls="unit-services" id="btn-services">
+            <span>Services</span>
+            <span class="led-row"><span class="led" aria-hidden="true"></span><span class="chev" aria-hidden="true">&#9662;</span></span>
+          </button>
+        </h3>
+        <div class="unit-panel" id="unit-services" role="region" aria-labelledby="btn-services" hidden>
+          <ul>
+            <li>LCA server พอร์ต <code>8420</code> (default)</li>
+            <li>Ollama พอร์ต <code>11434</code></li>
+            <li>Optional forwarding ระหว่างสองโหนดในระบบ LAN</li>
+            <li>แต่ละ service มีจุดเริ่มและหยุดที่บันทึกไว้ และไม่ทิ้ง process ค้างหลังปิดเครื่อง</li>
+            <li>เปิดเฉพาะพอร์ตที่ต้องใช้ และจำกัดวง LAN ด้วย firewall</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="unit">
+        <h3>
+          <button class="unit-btn" type="button" aria-expanded="false" aria-controls="unit-monitoring" id="btn-monitoring">
+            <span>Monitoring</span>
+            <span class="led-row"><span class="led" aria-hidden="true"></span><span class="chev" aria-hidden="true">&#9662;</span></span>
+          </button>
+        </h3>
+        <div class="unit-panel" id="unit-monitoring" role="region" aria-labelledby="btn-monitoring" hidden>
+          <ul>
+            <li>Admin monitor ผูกกับ <code>127.0.0.1:8425</code></li>
+            <li>สถานะ usage: <code>ok</code>, <code>partial</code>, <code>error</code></li>
+            <li>หน้า Observability</li>
+            <li>Quota ต่อ key</li>
+            <li>บันทึก log โดยไม่มี secret หรือ token อยู่ในข้อความ</li>
+            <li>แจ้งเตือนเมื่อ error rate หรือ RAM เกินค่าที่ตั้งไว้</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <div class="vents" aria-hidden="true"></div>
+  </section>
+
+  <!-- 4. Features grid -->
+  <section class="panel" aria-labelledby="features-title">
+    <h2 id="features-title">Features &amp; Functions</h2>
+    <div class="grid">
+      <article class="feature">
+        <span class="tag">Portal</span>
+        <h3>Chat</h3>
+        <p>พูดคุยกับโมเดลผ่าน Chat Hub พร้อมประวัติการสนทนาของผู้ใช้แต่ละคน</p>
+      </article>
+      <article class="feature">
+        <span class="tag">Keys</span>
+        <h3>API keys</h3>
+        <p>สร้างและจัดการ Bearer key สำหรับเรียก <code>/v1/*</code></p>
+      </article>
+      <article class="feature">
+        <span class="tag">Limits</span>
+        <h3>Usage &amp; limits</h3>
+        <p>ดูปริมาณการใช้งานและ quota ต่อ key พร้อม rate-limit headers</p>
+      </article>
+      <article class="feature">
+        <span class="tag">Monitor</span>
+        <h3>Observability</h3>
+        <p>ติดตามสถานะ <code>ok / partial / error</code> ของคำขอทั้งหมด</p>
+      </article>
+      <article class="feature">
+        <span class="tag">Lab</span>
+        <h3>Playground</h3>
+        <p>ทดลองส่งคำขอ chat completion และดูผลลัพธ์แบบ streaming</p>
+      </article>
+      <article class="feature quick">
+        <span class="tag">Start</span>
+        <h3>Quick start</h3>
+        <div class="codebox">
+          <pre class="code" aria-label="Quick start command"><code id="cmd">claude</code></pre>
+          <button class="copy-btn" type="button" id="copy-btn">คัดลอก</button>
+        </div>
+        <p class="status" id="copy-status" role="status" aria-live="polite"></p>
+        <p class="caption">Claude Code: installed, run it from the project folder</p>
+      </article>
+    </div>
+  </section>
+
+  <!-- 4b. Lifecycle and knowledge pillars -->
+  <section class="panel" aria-labelledby="lifecycle-title">
+    <h2 id="lifecycle-title">Lifecycle: Plan, Design, Structure, Scale</h2>
+    <div class="grid">
+      <article class="feature">
+        <span class="tag">1</span>
+        <h3>Plan</h3>
+        <p>กำหนดขอบเขต เป้าหมาย และเงื่อนไขว่าเสร็จเมื่อไหร่ ทุกขั้นมี acceptance ที่ตรวจได้</p>
+      </article>
+      <article class="feature">
+        <span class="tag">2</span>
+        <h3>Design</h3>
+        <p>กำหนดสัญญาระหว่างส่วน (API, ข้อมูล, สิทธิ์) ก่อนเขียนโค้ด และบันทึกเหตุผลของการตัดสินใจ</p>
+      </article>
+      <article class="feature">
+        <span class="tag">3</span>
+        <h3>Structure</h3>
+        <p>แยกโมดูลตามหน้าที่ หนึ่งไฟล์มีผู้เขียนเดียวในแต่ละรอบ และใช้ขนาดฟังก์ชันที่อ่านได้</p>
+      </article>
+      <article class="feature">
+        <span class="tag">4</span>
+        <h3>Scale</h3>
+        <p>เพิ่มกำลังทีละขั้นตามตัวเลขที่วัดได้ เช่น RAM, latency และโควตา ไม่เพิ่มล่วงหน้าโดยไม่มีข้อมูล</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="panel" aria-labelledby="pillars-title">
+    <h2 id="pillars-title">Knowledge pillars</h2>
+    <div class="grid">
+      <article class="feature">
+        <span class="tag">Arch</span>
+        <h3>Architecture</h3>
+        <p>ดูภาพรวมที่ <code>docs/ARCHITECTURE.md</code> และบันทึกการเปลี่ยนแปลงสำคัญเป็น decision record</p>
+      </article>
+      <article class="feature">
+        <span class="tag">Docs</span>
+        <h3>Documentation</h3>
+        <p>ทุกฟีเจอร์มีเอกสารสั้นใน <code>docs/</code> ที่บอกว่าทำอะไร ไม่ทำอะไร และวิธีรัน</p>
+      </article>
+      <article class="feature">
+        <span class="tag">Test</span>
+        <h3>Testing</h3>
+        <p>แผนทดสอบอยู่ที่ <code>docs/TEST_PLAN.md</code> และ <code>docs/QA_CHECKLIST.md</code> ทุกการแก้ไขต้องมี test ที่ fail ก่อนและ pass หลังแก้</p>
+      </article>
+      <article class="feature">
+        <span class="tag">Ship</span>
+        <h3>Deployment</h3>
+        <p>ขั้นตอนอยู่ที่ <code>docs/SETUP.md</code> เริ่มจากวง LAN เท่านั้น ยังไม่เปิดสาธารณะ จนกว่าจะมีการอนุมัติ</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="panel" aria-labelledby="rea-title">
+    <h2 id="rea-title">ตัวอย่างจาก REA: วิเคราะห์ Claude desktop app (ไม่ใช่ LCA)</h2>
+    <p class="caption">การวิเคราะห์แบบ static เท่านั้น ไม่ได้รันแอป ไม่ได้คัดลอกโค้ด และไม่ได้ดึง key หรือ token เวอร์ชัน 5.11492.5.0 วันที่ 19 พ.ย. 2026</p>
+    <div class="grid">
+      <article class="feature">
+        <span class="tag">Bridge</span>
+        <h3>contextBridge</h3>
+        <p>พบ 24 API และ 144 IPC call ทั้งหมดอยู่ฝั่ง renderer จัดกลุ่มได้ประมาณ 15 interface</p>
+      </article>
+      <article class="feature">
+        <span class="tag">Main</span>
+        <h3>Main process</h3>
+        <p>พบ 10 จุดลงทะเบียน <code>ipcMain</code> ที่ตรวจแล้ว ใช้การเช็ก top frame, host allowlist และ session ของผู้ส่ง</p>
+      </article>
+      <article class="feature">
+        <span class="tag">Telemetry</span>
+        <h3>Sentry listeners</h3>
+        <p>6 listener ของ SDK ไม่เช็ก senderFrame แต่ไม่เข้าถึงไฟล์ หน้าต่าง shell หรือ MCP ผลแย่ที่สุดคือ telemetry ถูกปนเปื้อน</p>
+      </article>
+      <article class="feature">
+        <span class="tag">Gap</span>
+        <h3>ยังไม่ครบ</h3>
+        <p>115 แหล่งไม่ได้ตรวจเพราะ timeout และ chunk ขนาดใหญ่ใช้ heap หมด จึงยังสรุปว่าไม่มีช่องโหว่ไม่ได้</p>
+      </article>
+      <article class="feature">
+        <span class="tag">Next</span>
+        <h3>Cowork bridge</h3>
+        <p>ควรตรวจ <code>CoworkArtifactBridge</code> ต่อ เพราะเปิดทาง askClaude, callMcpTool และ runScheduledTask ให้หน้า artifact</p>
+      </article>
+    </div>
+  </section>
+
+  <!-- 5. Footer -->
+  <footer class="footer">
+    <h2 style="font-size:1.2rem;">Links</h2>
+    <nav aria-label="Footer links">
+      <a href="https://www.tokenme.limited/contact" target="_blank" rel="noopener noreferrer">Contact</a>
+      <a href="https://claude.ai/new" target="_blank" rel="noopener noreferrer">Open Claude</a>
+    </nav>
+    <small>Architecture poster: original CSS and SVG illustration</small>
+  </footer>
+
+</main>
+
+<script>
+  (function () {
+    "use strict";
+
+    // Expandable server-rack units: real buttons with aria-expanded.
+    var buttons = document.querySelectorAll(".unit-btn");
+    Array.prototype.forEach.call(buttons, function (btn) {
+      btn.addEventListener("click", function () {
+        try {
+          var expanded = btn.getAttribute("aria-expanded") === "true";
+          var panel = document.getElementById(btn.getAttribute("aria-controls"));
+          btn.setAttribute("aria-expanded", expanded ? "false" : "true");
+          if (panel) { panel.hidden = expanded; }
+        } catch (err) {
+          // Fail quietly; the panel stays in its current state.
+        }
+      });
+    });
+
+    // Copy the quick start command.
+    var copyBtn = document.getElementById("copy-btn");
+    var status = document.getElementById("copy-status");
+    var cmdEl = document.getElementById("cmd");
+    if (copyBtn && cmdEl) {
+      copyBtn.addEventListener("click", function () {
+        var text = (cmdEl.textContent || "").trim();
+        try {
+          navigator.clipboard.writeText(text).then(function () {
+            status.textContent = "คัดลอกคำสั่งแล้ว";
+          }, function () {
+            status.textContent = "คัดลอกไม่สำเร็จ กรุณาคัดลอกด้วยตนเอง";
+          });
+        } catch (err) {
+          status.textContent = "เบราว์เซอร์นี้ไม่รองรับการคัดลอกอัตโนมัติ";
+        }
+      });
+    }
+  })();
+</script>
+</body>
+</html>

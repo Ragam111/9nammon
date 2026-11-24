@@ -1,0 +1,48 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "lca-demo",
+      "runtimeExecutable": "D:\\9nammon-main\\9nammon-main\\.venv\\Scripts\\python.exe",
+      "runtimeArgs": [
+        "D:\\9nammon-main\\9nammon-main\\server.py",
+        "D:\\UntiyEngine\\claude\\8b4e962084f2aaf1\\07672aa9-0276-4e60-903a-26aa56383905\\scratchpad\\ui_root",
+        "--host", "127.0.0.1",
+        "--port", "8431"
+      ],
+      "port": 8431
+    },
+    {
+      "name": "bf-fake-model",
+      "runtimeExecutable": "apps/backend-frontend/backend/.venv/Scripts/python.exe",
+      "runtimeArgs": ["apps/backend-frontend/backend/scripts/fake_model.py", "9100"],
+      "port": 9100
+    },
+    {
+      "name": "bf-api",
+      "runtimeExecutable": "apps/backend-frontend/backend/.venv/Scripts/python.exe",
+      "runtimeArgs": ["apps/backend-frontend/backend/scripts/dev_server.py"],
+      "port": 8010
+    },
+    {
+      "name": "backend-frontend-showcase",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "apps/backend-frontend/frontend", "run", "dev"],
+      "port": 5173
+    },
+    {
+      "name": "bf-admin-api",
+      "runtimeExecutable": "apps/backend-frontend/backend/.venv/Scripts/python.exe",
+      "runtimeArgs": ["apps/backend-frontend/backend/scripts/e2e_server.py"],
+      "env": { "E2E_PASSWORD": "local-demo-only-pass-123", "E2E_API_PORT": "8011" },
+      "port": 8011
+    },
+    {
+      "name": "bf-admin-ui",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "apps/backend-frontend/admin-ui-v2", "run", "dev"],
+      "env": { "API_TARGET": "http://127.0.0.1:8011" },
+      "port": 5174
+    }
+  ]
+}

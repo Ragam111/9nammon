@@ -172,7 +172,8 @@ class TestDbPath(unittest.TestCase):
 class TestWriteLock(unittest.TestCase):
     def test_returns_lock(self):
         lock = write_lock(_tmp_root("testroot_a"))
-        # threading.Lock is a factory function on 3.12. The instance type is stable on 3.12 and 3.13.
+        # threading.Lock is a factory function, not a type, so compare with a real lock's type.
+        # The instance type is stable on 3.12 and 3.13.
         self.assertIsInstance(lock, type(threading.Lock()))
 
 

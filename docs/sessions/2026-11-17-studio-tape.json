@@ -1,0 +1,75 @@
+{
+  "skill": "rapid-iteration-ecosystem",
+  "version": "0.1.0",
+  "company": "Token LCA",
+  "token": "T-LCA",
+  "title": "สตูดิโอเว็บตามสัญญา WEB_STUDIO_LAUNCH",
+  "source": "studio",
+  "space": "studio",
+  "brief": "อัดเซสชันเป็นไฟล์ แล้วเดินทีละชั้นจากโจทย์คนจนถึงแพ็กติดตั้ง",
+  "reached": 8,
+  "hands": 0,
+  "steps": [
+    {
+      "at": "2026-11-17T06:30:00.000Z",
+      "layer": "frontend",
+      "file": "app/chat.js",
+      "action": "ส่งข้อความ",
+      "detail": "แขกส่งได้ทันที คำตอบอยู่แค่หน้า ไม่ถูกเขียนลงเซิร์ฟเวอร์"
+    },
+    {
+      "at": "2026-11-17T06:30:00.040Z",
+      "layer": "backend",
+      "file": "server.py",
+      "action": "จัดเส้นทาง",
+      "detail": "หน้าเว็บคุยกับ /api เท่านั้น ไม่แทน server.py"
+    },
+    {
+      "at": "2026-11-17T06:30:00.080Z",
+      "layer": "backend",
+      "file": "app/auth_backend.py",
+      "action": "รู้ว่าใคร",
+      "detail": "ตัวตนมาจากเซสชันที่ตรวจแล้ว ไม่เชื่อรหัสที่เบราว์เซอร์ส่งมา"
+    },
+    {
+      "at": "2026-11-17T06:30:00.120Z",
+      "layer": "backend",
+      "file": "app/space_store.py",
+      "action": "เลือกถัง",
+      "detail": "ส่วนตัวกับส่วนบริษัทเป็นคนละถัง"
+    },
+    {
+      "at": "2026-11-17T06:30:00.160Z",
+      "layer": "backend",
+      "file": "app/admission.py",
+      "action": "ยามเครื่อง",
+      "detail": "จำกัดงานพร้อมกันก่อนเรียกสมอง"
+    },
+    {
+      "at": "2026-11-17T06:30:00.200Z",
+      "layer": "core",
+      "file": "app/context_manager.py",
+      "action": "ตัดความจำ",
+      "detail": "จัดประวัติให้พอดีหน้าต่างบริบท"
+    },
+    {
+      "at": "2026-11-17T06:30:00.240Z",
+      "layer": "core",
+      "file": "app/model_backend.py",
+      "action": "สมอง",
+      "detail": "บนเว็บคือแผนที่ไฟล์ ไม่ใช่ Ollama สมองจริงต่อที่ connections.py บนเดสก์ท็อป"
+    },
+    {
+      "at": "2026-11-17T06:30:00.280Z",
+      "layer": "backend",
+      "file": "app/history_store.py",
+      "action": "บันทึกหรือไม่",
+      "detail": "คู่กับ usage_store.py หัก 1 T-LCA เฉพาะคำตอบที่เก็บ เทปสตูดิโอไม่หัก"
+    }
+  ],
+  "notConnected": [
+    "กุญแจของ Ollama",
+    "รหัสไททันของแอดมิน",
+    "โทเคนเข้าเครื่องใน Dockerfile"
+  ]
+}

@@ -17,16 +17,13 @@ import importlib.util
 import sqlite3
 import threading
 from pathlib import Path
-from typing import Any
 
 from app.chat_search import seg
 
 MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
 DB_RELATIVE = Path("data") / "lca.db"
 
-# threading.Lock is a factory on Python 3.12, not a type. Annotate with Any
-# and build locks with threading.Lock() so isinstance checks use type(lock).
-_LOCKS: dict[str, Any] = {}
+_LOCKS: dict[str, threading.Lock] = {}
 _LOCKS_GUARD = threading.Lock()
 
 
@@ -38,7 +35,7 @@ def db_path(project_root) -> Path:
     return Path(project_root) / DB_RELATIVE
 
 
-def write_lock(project_root) -> Any:
+def write_lock(project_root) -> threading.Lock:
     key = str(Path(project_root).resolve())
     with _LOCKS_GUARD:
         lock = _LOCKS.get(key)
