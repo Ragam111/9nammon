@@ -1,0 +1,37 @@
+{
+  "skill": "rapid-iteration-ecosystem",
+  "version": "0.1.0",
+  "company": "Token LCA",
+  "token": "T-LCA",
+  "title": "ห้องอัดเซสชันห้าห้อง 24 พ.ย. 2026",
+  "source": "studio",
+  "space": "public-hall",
+  "repo": "Ragam111/9nammon",
+  "brief": "อยากได้แอปแชตแบบ ChatGPT ก่อนมันจะเป็นเว็บ",
+  "charged": false,
+  "reached": 8,
+  "hands": 8,
+  "rooms": ["โถง", "เทป", "แชต", "สภา", "คลัง"],
+  "ledger": {
+    "name": "T-LCA",
+    "initial": 8000,
+    "deduction": "เก็บม้วนส่วนตัวหักเท่ามือ เก็บแชตหรือสภาหัก 1",
+    "free": "เดินโถง ดาวน์โหลดม้วน และคำตอบบนหน้าไม่หัก"
+  },
+  "notConnected": [
+    "กุญแจของ Ollama",
+    "รหัสไททันของแอดมิน",
+    "โทเคนเข้าเครื่อง"
+  ],
+  "note": "ห้าห้องบนเว็บ: โถงฟรีเดินหน้าที่ไฟล์ เทปอัด sessions/tape.json แชตซ้อมสาย สภาสามมือ คลังส่วนตัวต้องล็อกอิน บัญชีใหม่ได้ 8,000 T-LCA หักเฉพาะตอนเก็บ",
+  "steps": [
+    { "n": 1, "title": "รับโจทย์จากคน", "files": [], "done": true, "layer": "คน" },
+    { "n": 2, "title": "เปิดม้วนเทป", "files": ["sessions/tape.json", "sessions/public-hall-tape.json"], "done": true, "layer": "คอร์" },
+    { "n": 3, "title": "เขียนหน้าที่คนเห็น", "files": ["app/index.html", "app/login.html", "app/chat.js", "app/app.css", "lca_app.py"], "done": true, "layer": "หน้าจอ" },
+    { "n": 4, "title": "ต่อสายตอบทีละคำ", "files": ["server.py", "app/auth_backend.py", "org_store.py", "app/admission.py", "app/model_backend.py", "local_coder.py", "app/usage_store.py", "sysmanager/"], "done": true, "layer": "เซิร์ฟเวอร์" },
+    { "n": 5, "title": "แช่แข็งสกิล", "files": ["skills/rapid-iteration-ecosystem/SKILL.md", "skills/rapid-iteration-ecosystem/TAPE.md"], "done": true, "layer": "คอร์" },
+    { "n": 6, "title": "แยกพื้นที่", "files": ["app/login.html", "app/space_store.py", "org_store.py"], "done": true, "layer": "บัญชี" },
+    { "n": 7, "title": "หักเหรียญ", "files": ["app/usage_store.py", "app/history_store.py"], "done": true, "layer": "เหรียญ" },
+    { "n": 8, "title": "แพ็กเปิดตัว", "files": ["install/pack.json", "installer_gui.py", "install.ps1", "start-lca.bat", "Dockerfile"], "done": true, "layer": "แพ็ก" }
+  ]
+}
