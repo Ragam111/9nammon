@@ -393,15 +393,28 @@ def _today_str() -> str:
     return date.today().isoformat()
 
 
-def _insert_key(conn, key_id: str, raw_key: str, owner: str, tier: str) -> None:
+KEY_NAME_MAX = 64             # ชื่อ key ที่โชว์ใน Console (ตัดเกินทิ้ง)
+
+
+def clean_key_name(name) -> str:
+    """Normalise a display name: str, single-line, trimmed, capped at KEY_NAME_MAX."""
+    if not isinstance(name, str):
+        return ""
+    return " ".join(name.split())[:KEY_NAME_MAX]
+
+
+def _insert_key(conn, key_id: str, raw_key: str, owner: str, tier: str,
+                name: str = "", created_by: str | None = None) -> None:
     conn.execute(
         "INSERT INTO org_api_keys(key_id, key_hash, prefix, owner, tier, daily_limit,"
-        " used_today, usage_date, active, created_at) VALUES (?,?,?,?,?,?,0,?,1,?)",
+        " used_today, usage_date, active, created_at, name, created_by)"
+        " VALUES (?,?,?,?,?,?,0,?,1,?,?,?)",
         (key_id, _hash_key(raw_key), raw_key[:_KEY_PREFIX_SHOW], owner, tier,
-         TIER_DAILY_LIMIT[tier], _today_str(), _now_iso()))
+         TIER_DAILY_LIMIT[tier], _today_str(), _now_iso(), name or None, created_by))
 
 
-def create_api_key(project_root: Path, owner: str, tier: str, actor_role: str) -> dict:
+def create_api_key(project_root: Path, owner: str, tier: str, actor_role: str,
+                   name: str = "", created_by: str | None = None) -> dict:
     """ออก API key ใหม่ให้ owner — ต้องเป็น ADMIN ขึ้นไป
 
     คืน dict ที่มี field 'key' = ค่าเต็ม (โชว์ครั้งเดียวเท่านั้น!) + metadata
@@ -415,16 +428,19 @@ def create_api_key(project_root: Path, owner: str, tier: str, actor_role: str) -
     tier_letter = tier[0]  # f / p
     raw_key = f"{_KEY_PREFIX}_{tier_letter}_{secrets.token_urlsafe(32)}"
     key_id = secrets.token_hex(8)
+    name = clean_key_name(name)
 
     def op(conn):
         if not conn.execute("SELECT 1 FROM org_users WHERE username=?", (owner,)).fetchone():
             raise ValueError(f"ไม่พบ user เจ้าของ key: {owner}")
-        _insert_key(conn, key_id, raw_key, owner, tier)
+        _insert_key(conn, key_id, raw_key, owner, tier, name, created_by)
 
     _write(project_root, op)
     return {
         "key_id": key_id,
         "key": raw_key,                 # <<< โชว์ครั้งเดียว
+        "name": name,
+        "created_by": created_by,
         "owner": owner,
         "tier": tier,
         "daily_limit": TIER_DAILY_LIMIT[tier],
@@ -574,14 +590,19 @@ def list_api_keys(project_root: Path) -> list:
     """คืนรายการ key (prefix เท่านั้น ไม่มี key เต็ม/hash ตาม Rule 23) — เรียงตามวันที่สร้าง"""
     rows = _read(project_root,
                  "SELECT key_id, prefix, owner, tier, daily_limit, used_today, usage_date,"
-                 " active, created_at FROM org_api_keys ORDER BY COALESCE(created_at, ''), rowid")
+                 " active, created_at, name, created_by"
+                 " FROM org_api_keys ORDER BY COALESCE(created_at, ''), rowid")
+    today = _today_str()
     return [{
         "key_id": r["key_id"],
         "prefix": r["prefix"],
+        "name": r["name"] or "",
         "owner": r["owner"],
+        "created_by": r["created_by"],
         "tier": r["tier"],
         "daily_limit": r["daily_limit"],
-        "used_today": r["used_today"],
+        # counter resets lazily on next use; show 0 when the stored day is stale
+        "used_today": r["used_today"] if r["usage_date"] == today else 0,
         "usage_date": r["usage_date"],
         "active": bool(r["active"]),
         "created_at": r["created_at"],

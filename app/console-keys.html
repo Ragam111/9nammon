@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>API keys · LCA Console</title>
+<link rel="stylesheet" href="/app.css">
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--lca-bg);color:var(--lca-fg);font-family:var(--lca-sans);
+    font-size:14px;line-height:1.5}
+  a{color:var(--lca-accent);text-decoration:none}
+  .app{display:flex;min-height:100vh}
+  .side{width:220px;flex-shrink:0;border-right:1px solid var(--lca-line);background:var(--lca-surface);
+    padding:18px 12px;position:sticky;top:0;height:100vh;overflow:auto}
+  .brand{font-weight:700;padding:4px 10px 16px}
+  .brand small{color:var(--lca-muted);font-weight:500;margin-left:4px}
+  .nav{display:flex;flex-direction:column;gap:2px}
+  .nav a{display:block;padding:8px 10px;border-radius:8px;color:var(--lca-fg)}
+  .nav a:hover{background:var(--lca-surface-2)}
+  .nav a[aria-current="page"]{background:var(--lca-accent-weak);color:var(--lca-accent);font-weight:600}
+  main{flex:1;min-width:0;padding:24px var(--lca-gutter) 48px;max-width:1100px}
+  .head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:4px}
+  h1{font-size:22px;margin:0}
+  .count{background:var(--lca-surface-2);color:var(--lca-muted);border-radius:999px;padding:1px 10px;
+    font-size:13px;font-variant-numeric:tabular-nums}
+  .head .spacer{flex:1}
+  .sub{color:var(--lca-muted);margin:0 0 16px}
+  .btn{font:inherit;border:1px solid var(--lca-line);background:var(--lca-surface);color:var(--lca-fg);
+    border-radius:8px;padding:7px 14px;cursor:pointer;min-height:36px}
+  .btn:hover{background:var(--lca-surface-2)}
+  .btn.primary{background:var(--lca-accent);border-color:var(--lca-accent);color:var(--lca-accent-fg)}
+  .btn.danger{color:var(--lca-bad)}
+  .btn.danger.solid{background:var(--lca-bad);border-color:var(--lca-bad);color:#fff}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .filters{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+  .filters label{display:flex;align-items:center;gap:6px;color:var(--lca-muted)}
+  select,input[type=text]{font:inherit;color:var(--lca-fg);background:var(--lca-surface);
+    border:1px solid var(--lca-line);border-radius:8px;padding:6px 10px;min-height:36px}
+  .card{background:var(--lca-surface);border:1px solid var(--lca-line);border-radius:var(--lca-r-lg);overflow:hidden}
+  table{width:100%;border-collapse:collapse}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--lca-line);vertical-align:top}
+  th{font-size:12px;color:var(--lca-muted);font-weight:600;background:var(--lca-surface-2)}
+  tr:last-child td{border-bottom:0}
+  .mono{font-family:var(--lca-mono);font-size:13px}
+  .muted{color:var(--lca-muted)}
+  .small{font-size:12px}
+  .num{font-variant-numeric:tabular-nums;white-space:nowrap}
+  .pill{display:inline-block;border-radius:999px;padding:1px 8px;font-size:12px;border:1px solid var(--lca-line)}
+  .pill.ok{color:var(--lca-ok);border-color:var(--lca-ok)}
+  .pill.off{color:var(--lca-muted)}
+  .pill.paid{color:var(--lca-accent);background:var(--lca-accent-weak);border-color:transparent}
+  .bar{height:4px;background:var(--lca-surface-2);border-radius:2px;margin-top:4px;width:80px;overflow:hidden}
+  .bar > i{display:block;height:100%;background:var(--lca-accent)}
+  .bar.full > i{background:var(--lca-bad)}
+  .empty{padding:40px 16px;text-align:center;color:var(--lca-muted)}
+  .empty strong{display:block;color:var(--lca-fg);font-size:16px;margin-bottom:4px}
+  .msg{min-height:1.4em;margin:8px 0;color:var(--lca-bad)}
+  dialog{border:1px solid var(--lca-line);border-radius:var(--lca-r-lg);background:var(--lca-surface);
+    color:var(--lca-fg);padding:20px;width:min(440px,calc(100vw - 32px))}
+  dialog::backdrop{background:rgba(0,0,0,.45)}
+  dialog h2{margin:0 0 12px;font-size:18px}
+  .field{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
+  .field input,.field select{width:100%}
+  .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px;flex-wrap:wrap}
+  .keybox{display:flex;gap:8px;align-items:stretch}
+  .keybox input{flex:1;min-width:0;font-family:var(--lca-mono);font-size:13px}
+  .warn{background:color-mix(in srgb,var(--lca-warn) 14%,transparent);border:1px solid var(--lca-warn);
+    border-radius:8px;padding:8px 10px;margin:10px 0 0}
+  .err{color:var(--lca-bad);min-height:1.2em;margin-top:6px}
+  [hidden]{display:none !important}
+
+  @media (max-width:720px){
+    .app{flex-direction:column}
+    .side{width:auto;height:auto;position:static;border-right:0;border-bottom:1px solid var(--lca-line);padding:10px var(--lca-gutter)}
+    .brand{padding:0 0 8px}
+    .nav{flex-direction:row;overflow-x:auto;gap:4px}
+    .nav a{white-space:nowrap;padding:6px 10px}
+    main{padding:16px var(--lca-gutter) 40px}
+    thead{display:none}
+    table,tbody,tr,td{display:block;width:100%}
+    tr{border-bottom:1px solid var(--lca-line);padding:8px 0}
+    tr:last-child{border-bottom:0}
+    td{border:0;padding:4px 12px;display:flex;gap:10px}
+    td::before{content:attr(data-label);color:var(--lca-muted);font-size:12px;min-width:92px;flex-shrink:0}
+    .filters label{flex:1 1 140px}
+    .filters select{flex:1}
+  }
+</style>
+</head>
+<body class="page-console-keys">
+<div class="app">
+  <aside class="side">
+    <div class="brand">LCA<small>Console</small></div>
+    <nav class="nav" aria-label="เมนูหลัก">
+      <a href="/">Dashboard</a>
+      <a href="/models">Models</a>
+      <a href="/console/keys" aria-current="page">API keys</a>
+      <a href="/chat">Chat</a>
+    </nav>
+  </aside>
+  <main>
+    <div class="head">
+      <h1>API keys</h1>
+      <span class="count" id="key-count" aria-label="จำนวนคีย์">0</span>
+      <span class="spacer"></span>
+      <button class="btn primary" id="btn-create" type="button">สร้างคีย์</button>
+    </div>
+    <p class="sub">คีย์สำหรับเรียก LCA ผ่าน API (<span class="mono">/v1</span>) — ระบบเก็บแค่ส่วนหัวของคีย์ ค่าเต็มดูได้ครั้งเดียวตอนสร้าง</p>
+    <div class="filters">
+      <label>สถานะ
+        <select id="f-status">
+          <option value="all">ทั้งหมด</option>
+          <option value="active">ใช้งาน</option>
+          <option value="revoked">ยกเลิกแล้ว</option>
+        </select>
+      </label>
+      <label>ระดับ
+        <select id="f-tier">
+          <option value="all">ทั้งหมด</option>
+          <option value="free">free</option>
+          <option value="paid">paid</option>
+        </select>
+      </label>
+    </div>
+    <div class="msg" id="msg" role="status" aria-live="polite"></div>
+    <div class="card">
+      <table>
+        <thead><tr>
+          <th>ชื่อ</th><th>คีย์</th><th>ระดับ</th><th>เจ้าของ / สร้างโดย</th>
+          <th>วันที่สร้าง</th><th>ใช้วันนี้ / จำกัด</th><th>สถานะ</th><th></th>
+        </tr></thead>
+        <tbody id="keys-body"></tbody>
+      </table>
+      <div class="empty" id="empty" hidden>
+        <strong id="empty-title">ยังไม่มี API key</strong>
+        <span id="empty-text">กด "สร้างคีย์" เพื่อออกคีย์แรก</span>
+      </div>
+    </div>
+  </main>
+</div>
+
+<dialog id="dlg-create" aria-labelledby="dlg-create-title">
+  <form id="form-create" method="dialog">
+    <h2 id="dlg-create-title">สร้าง API key</h2>
+    <div id="create-fields">
+      <div class="field"><label for="c-name">ชื่อคีย์</label>
+        <input type="text" id="c-name" maxlength="64" placeholder="เช่น ci-bot" autocomplete="off"></div>
+      <div class="field"><label for="c-owner">เจ้าของ (username)</label>
+        <input type="text" id="c-owner" list="owners" required autocomplete="off">
+        <datalist id="owners"></datalist></div>
+      <div class="field"><label for="c-tier">ระดับ</label>
+        <select id="c-tier"><option value="free">free</option><option value="paid">paid</option></select></div>
+      <div class="err" id="c-err" role="alert"></div>
+      <div class="actions">
+        <button class="btn" type="button" id="c-cancel">ยกเลิก</button>
+        <button class="btn primary" type="submit" id="c-submit">สร้างคีย์</button>
+      </div>
+    </div>
+    <div id="create-done" hidden>
+      <p>คัดลอกคีย์นี้เก็บไว้:</p>
+      <div class="keybox">
+        <input type="text" id="c-key" readonly aria-label="API key เต็ม">
+        <button class="btn" type="button" id="c-copy">คัดลอก</button>
+      </div>
+      <p class="warn">คีย์นี้จะแสดงเพียงครั้งเดียว ปิดหน้าต่างนี้แล้วจะดูค่าเต็มอีกไม่ได้</p>
+      <div class="actions"><button class="btn primary" type="button" id="c-done">เสร็จสิ้น</button></div>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlg-revoke" aria-labelledby="dlg-revoke-title">
+  <h2 id="dlg-revoke-title">ยกเลิกคีย์นี้?</h2>
+  <p>คีย์ <strong id="r-name"></strong> <span class="mono" id="r-prefix"></span> จะใช้เรียก API ไม่ได้อีก ทำย้อนกลับไม่ได้</p>
+  <div class="err" id="r-err" role="alert"></div>
+  <div class="actions">
+    <button class="btn" type="button" id="r-cancel">ไม่ยกเลิก</button>
+    <button class="btn danger solid" type="button" id="r-confirm">ยกเลิกคีย์</button>
+  </div>
+</dialog>
+
+<script src="/app.js"></script>
+<script src="/console-keys.js"></script>
+</body>
+</html>
