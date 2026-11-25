@@ -4,6 +4,8 @@
 
 ใช้กับ repo LCA (`Ragam111/9nammon`) สถานะงานจริงอยู่ใน `docs/LCA_SPEC.md`
 
+> Agent ทั้ง 4 ตัวคือ Claude (Opus) ที่รันเป็น subagent ของ Claude Code ไม่ได้ใช้ Ollama Ollama เป็นแค่โมเดลในเครื่องที่แอป LCA ใช้ตอบลูกค้า ทีม Agent ใช้โควตาของ Claude จึงต้องประหยัด token
+
 ```mermaid
 flowchart TD
     U[ผู้ใช้ / งานที่ต้องส่งมอบ] --> L[Agent 1 หัวหน้าทีม\nLead Software Engineer]
