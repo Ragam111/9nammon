@@ -85,7 +85,7 @@ def _conn():
         conn.close()
 
 
-def create(username: str, role: str, tier: str = "paid", ttl: float = SESSION_TTL_SECONDS,
+def create(username: str, role: str, tier: str = "free", ttl: float = SESSION_TTL_SECONDS,
            now: float | None = None) -> dict:
     """ออก session ใหม่ — คืน dict ที่มี token เต็ม (โชว์ครั้งเดียวตอน login)"""
     now = time.time() if now is None else now

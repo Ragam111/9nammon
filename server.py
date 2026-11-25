@@ -142,10 +142,12 @@ def _valid_ip(value) -> Optional[str]:
 
 def resolve_client_ip(peer: str, headers, trust: Optional[bool] = None) -> str:
     """Real client IP. Proxy headers are trusted only when the TCP peer is loopback
-    (e.g. cloudflared on this machine) AND LCA_TRUST_PROXY=1; then CF-Connecting-IP,
-    else the first X-Forwarded-For entry. Otherwise (or on garbage) the TCP peer."""
+    (e.g. cloudflared on this machine) AND (LCA_TRUST_PROXY=1 OR our Cloudflare tunnel
+    is running); then CF-Connecting-IP, else the first X-Forwarded-For entry.
+    Otherwise (or on garbage) the TCP peer."""
     if trust is None:
-        trust = os.environ.get("LCA_TRUST_PROXY", "").strip() == "1"
+        trust = (os.environ.get("LCA_TRUST_PROXY", "").strip() == "1"
+                 or cloud_tunnel.is_active())
     peer_ip = _valid_ip(peer)
     if not trust or peer_ip is None or not ipaddress.ip_address(peer_ip).is_loopback:
         return peer or "unknown"
@@ -863,7 +865,10 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._send_json(401, {"error": "username หรือ password ไม่ถูกต้อง"})
                 return
             session_store.reset_failures(client)
-            sess = session_store.create(username, rec["role"])
+            # session carries the person's real tier (paid key -> paid, else free) so
+            # /api/chat, /v1 and chat_hub charge quota like API keys do
+            sess = session_store.create(username, rec["role"],
+                                        org_store.user_tier(project_root, username))
             self._send_json(200, {
                 "token": sess["token"],
                 "username": username,
@@ -1182,20 +1187,12 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             self._send_json(200, cloud_tunnel.status())
 
         def _handle_tunnel_start(self):
-            if self._require("ADMIN") is None:
+            # CEO only: a public tunnel exposes this server to the internet
+            if self._require("CEO") is None:
                 return
-            data = self._read_json_body()
-            port = data.get("port")
-            if port is None:
-                self._send_json(400, {"error": "ต้องระบุ port"})
-                return
-            try:
-                port = int(port)
-                if not (1 <= port <= 65535):
-                    raise ValueError
-            except (TypeError, ValueError):
-                self._send_json(400, {"error": "port ต้องเป็นตัวเลข 1–65535"})
-                return
+            # any "port" in the body is ignored — tunnel only to this server's own listen port
+            # (never to another local service such as ssh/db/ollama)
+            port = self._listen_port()
             result = cloud_tunnel.start(port)
             if result.get("url"):
                 self._send_json(200, {"url": result["url"], "port": port})
@@ -1414,16 +1411,15 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             except openai_gateway.GatewayError as e:
                 self._send_json(e.status, e.body())
                 return
-            key_id = ident.get("key_id")
-            if key_id:
-                ok = org_store.consume_quota(project_root, key_id)[0]
-                if not ok:
-                    self._v1_error(429, "ใช้โควตาวันนี้ครบแล้ว", "insufficient_quota")
-                    return
+            if not self._quota_reserve(ident):
+                self._v1_error(429, "ใช้โควตาวันนี้ครบแล้ว", "insufficient_quota")
+                return
+            delivered = {"any": False}
 
             def refund():
-                if key_id:
-                    org_store.refund_quota(project_root, key_id)
+                # the charge stays once any chunk reached the client
+                if not delivered["any"]:
+                    self._chat_release(ident)
 
             try:
                 with gen_gate.slot():
@@ -1441,9 +1437,11 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                         if first is not None:
                             self.wfile.write(first)
                             self.wfile.flush()
+                            delivered["any"] = True
                         for chunk in chunks:
                             self.wfile.write(chunk)
                             self.wfile.flush()
+                            delivered["any"] = True
                     except openai_gateway.GatewayError as e:
                         refund()
                         err = json.dumps(e.body(), ensure_ascii=False)
@@ -1546,7 +1544,12 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 return
             from urllib.parse import parse_qs
             qs = parse_qs(parsed.query)
-            feeds = qs.get("feed") or None
+            try:
+                # only DEFAULT_FEEDS keys (?feed=bbci) — never a client URL (SSRF/file read)
+                feeds = news_store.resolve_feeds(qs.get("feed") or None)
+            except news_store.UnknownFeed as e:
+                self._send_json(400, {"error": str(e)})
+                return
             self._send_json(200, news_store.get_news(feeds))
 
         # ---------- Spaces: พื้นที่ส่วนตัว/บริษัท (USER ขึ้นไป) ----------
@@ -2299,28 +2302,47 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             # จองโควตาแบบ atomic "ก่อนเรียกโมเดล" — consume_quota ทำ check+หักใน lock เดียว
             # จึงกันคำขอพร้อมกันเกินโควตาได้ ถ้าเกินแล้วตอบ 429 ทันที ไม่เรียก LLM
             # (consume_quota คืน ok=False ด้วยถ้าบันทึกลง db ไม่สำเร็จ — fail-closed)
-            if ident.get("key_id"):
-                ok, _remaining = org_store.consume_quota(project_root, ident["key_id"])
-                if not ok:
-                    self._send_json(429, {"error": "เกินโควตาการใช้งานรายวันของ API key นี้แล้ว "
-                                                   "(อัปเกรดเป็น tier paid เพื่อใช้ได้ไม่จำกัด)"})
-                    return None
-                ident["_quota_reserved"] = True  # รอ _chat_finalize ยืนยัน หรือ _chat_release คืน
+            if not self._quota_reserve(ident):
+                self._send_json(429, {"error": "เกินโควตาการใช้งานรายวันแล้ว "
+                                               "(อัปเกรดเป็น tier paid เพื่อใช้ได้ไม่จำกัด)"})
+                return None
             return model, messages, num_ctx, hub
+
+        def _quota_reserve(self, ident) -> bool:
+            """Reserve 1 quota before calling a model. API key -> key bucket; login session
+            -> user bucket by session tier. Machine owner (local/master_token) and guest
+            (own per-IP limit) are not charged here. Sets ident['_quota_reserved'] to the
+            bucket kind so _chat_release can refund; False = over quota / db error."""
+            if ident.get("key_id"):
+                ok = org_store.consume_quota(project_root, ident["key_id"])[0]
+                if ok:
+                    ident["_quota_reserved"] = "key"
+                return ok
+            if ident.get("source") == "session" and ident.get("username"):
+                tier = ident.get("tier") if ident.get("tier") in org_store.VALID_TIERS else "free"
+                ok = org_store.consume_user_quota(project_root, ident["username"], tier)
+                if ok and tier != "paid":
+                    ident["_quota_reserved"] = "user"
+                return ok
+            return True
 
         def _chat_release(self, ident):
             """คืนโควตาที่จองไว้ถ้าแชทไม่สำเร็จ (ไม่มี _chat_finalize มายืนยัน) — เรียกใน finally"""
-            if not ident.pop("_quota_reserved", False):
+            kind = ident.pop("_quota_reserved", None)
+            if not kind:
                 return
             try:
-                result = org_store.refund_quota(project_root, ident["key_id"])
+                if kind == "user":
+                    result = org_store.refund_user_quota(project_root, ident["username"])
+                else:
+                    result = org_store.refund_quota(project_root, ident["key_id"])
             except Exception as e:  # noqa: BLE001 — การคืนโควตาต้องไม่ทำ response พัง
                 print(f"[quota][warn] คืนโควตาไม่สำเร็จ: {e}")
                 return
             if result is org_store.RefundResult.SAVE_FAILED:
                 # คืนแล้วแต่บันทึกลง db ไม่ได้ — ผู้ใช้ยังโดนหัก 1 ครั้ง (ไม่ log ค่า key)
                 print("[quota][warn] คืนโควตาแล้วแต่บันทึกลง db ไม่สำเร็จ "
-                      f"(key_id={ident.get('key_id')})")
+                      f"(key_id={ident.get('key_id')}, kind={kind})")
 
         def _chat_finalize(self, ident, model, messages, reply):
             """บันทึก usage + เก็บ dataset — หลังได้คำตอบเต็มแล้ว (blocking/stream ใช้ร่วม)"""

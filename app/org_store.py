@@ -588,6 +588,44 @@ def list_api_keys(project_root: Path) -> list:
     } for r in rows]
 
 
+# ---------- per-user quota (login sessions) ----------
+
+def user_tier(project_root: Path, username: str) -> str:
+    """Tier of a person (for login sessions): 'paid' if they own an active paid key,
+    else 'free'. db error -> 'free' (fail-closed: limited, never unlimited)."""
+    try:
+        row = _read(project_root,
+                    "SELECT 1 FROM org_api_keys WHERE owner=? AND active=1 AND tier='paid'"
+                    " AND daily_limit=0 LIMIT 1", (username,), one=True)
+    except sqlite3.Error as e:
+        print(f"[org][error] อ่าน tier ของผู้ใช้ไม่ได้: {e}")
+        return "free"
+    return "paid" if row else "free"
+
+
+def consume_user_quota(project_root: Path, username: str, tier: str) -> bool:
+    """Reserve 1 request from the user's daily bucket. paid -> True (unlimited);
+    unknown tier is treated as free; db error -> False (fail-closed)."""
+    if tier == "paid":
+        return True
+    return check_and_consume_quota(username, "free", project_root)
+
+
+def refund_user_quota(project_root: Path, username: str) -> RefundResult:
+    """Give back 1 request reserved by consume_user_quota (never below 0, today only)."""
+    def op(conn):
+        cur = conn.execute(
+            "UPDATE org_user_usage SET count = count - 1"
+            " WHERE username=? AND usage_date=? AND count > 0", (username, _today_str()))
+        return RefundResult.REFUNDED if cur.rowcount == 1 else RefundResult.NOTHING
+
+    try:
+        return _write(project_root, op)
+    except sqlite3.Error as e:
+        print(f"[org][error] คืนโควตาผู้ใช้ไม่สำเร็จ: {e}")
+        return RefundResult.SAVE_FAILED
+
+
 # ---------- test compatibility helpers ----------
 
 def get_user_by_api_key(raw_key: str, project_root: Path | str | None = None) -> dict | None:
