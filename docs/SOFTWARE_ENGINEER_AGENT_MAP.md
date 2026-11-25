@@ -200,3 +200,17 @@ Interface มี input/output และ error behavior ระบุครบ ง
 | กะ 4 | หัวหน้า | รวม commit, build `lcalocalai.exe`, อัปเดต ledger, ขอเจ้าของ merge | ledger อัปเดตและ PR พร้อม |
 
 กติกาประหยัด: ไม่เปิด Agent ซ้อนเกิน 2 ตัวในกะเดียว, ส่งต่องานเป็นสรุปสั้น, ถ้าโควตาเหลือน้อยกว่า 10% ให้หยุดหลังจบงานที่ทำอยู่และบันทึก ledger ก่อน
+
+## ผลกะ 0 (2026-11-25, Claude Opus 4 agent, ~422k token)
+| Agent | ผล |
+|---|---|
+| นักวิจัย | RAM ว่าง 0.88/7.88 GiB (ระหว่างรันเหลือ 0.33–0.50). `qwen2.5-coder:0.5b` 22 tok/s, ตอบ 64 token ใน ~3 วินาที (โหลดเย็น 55 วินาที). `1.5b` 10 tok/s, โหลดเย็นครั้งแรก timeout 180 วินาที. แนะนำ: ค่าเริ่มต้น 0.5b บนเครื่องนี้ ใช้ 1.5b เมื่อ RAM ว่างเกิน 2 GB |
+| QA | 113 tests, error 5 (2 = ไม่มี `grep` ใน PATH, 2 = timeout ตอน RAM ว่าง 0.42 GB, 1 = ไฟล์ stats.db ถูกล็อกตอน cleanup). บั๊ก 1 major + 4 minor |
+| Engineer | แก้ major: `/api/models/pull` เขียน HTTP 500 ซ้อนหลัง stream 200 เมื่อ Ollama หลุดกลางทาง (commit `eabc062`) |
+| QA verify | PASS |
+
+บั๊ก minor ที่ค้าง (งานของกะถัดไป):
+1. pull ที่ timeout/reset กลาง stream จบเงียบ ไม่มี event error; read timeout 30 วินาทีอาจสั้นไปตอน verify ไฟล์ใหญ่บน HDD
+2. `/api/health` และ `/models` เช็ค Ollama ที่ 127.0.0.1 ตายตัว ไม่ตรงกับ `OLLAMA_BASE_URL` ที่แชตใช้
+3. `ConnectionAbortedError` (WinError 10053) ไม่ถูกนับเป็น client หลุด จึงลง error log
+4. `tests/test_agent_tools.py` ต้องมี `grep` ใน PATH ควร skip เมื่อไม่มี
