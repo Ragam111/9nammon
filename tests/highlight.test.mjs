@@ -58,3 +58,26 @@ test("javascript, json, bash, css samples", () => {
   assert.equal(HL.normalizeLang("typescript app.ts"), "javascript");
   assert.equal(HL.normalizeLang("rust"), null);
 });
+
+test("css rules are linear on pathological input (no ReDoS)", () => {
+  for (const code of ["1".repeat(200000) + "x", "a-".repeat(100000), "1".repeat(99000) + "x", "a-".repeat(49000)]) {
+    const t0 = Date.now();
+    HL.highlight(code, "css");
+    const ms = Date.now() - t0;
+    assert.ok(ms < 500, code.length + " chars took " + ms + "ms");
+  }
+});
+
+test("css still highlights numbers, units and properties", () => {
+  const out = HL.highlight("p { margin: -1.5px 10%; z-index: 2; }", "css");
+  assert.match(out, /hl-kw">margin<.*hl-num">-1.5px<.*hl-num">10<.*hl-kw">z-index<.*hl-num">2</);
+});
+
+test("code over MAX_LENGTH is escaped only, no spans", () => {
+  const big = '"""<b>' + "x".repeat(HL.MAX_LENGTH);
+  const t0 = Date.now();
+  const out = HL.highlight(big, "python");
+  assert.ok(Date.now() - t0 < 500);
+  assert.ok(!out.includes("<span"));
+  assert.ok(out.startsWith("&quot;&quot;&quot;&lt;b&gt;"));
+});

@@ -183,8 +183,23 @@ h1, h2, h3 { line-height: 1.4; font-weight: 600; font-size: 1rem; margin: 0; }
   * { transition: none !important; }
 }
 /* Code highlight (app/highlight.js) — colours from theme tokens, readable light/dark */
-pre code .hl-kw { color: var(--lca-accent); font-weight: 600; }
-pre code .hl-str { color: var(--lca-warn); }
+:root {
+  /* Code token colors: >= 4.5:1 on --lca-surface-2 (#eceee9) in light theme. */
+  --lca-hl-str: #8a5a10;
+  --lca-hl-kw: #17683a;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --lca-hl-str: var(--lca-warn);
+    --lca-hl-kw: var(--lca-accent);
+  }
+}
+:root[data-theme="dark"] {
+  --lca-hl-str: var(--lca-warn);
+  --lca-hl-kw: var(--lca-accent);
+}
+pre code .hl-kw { color: var(--lca-hl-kw); font-weight: 600; }
+pre code .hl-str { color: var(--lca-hl-str); }
 pre code .hl-com { color: var(--lca-muted); font-style: italic; }
 pre code .hl-num { color: var(--lca-bad); }
 /* Attach text files: paperclip + chips above the composer */

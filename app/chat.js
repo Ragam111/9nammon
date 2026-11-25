@@ -249,7 +249,7 @@
     const codeEl = document.createElement("code");
     const hl = window.LCAHighlight;
     const name = hl ? hl.normalizeLang(lang) : null;
-    if (name) {
+    if (name && code.length <= (hl.MAX_LENGTH || 100000)) {
       codeEl.className = "lang-" + name;
       codeEl.innerHTML = hl.highlight(code, name);
     } else {
@@ -720,6 +720,7 @@
   const ATTACH_MAX_FILES = 5;
   const NL = String.fromCharCode(10);
   let attachments = [];  // [{ name, size, text }]
+  let attachPending = 0;  // files being read; reserved slots against the 5-file cap
   function fmtSize(n) {
     return n < 1024 ? n + " B" : (n / 1024).toFixed(1) + " KB";
   }
@@ -735,15 +736,22 @@
   async function readAttachment(file) {
     if (!ATTACH_EXT.includes(fileExt(file.name))) return "ไฟล์ " + file.name + " ไม่ใช่ไฟล์ข้อความ/โค้ดที่รองรับ";
     if (file.size > ATTACH_MAX_BYTES) return "ไฟล์ " + file.name + " ใหญ่เกิน 200 KB";
-    const text = await file.text();
+    let text;
+    attachPending++;  // reserve a slot before await so concurrent calls see it
+    try {
+      text = await file.text();
+    } finally {
+      attachPending--;
+    }
     if (looksBinary(text)) return "ไฟล์ " + file.name + " เป็นไฟล์ไบนารี แนบไม่ได้";
+    if (attachments.length >= ATTACH_MAX_FILES) return "แนบได้สูงสุด " + ATTACH_MAX_FILES + " ไฟล์";
     attachments.push({ name: file.name, size: file.size, text });
     return "";
   }
   async function addAttachments(files) {
     const errors = [];
     for (const file of [...(files || [])]) {
-      if (attachments.length >= ATTACH_MAX_FILES) {
+      if (attachments.length + attachPending >= ATTACH_MAX_FILES) {
         errors.push("แนบได้สูงสุด " + ATTACH_MAX_FILES + " ไฟล์");
         break;
       }

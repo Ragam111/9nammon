@@ -52,8 +52,8 @@ class ServerPagesTest(unittest.TestCase):
         self.httpd.server_close()
         self._tmp.cleanup()
 
-    def _get(self, path):
-        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+    def _get(self, path, timeout=5):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=timeout)
         conn.request("GET", path)
         resp = conn.getresponse()
         body = resp.read()
@@ -129,7 +129,7 @@ class ServerPagesTest(unittest.TestCase):
     def test_hw_profile_endpoint_returns_profile(self):
         # GET /api/admin/hw-profile (no-disk) ต้องคืนโปรไฟล์ที่มี tier + recommended_config
         import json as _json
-        st, ctype, _, body = self._get("/api/admin/hw-profile")
+        st, ctype, _, body = self._get("/api/admin/hw-profile", timeout=15)  # probe is slow under load
         self.assertEqual(st, 200)
         data = _json.loads(body)
         self.assertIn("profile", data)

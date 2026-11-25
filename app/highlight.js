@@ -61,8 +61,9 @@
     css: [
       ["com", "/\\*[\\s\\S]*?\\*/"],
       ["str", DQ + "|" + SQ],
-      ["kw", "@[\\w-]+|![\\w]+|\\b[a-z-]+(?=\\s*:)"],
-      ["num", "#[0-9a-fA-F]{3,8}\\b|-?\\d+(?:\\.\\d+)?(?:px|em|rem|%|vh|vw|s|ms|deg)?\\b"],
+      // Lookbehind anchors: a repeatable run may only start at its first char (no ReDoS).
+      ["kw", "@[\\w-]+|![\\w]+|(?<![\\w-])[a-z][a-z-]*(?=\\s*:)"],
+      ["num", "#[0-9a-fA-F]{3,8}\\b|(?<![\\w.#-])-?\\d+(?:\\.\\d+)?(?:px|em|rem|%|vh|vw|s|ms|deg)?\\b"],
     ],
   };
 
@@ -90,10 +91,13 @@
     return ALIASES[key] || null;
   }
 
+  // Above this size we skip highlighting: guards against any super-linear regex path.
+  const MAX_LENGTH = 100000;
+
   function highlight(code, lang) {
     const text = String(code == null ? "" : code);
     const name = normalizeLang(lang);
-    if (!name) return esc(text);
+    if (!name || text.length > MAX_LENGTH) return esc(text);
     const { re, classes } = compile(name);
     re.lastIndex = 0;
     let out = "";
@@ -109,7 +113,7 @@
     return out + esc(text.slice(last));
   }
 
-  const api = { highlight, normalizeLang, escapeHtml: esc };
+  const api = { highlight, normalizeLang, escapeHtml: esc, MAX_LENGTH };
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.LCAHighlight = api;
 })(typeof window !== "undefined" ? window : this);
