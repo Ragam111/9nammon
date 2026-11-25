@@ -44,6 +44,7 @@ from app import support_store  # noqa: E402  (รับเรื่อง suppor
 from app import dataset_store  # noqa: E402  (เก็บตัวอย่างไว้ทำ dataset fine-tune, SQLite)
 from app import config_manager  # noqa: E402  (อ่าน flag COLLECT_TRAINING_DATA จาก config.json)
 from app import resource_budget  # noqa: E402  (ก้านสมอง: เลือกโมเดล/backend ตาม RAM)
+from app import model_manager  # noqa: E402  (แผน C: รายการโมเดล local + ติดตั้งผ่าน Ollama)
 from app import model_backend  # noqa: E402  (adapter: Ollama / OpenAI-compatible สลับด้วย config)
 from app import chat_hub  # noqa: E402  (chat hub: providers + conversation DB; fallback ยังเป็น model_backend)
 from app import cluster_store  # noqa: E402  (ทะเบียน + มอนิเตอร์ health ของหลาย node)
@@ -115,6 +116,7 @@ STATIC_ROUTES = {
     "/chat.css": ("chat.css",    "text/css; charset=utf-8",               True),
     "/chat.js": ("chat.js",      "application/javascript; charset=utf-8", True),
     "/rea":     ("rea.html",     "text/html; charset=utf-8",              False),
+    "/models":  ("models.html",  "text/html; charset=utf-8",              False),
     "/rea-data.js": ("rea-data.js", "application/javascript; charset=utf-8", False),
     "/fonts/IBMPlexSansThai-Regular.sub.woff2": ("fonts/IBMPlexSansThai-Regular.sub.woff2", "font/woff2", True),
     "/fonts/IBMPlexSansThai-SemiBold.sub.woff2": ("fonts/IBMPlexSansThai-SemiBold.sub.woff2", "font/woff2", True),
@@ -736,6 +738,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._handle_hw_meter(parsed)
             elif parsed.path == "/api/models/recommend":
                 self._handle_models_recommend()
+            elif parsed.path == "/api/models/catalog":
+                self._handle_models_catalog()
             elif parsed.path == "/api/nodes/discover":
                 self._handle_nodes_discover(parsed)
             elif parsed.path == "/api/nodes/sync":
@@ -1305,6 +1309,46 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 return
             self._send_json(200, router.recommend(project_root))
 
+        # ---------- แผน C: จัดการโมเดล local (รายการ + ติดตั้งผ่าน Ollama) ----------
+        def _handle_models_catalog(self):
+            if self._require("USER") is None:
+                return
+            total = 0
+            try:
+                if resource_budget.psutil is not None:
+                    total = int(resource_budget.psutil.virtual_memory().total)
+            except Exception:
+                total = 0
+            self._send_json(200, model_manager.catalog(resource_budget.available_ram(), total))
+
+        def _handle_models_pull(self):
+            """ADMIN เท่านั้น: ส่งความคืบหน้าเป็น NDJSON ทีละบรรทัดจน status=success หรือ error"""
+            if self._require("ADMIN") is None:
+                return
+            try:
+                name = str(self._read_json_body().get("model", "")).strip()
+            except (ValueError, json.JSONDecodeError) as e:
+                self._send_json(400, {"error": str(e)})
+                return
+            if name not in model_manager.ALLOWED:
+                self._send_json(400, {"error": f"ไม่อนุญาตให้ติดตั้งโมเดล '{name}'"})
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+
+            def emit(obj):
+                self.wfile.write((json.dumps(obj, ensure_ascii=False) + "\n").encode("utf-8"))
+                self.wfile.flush()
+
+            try:
+                for event in model_manager.pull(name):
+                    emit({k: event[k] for k in ("status", "completed", "total") if k in event})
+                emit({"status": "done", "model": name})
+            except model_manager.ModelManagerError as e:
+                emit({"status": "error", "error": str(e)})
+
         # ---------- LAN discovery: scan subnet หา LCA nodes (ADMIN) ----------
         def _handle_nodes_discover(self, parsed):
             if self._require("ADMIN") is None:
@@ -1655,6 +1699,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                     self._handle_finance_delete()
                 elif parsed.path == "/api/admin/notify":
                     self._handle_notify()
+                elif parsed.path == "/api/models/pull":
+                    self._handle_models_pull()
                 elif parsed.path == "/api/support/ticket":
                     self._handle_support_create()
                 elif parsed.path == "/api/admin/support/tickets/status":
