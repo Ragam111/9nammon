@@ -763,49 +763,172 @@ def check_and_consume_quota(username: str, tier: str = "free", project_root: Pat
         return False
 
 
-# ---------- google oauth ----------
+# ---------- # ---------- google oauth ----------
 
-def create_or_update_google_user(project_root: Path, email: str, display_name: str) -> dict:
-    """Create or update a Google-authenticated user (role USER for new accounts)."""
-    email = (email or "").strip().lower()
-    if not email or "@" not in email:
-        raise ValueError("อีเมล Google ไม่ถูกต้อง")
-    username = email
-    display = (display_name or email.split("@")[0]).strip() or email.split("@")[0]
-    random_pw = _hash_password(secrets.token_urlsafe(24))
+GOOGLE_KEY_CREATED_BY = "google-oauth"
+_GOOGLE_SUB_MAX = 255
+_EMAIL_MAX = 254
+_DISPLAY_MAX = 80
+
+
+class GoogleLinkError(ValueError):
+    """Google sign-in refused for this account (message is Thai, safe to show)."""
+
+
+def _google_link_op(sub: str, email: str, display: str, now: str):
+    """Build the one-transaction upsert for google_sign_in (keyed by Google ``sub``)."""
+    disabled = "บัญชีนี้ถูกปิดการใช้งาน — ติดต่อผู้ดูแลระบบ"
 
     def op(conn):
-        row = conn.execute("SELECT role FROM org_users WHERE username=?", (username,)).fetchone()
-        if row is None:
+        link = conn.execute("SELECT username FROM org_google_accounts WHERE sub=?",
+                            (sub,)).fetchone()
+        if link is not None:
+            username = link["username"]
+            user = conn.execute("SELECT role, active FROM org_users WHERE username=?",
+                                (username,)).fetchone()
+            if user is None or not user["active"]:
+                raise GoogleLinkError(disabled)
+            conn.execute("UPDATE org_google_accounts SET email=?, last_login_at=? WHERE sub=?",
+                         (email, now, sub))
+            conn.execute("UPDATE org_users SET display_name=? WHERE username=?",
+                         (display, username))
+            return username, user["role"], False
+        if conn.execute("SELECT COUNT(*) FROM org_users").fetchone()[0] == 0:
+            # a Google user must never take the bootstrap (first CEO) slot
+            raise GoogleLinkError("ยังไม่ได้ตั้งบัญชีเจ้าของระบบ (CEO) — ตั้งค่าก่อนใช้ล็อกอินด้วย Google")
+        user = conn.execute("SELECT role, active, google_email FROM org_users WHERE username=?",
+                            (email,)).fetchone()
+        if user is not None:
+            # never take over a password account, or one linked to another Google id
+            taken = conn.execute("SELECT 1 FROM org_google_accounts WHERE username=?",
+                                 (email,)).fetchone()
+            if taken or (user["google_email"] or "").lower() != email:
+                raise GoogleLinkError("มีบัญชีชื่อนี้อยู่แล้ว — ล็อกอินด้วยรหัสผ่าน "
+                                      "หรือให้ผู้ดูแลระบบผูกบัญชีให้")
+            if not user["active"]:
+                raise GoogleLinkError(disabled)
+            role, created = user["role"], False
+        else:
+            # password '' never verifies: Google-only account (no password login)
             conn.execute(
-                "INSERT INTO org_users(username, role, password, active, display_name,"
-                " google_email, created_at) VALUES (?, 'USER', ?, 1, ?, ?, ?)",
-                (username, random_pw, display, email, _now_iso()))
-            return "USER"
-        conn.execute("UPDATE org_users SET display_name=?, google_email=?, active=1"
-                     " WHERE username=?", (display, email, username))
-        return row["role"] or "USER"
+                "INSERT INTO org_users(username, role, password, active, created_at,"
+                " display_name, google_email) VALUES (?, 'USER', '', 1, ?, ?, ?)",
+                (email, now, display, email))
+            role, created = "USER", True
+        conn.execute("INSERT INTO org_google_accounts(sub, username, email, created_at,"
+                     " last_login_at) VALUES (?,?,?,?,?)", (sub, email, email, now, now))
+        return email, role, created
 
-    role = _write(project_root, op)
-    return {"username": username, "role": role, "tier": "free"}
+    return op
 
 
-def issue_google_internal_token(project_root: Path, username: str, tier: str = "free") -> str:
-    """Issue a fresh internal LCA key for a Google-authenticated user.
+def google_sign_in(project_root: Path, sub: str, email: str, display_name: str = "") -> dict:
+    """Find or create the user for a verified Google account.
 
-    Unlike create_api_key(), this path does not require an ADMIN/CEO actor because
-    the user is authenticating through OAuth and needs an internal token immediately.
+    Idempotent and thread-safe: one write transaction keyed by the Google ``sub``,
+    so N logins (even concurrent) give exactly one user. New accounts are USER.
+    Raises GoogleLinkError when the account may not sign in.
     """
-    project_root = Path(project_root)
+    sub = str(sub or "").strip()
+    email = str(email or "").strip().lower()
+    if not sub or len(sub) > _GOOGLE_SUB_MAX:
+        raise GoogleLinkError("ข้อมูลบัญชี Google ไม่ถูกต้อง")
+    if "@" not in email or len(email) > _EMAIL_MAX or any(c.isspace() for c in email):
+        raise GoogleLinkError("อีเมล Google ไม่ถูกต้อง")
+    display = " ".join(str(display_name or "").split())[:_DISPLAY_MAX] or email.split("@")[0]
+    username, role, created = _write(project_root, _google_link_op(sub, email, display, _now_iso()))
+    return {"username": username, "role": role, "created": created}
+
+
+def issue_google_internal_token(project_root: Path, username: str, tier: str = "free") -> str | None:
+    """Issue the single internal LCA key of a Google account.
+
+    At most one key per Google account, ever: returns the raw key (shown once) the
+    first time, None when the account already has one. Raises ValueError when the
+    user is not a linked Google account.
+    """
     if tier not in VALID_TIERS:
         raise ValueError(f"tier ไม่ถูกต้อง: {tier} (ต้องเป็น {sorted(VALID_TIERS)})")
-    raw_key = f"lca_f_g_{secrets.token_urlsafe(16)}"
+    raw_key = f"{_KEY_PREFIX}_{tier[0]}_{secrets.token_urlsafe(32)}"
     key_id = secrets.token_hex(8)
 
     def op(conn):
-        if not conn.execute("SELECT 1 FROM org_users WHERE username=?", (username,)).fetchone():
-            raise ValueError(f"ไม่พบ user: {username}")
-        _insert_key(conn, key_id, raw_key, username, tier)
+        link = conn.execute("SELECT sub, key_id FROM org_google_accounts WHERE username=?",
+                            (username,)).fetchone()
+        if link is None:
+            raise ValueError(f"ไม่พบบัญชี Google ของ {username}")
+        if link["key_id"]:
+            return None
+        _insert_key(conn, key_id, raw_key, username, tier, "Google", GOOGLE_KEY_CREATED_BY)
+        conn.execute("UPDATE org_google_accounts SET key_id=? WHERE sub=?", (key_id, link["sub"]))
+        return raw_key
 
-    _write(project_root, op)
-    return raw_key
+    return _write(Path(project_root), op)
+
+
+# ---------- monthly token allowance (free tier) ----------
+
+FREE_MONTHLY_TOKENS = 1_000_000
+
+
+def _month_str() -> str:
+    """Allowance period key, resets on the 1st (tests patch this)."""
+    return date.today().strftime("%Y-%m")
+
+
+def reserve_tokens(project_root: Path, username: str, estimate: int, limit: int) -> str | None:
+    """Reserve ``estimate`` tokens before a generation.
+
+    Admits while used + reserved < limit, so concurrent requests can overshoot by at
+    most one request. Returns the month key to settle against, or None when the
+    allowance is spent or the db fails (fail-closed).
+    """
+    month = _month_str()
+    est = max(1, int(estimate))
+
+    def op(conn):
+        row = conn.execute("SELECT month, used, reserved FROM org_token_usage WHERE username=?",
+                           (username,)).fetchone()
+        used, reserved = (row["used"], row["reserved"]) if row and row["month"] == month else (0, 0)
+        if used + reserved >= limit:
+            return None
+        conn.execute(
+            "INSERT INTO org_token_usage(username, month, used, reserved) VALUES (?,?,?,?)"
+            " ON CONFLICT(username) DO UPDATE SET month=excluded.month, used=excluded.used,"
+            " reserved=excluded.reserved", (username, month, used, reserved + est))
+        return month
+
+    try:
+        return _write(project_root, op)
+    except sqlite3.Error as e:
+        print(f"[org][error] จอง token ไม่สำเร็จ: {e}")
+        return None
+
+
+def settle_tokens(project_root: Path, username: str, month: str, estimate: int,
+                  actual: int) -> bool:
+    """Replace a reservation by the real count (actual=0 releases it). A month that
+    rolled over during the generation is left alone (the new month starts clean)."""
+    est, real = max(0, int(estimate)), max(0, int(actual))
+
+    def op(conn):
+        cur = conn.execute(
+            "UPDATE org_token_usage SET reserved = MAX(0, reserved - ?), used = used + ?"
+            " WHERE username=? AND month=?", (est, real, username, month))
+        return cur.rowcount == 1
+
+    try:
+        return _write(project_root, op)
+    except sqlite3.Error as e:
+        print(f"[org][error] บันทึก token ไม่สำเร็จ: {e}")
+        return False
+
+
+def token_usage(project_root: Path, username: str) -> dict:
+    """{month, used, reserved} for the current month (0 when nothing recorded)."""
+    month = _month_str()
+    row = _read(project_root, "SELECT month, used, reserved FROM org_token_usage WHERE username=?",
+                (username,), one=True)
+    if row is None or row["month"] != month:
+        return {"month": month, "used": 0, "reserved": 0}
+    return {"month": month, "used": row["used"], "reserved": row["reserved"]}

@@ -1,59 +1,204 @@
-"""google_auth.py — stdlib-only Google OAuth helpers for LCA.
+"""google_auth.py — stdlib-only Google sign-in (OAuth 2.0 code flow + PKCE S256).
 
-This module performs the minimal OAuth steps required for Google login:
-1. exchange authorization code for access token
-2. fetch user profile from Google UserInfo endpoint
-3. return fail-closed data or None on any failure
+Flow (server.py routes):
+1. GET /auth/google/start    -> new state + PKCE verifier kept server-side (in memory,
+   short TTL, one use) and the state in an HttpOnly SameSite=Lax cookie; redirect to
+   the Google authorize URL with code_challenge (S256).
+2. GET /auth/google/callback -> state must match the cookie and a pending entry; the
+   code is exchanged with the code_verifier; userinfo must have a verified email.
+
+Config (config.json, env fallback): GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET,
+GOOGLE_REDIRECT_URI. The redirect URI must be http://localhost or http://127.0.0.1,
+or an https URL the owner configured. Endpoint URLs are module attributes so tests
+can point them at a fake server on 127.0.0.1. The client secret and Google tokens
+are never logged or put in an error message.
 """
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import json
-from urllib import parse, request
+import secrets
+import threading
+import time
+from urllib import error, parse, request
 
-GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
-GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
+from app import config_manager
+
+AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+TOKEN_URL = "https://oauth2.googleapis.com/token"
+USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo"
+
+CALLBACK_PATH = "/auth/google/callback"
+STATE_COOKIE = "lca_google_state"
+STATE_TTL_SECONDS = 600
+MAX_PENDING = 256
+HTTP_TIMEOUT_S = 10
+_LOCAL_HTTP_HOSTS = frozenset({"localhost", "127.0.0.1"})
 
 
-def exchange_code_for_google_user(code: str, client_id: str, client_secret: str, redirect_uri: str) -> dict | None:
-    """Exchange OAuth code for Google account info.
+class GoogleAuthError(Exception):
+    """Sign-in failed. ``str(e)`` is a Thai message without secrets."""
 
-    Returns a dict with {email, name} or None if the exchange fails. This function is
-    intentionally fail-closed: if any step fails, we return None rather than creating a
-    partial identity.
-    """
-    if not code or not client_id or not client_secret or not redirect_uri:
-        return None
+    def __init__(self, status: int, message: str):
+        super().__init__(message)
+        self.status = status
 
+
+# ---------- config ----------
+
+def redirect_uri_allowed(uri: str) -> bool:
+    """http only on localhost/127.0.0.1; https any host; path must be the callback."""
     try:
-        payload = parse.urlencode({
-            "code": code,
-            "client_id": client_id,
-            "client_secret": client_secret,
-            "redirect_uri": redirect_uri,
-            "grant_type": "authorization_code",
-        }).encode("utf-8")
+        u = parse.urlsplit(str(uri or ""))
+        port = u.port  # raises on a bad port
+    except ValueError:
+        return False
+    del port
+    if u.username or u.password or u.query or u.fragment or u.path != CALLBACK_PATH:
+        return False
+    if u.scheme == "http":
+        return (u.hostname or "") in _LOCAL_HTTP_HOSTS
+    return u.scheme == "https" and bool(u.hostname)
 
-        token_req = request.Request(GOOGLE_TOKEN_URL, data=payload, method="POST")
-        token_req.add_header("Content-Type", "application/x-www-form-urlencoded")
-        with request.urlopen(token_req, timeout=10) as resp:
-            token_data = json.loads(resp.read().decode("utf-8"))
 
-        access_token = (token_data or {}).get("access_token")
-        if not access_token:
-            return None
-
-        user_req = request.Request(
-            GOOGLE_USERINFO_URL,
-            headers={"Authorization": f"Bearer {access_token}"},
-        )
-        with request.urlopen(user_req, timeout=10) as resp:
-            user_info = json.loads(resp.read().decode("utf-8"))
-
-        email = (user_info.get("email") or "").strip().lower()
-        name = (user_info.get("name") or user_info.get("given_name") or "Google User").strip()
-        if not email:
-            return None
-        return {"email": email, "name": name}
-    except Exception:
+def load_config(project_root) -> dict | None:
+    """{client_id, client_secret, redirect_uri} or None when Google sign-in is off."""
+    vals = {k: (config_manager.get_key(project_root, k) or "").strip()
+            for k in ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REDIRECT_URI")}
+    if not all(vals.values()) or not redirect_uri_allowed(vals["GOOGLE_REDIRECT_URI"]):
         return None
+    return {"client_id": vals["GOOGLE_CLIENT_ID"], "client_secret": vals["GOOGLE_CLIENT_SECRET"],
+            "redirect_uri": vals["GOOGLE_REDIRECT_URI"]}
+
+
+def config_problem(project_root) -> str:
+    """Thai reason Google sign-in is off ('' when it is on)."""
+    vals = {k: (config_manager.get_key(project_root, k) or "").strip()
+            for k in ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REDIRECT_URI")}
+    missing = [k for k, v in vals.items() if not v]
+    if missing:
+        return "ยังไม่ได้ตั้งค่าล็อกอินด้วย Google (ขาด " + ", ".join(missing) + " ใน config.json)"
+    if not redirect_uri_allowed(vals["GOOGLE_REDIRECT_URI"]):
+        return ("GOOGLE_REDIRECT_URI ไม่ได้รับอนุญาต — ใช้ http://localhost หรือ http://127.0.0.1 "
+                f"หรือ https ที่ลงท้ายด้วย {CALLBACK_PATH}")
+    return ""
+
+
+# ---------- PKCE + pending state (server-side, one use) ----------
+
+def pkce_pair() -> tuple[str, str]:
+    """(code_verifier, S256 code_challenge) per RFC 7636."""
+    verifier = secrets.token_urlsafe(48)
+    digest = hashlib.sha256(verifier.encode("ascii")).digest()
+    return verifier, base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+
+
+_pending: dict[str, tuple[str, str, float]] = {}   # state -> (verifier, next, expires)
+_pending_lock = threading.Lock()
+
+
+def _prune(now: float) -> None:
+    for key in [k for k, v in _pending.items() if v[2] <= now]:
+        del _pending[key]
+    while len(_pending) >= MAX_PENDING:   # bounded memory: drop the oldest
+        del _pending[min(_pending, key=lambda k: _pending[k][2])]
+
+
+def begin(next_path: str = "/chat", now: float | None = None) -> tuple[str, str]:
+    """Create a pending login. Returns (state, code_challenge)."""
+    now = time.time() if now is None else now
+    state = secrets.token_urlsafe(32)
+    verifier, challenge = pkce_pair()
+    with _pending_lock:
+        _prune(now)
+        _pending[state] = (verifier, next_path, now + STATE_TTL_SECONDS)
+    return state, challenge
+
+
+def take(state: str, cookie_state: str, now: float | None = None) -> tuple[str, str] | None:
+    """One-use lookup: (verifier, next) when state matches the cookie and is not expired."""
+    if not state or not cookie_state or not hmac.compare_digest(state, cookie_state):
+        return None
+    now = time.time() if now is None else now
+    with _pending_lock:
+        entry = _pending.pop(state, None)
+    if entry is None or entry[2] <= now:
+        return None
+    return entry[0], entry[1]
+
+
+def clear_pending() -> None:
+    with _pending_lock:
+        _pending.clear()
+
+
+def authorize_url(cfg: dict, state: str, challenge: str) -> str:
+    query = parse.urlencode({
+        "client_id": cfg["client_id"],
+        "redirect_uri": cfg["redirect_uri"],
+        "response_type": "code",
+        "scope": "openid email profile",
+        "state": state,
+        "code_challenge": challenge,
+        "code_challenge_method": "S256",
+        "prompt": "select_account",
+    })
+    return f"{AUTH_URL}?{query}"
+
+
+# ---------- token exchange + userinfo ----------
+
+def _json(req: request.Request) -> dict:
+    with request.urlopen(req, timeout=HTTP_TIMEOUT_S) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError("not an object")
+    return data
+
+
+def exchange_code(cfg: dict, code: str, verifier: str) -> str:
+    """Code + code_verifier -> access token (raises GoogleAuthError 400)."""
+    if not code or not verifier:
+        raise GoogleAuthError(400, "ไม่มีรหัสยืนยันจาก Google — เริ่มเข้าสู่ระบบใหม่")
+    body = parse.urlencode({
+        "code": code,
+        "client_id": cfg["client_id"],
+        "client_secret": cfg["client_secret"],
+        "redirect_uri": cfg["redirect_uri"],
+        "grant_type": "authorization_code",
+        "code_verifier": verifier,
+    }).encode("utf-8")
+    req = request.Request(TOKEN_URL, data=body, method="POST",
+                          headers={"Content-Type": "application/x-www-form-urlencoded",
+                                   "Accept": "application/json"})
+    try:
+        data = _json(req)
+    except (error.URLError, OSError, ValueError) as e:
+        print(f"[google][warn] แลก code ไม่สำเร็จ ({e.__class__.__name__})")
+        raise GoogleAuthError(400, "แลกรหัสกับ Google ไม่สำเร็จ — เริ่มเข้าสู่ระบบใหม่") from None
+    token = data.get("access_token")
+    if not isinstance(token, str) or not token:
+        raise GoogleAuthError(400, "Google ไม่ได้ส่ง access token กลับมา")
+    return token
+
+
+def fetch_identity(access_token: str) -> dict:
+    """userinfo -> {sub, email, name}; email must be verified (raises GoogleAuthError)."""
+    req = request.Request(USERINFO_URL, headers={"Authorization": f"Bearer {access_token}",
+                                                 "Accept": "application/json"})
+    try:
+        info = _json(req)
+    except (error.URLError, OSError, ValueError) as e:
+        print(f"[google][warn] อ่านข้อมูลผู้ใช้ไม่สำเร็จ ({e.__class__.__name__})")
+        raise GoogleAuthError(502, "อ่านข้อมูลบัญชีจาก Google ไม่สำเร็จ") from None
+    sub = info.get("sub")
+    email = str(info.get("email") or "").strip().lower()
+    if not isinstance(sub, str) or not sub or not email:
+        raise GoogleAuthError(400, "Google ไม่ได้ส่งอีเมลของบัญชีมา")
+    if info.get("email_verified") not in (True, "true"):
+        raise GoogleAuthError(403, "อีเมล Google นี้ยังไม่ได้ยืนยัน — ใช้บัญชีที่ยืนยันอีเมลแล้ว")
+    name = str(info.get("name") or info.get("given_name") or "").strip()
+    return {"sub": sub, "email": email, "name": name}

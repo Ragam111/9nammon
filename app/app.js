@@ -16,8 +16,21 @@
     } catch (e) { return ""; }
   }
 
-  w.lca = {
-    getKey: function () {
+  // หลังล็อกอินด้วย Google: server ส่ง session มาใน fragment #lca_login= (ไม่ถูกส่งไป server/log)
+  // เก็บเหมือน session ของรหัสผ่าน แล้วลบออกจาก URL ทันที
+  function takeLoginFragment() {
+    try {
+      var h = (w.location && w.location.hash) || "";
+      var m = h.match(/(?:^#|&)lca_login=([^&]+)/);
+      if (!m) return "";
+      if (w.history && w.history.replaceState) {
+        w.history.replaceState(null, "", w.location.pathname + w.location.search);
+      }
+      return decodeURIComponent(m[1]);
+    } catch (e) { return ""; }
+  }
+
+  w.lca = {    getKey: function () {
       try {
         var stored = localStorage.getItem(KEY) || "";
         if (stored) return stored;
@@ -92,6 +105,8 @@
       } catch (e) { return null; }
     }
   };
+  var loginToken = takeLoginFragment();
+  if (loginToken) w.lca.setKey(loginToken);
 
   // PWA: register the service worker only on secure contexts (https / localhost / 127.0.0.1).
   // Any failure is swallowed so the page keeps working without offline support.

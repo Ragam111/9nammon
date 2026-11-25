@@ -21,6 +21,7 @@ import hmac
 import ipaddress
 import json
 import os
+import re
 import secrets
 import socket
 import sqlite3
@@ -75,6 +76,7 @@ from app import skills_store  # noqa: E402  (Skills: prompt+สมองสำ�
 from app import bots  # noqa: E402  (Bot: skill + run endpoint ให้ automation เรียก)
 from app import cloud_tunnel  # noqa: E402  (Cloudflare Quick Tunnel — เปิด tunnel ชั่วคราวออก internet)
 from app import session_store  # noqa: E402  (session token หลัง login username/password — SQLite หลัง configure())
+from app import google_auth  # noqa: E402  (Google sign-in: OAuth code + PKCE S256, endpoint URLs overridable)
 from sysmanager.monitor import collect as _collect, Analyzer as _Analyzer  # noqa: E402
 from sysmanager.monitor import lca_context as _lca_context  # noqa: E402  (Phase 2: บริบท Ollama)
 
@@ -185,6 +187,33 @@ def resolve_client_ip(peer: str, headers, trust: Optional[bool] = None) -> str:
 # dev/observability รั่ว). ไม่มีตัวตน → redirect /login, มีแต่สิทธิ์ไม่ถึง → 403
 PROTECTED_PAGES = {"/dev": "ADMIN", "/console": "ADMIN", "/console/keys": "ADMIN"}
 PAGE_COOKIE = "lca_key"
+
+# 429 messages: daily request quota vs free-tier monthly token allowance
+QUOTA_DAILY_MSG = "เกินโควตาการใช้งานรายวันแล้ว (อัปเกรดเป็น tier paid เพื่อใช้ได้ไม่จำกัด)"
+QUOTA_MONTHLY_MSG = ("ใช้ token ฟรีของเดือนนี้ครบแล้ว — รีเซ็ตวันที่ 1 ของเดือนถัดไป "
+                     "(อัปเกรดเป็น tier paid เพื่อใช้ได้ไม่จำกัด)")
+# conservative token reservation before a generation (settled to the real count after)
+CHAT_OUTPUT_RESERVE = 2048
+DEFAULT_TOKEN_RESERVE = 4096
+
+
+def estimate_tokens(messages) -> int:
+    """Upper-bound guess: 1 token per character (+4 per message). Thai text can be
+    close to one token per character, so this rarely under-reserves."""
+    total = 0
+    for m in messages or []:
+        content = m.get("content") if isinstance(m, dict) else None
+        total += 4 + (len(content) if isinstance(content, str) else 0)
+    return total
+
+
+def safe_next_path(value) -> str:
+    """Internal path only (one leading '/', no scheme/host, no backslash) else /chat."""
+    v = str(value or "")
+    if (len(v) <= 200 and v.startswith("/") and not v.startswith("//") and "\\" not in v
+            and "#" not in v and all(31 < ord(c) < 127 for c in v)):
+        return v
+    return "/chat"
 
 # GUEST (เปิดด้วย feature flag guest_chat): แชทได้เฉพาะโมเดล local, ไม่บันทึก, โควตาต่อ IP ต่อวัน
 GUEST_DAILY_LIMIT = 20
@@ -430,7 +459,11 @@ def make_handler(project_root: Path, auth_token: Optional[str],
 
         # ปิด log เริ่มต้นของ http.server ที่รก stdout — ใช้ log สั้นแทน
         def log_message(self, fmt, *args):
-            print(f"[server] {self.address_string()} - {fmt % args}")
+            line = fmt % args
+            if "/auth/google/" in line:
+                # OAuth code/state must not land in logs: keep the path only
+                line = re.sub(r"(/auth/google/[a-z]+)\?\S*", r"\1?[redacted]", line)
+            print(f"[server] {self.address_string()} - {line}")
 
         def _identity(self) -> Optional[dict]:
             """ระบุว่า request นี้คือใคร มีสิทธิ์อะไร คืน dict หรือ None (ไม่ผ่าน auth)
@@ -763,6 +796,12 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._handle_metrics(parsed)
             elif parsed.path == "/api/me":
                 self._handle_me()
+            elif parsed.path == "/api/auth/providers":
+                self._send_json(200, {"google": google_auth.load_config(project_root) is not None})
+            elif parsed.path == "/auth/google/start":
+                self._handle_google_start(parsed)
+            elif parsed.path == google_auth.CALLBACK_PATH:
+                self._handle_google_callback(parsed)
             elif parsed.path == "/api/admin/users":
                 self._handle_users_list()
             elif parsed.path == "/api/admin/apikeys":
@@ -866,13 +905,20 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             if ident is None:
                 self._send_json(401, {"error": "unauthorized"})
                 return
-            self._send_json(200, {
+            out = {
                 "username": ident.get("username"),
                 "role": ident.get("role"),
                 "tier": ident.get("tier"),
                 "source": ident.get("source"),
                 "expires_at": ident.get("expires_at"),
-            })
+            }
+            if self._tokens_apply(ident):
+                try:
+                    out["tokens"] = dict(org_store.token_usage(project_root, ident["username"]),
+                                         limit=self._token_limit())
+                except sqlite3.Error:
+                    pass
+            self._send_json(200, out)
 
         # ---------- Auth: login ด้วย username/password → session token ----------
         def _handle_auth_login(self):
@@ -911,6 +957,86 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             provided = self.headers.get("X-Auth-Token")
             revoked = session_store.revoke(provided)
             self._send_json(200, {"revoked": revoked})
+
+        # ---------- Google sign-in: /auth/google/start -> Google -> /auth/google/callback ----------
+        def _cookie(self, name: str) -> str:
+            for part in (self.headers.get("Cookie") or "").split(";"):
+                key, _sep, value = part.strip().partition("=")
+                if key == name:
+                    return value
+            return ""
+
+        def _google_state_cookie(self, cfg, value: str, max_age: int) -> str:
+            secure = "; Secure" if cfg["redirect_uri"].startswith("https://") else ""
+            return (f"{google_auth.STATE_COOKIE}={value}; Path=/auth/google; HttpOnly;"
+                    f" SameSite=Lax; Max-Age={max_age}{secure}")
+
+        def _google_reply(self, status: int, location: str = "", error: str = "",
+                          cookies=()) -> None:
+            """302 to ``location`` or a JSON error; never carries Google tokens/secret."""
+            body = b"" if location else json.dumps({"error": error}, ensure_ascii=False).encode("utf-8")
+            self.send_response(302 if location else status)
+            if location:
+                self.send_header("Location", location)
+            else:
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Referrer-Policy", "no-referrer")
+            for c in cookies:
+                self.send_header("Set-Cookie", c)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _handle_google_start(self, parsed):
+            cfg = google_auth.load_config(project_root)
+            if cfg is None:
+                self._google_reply(503, error=google_auth.config_problem(project_root))
+                return
+            nxt = safe_next_path((parse_qs(parsed.query).get("next") or ["/chat"])[0])
+            state, challenge = google_auth.begin(nxt)
+            self._google_reply(302, location=google_auth.authorize_url(cfg, state, challenge),
+                               cookies=[self._google_state_cookie(
+                                   cfg, state, google_auth.STATE_TTL_SECONDS)])
+
+        def _handle_google_callback(self, parsed):
+            cfg = google_auth.load_config(project_root)
+            if cfg is None:
+                self._google_reply(503, error=google_auth.config_problem(project_root))
+                return
+            q = parse_qs(parsed.query)
+            clear = [self._google_state_cookie(cfg, "", 0)]
+            pending = google_auth.take((q.get("state") or [""])[0],
+                                       self._cookie(google_auth.STATE_COOKIE))
+            if pending is None:
+                self._google_reply(400, error="state ไม่ถูกต้องหรือหมดอายุ — เริ่มเข้าสู่ระบบด้วย Google ใหม่",
+                                   cookies=clear)
+                return
+            if q.get("error"):
+                self._google_reply(400, error="ยกเลิกการเข้าสู่ระบบกับ Google แล้ว", cookies=clear)
+                return
+            verifier, nxt = pending
+            try:
+                access = google_auth.exchange_code(cfg, (q.get("code") or [""])[0], verifier)
+                who = google_auth.fetch_identity(access)
+                user = org_store.google_sign_in(project_root, who["sub"], who["email"], who["name"])
+            except google_auth.GoogleAuthError as e:
+                self._google_reply(e.status, error=str(e), cookies=clear)
+                return
+            except org_store.GoogleLinkError as e:
+                self._google_reply(403, error=str(e), cookies=clear)
+                return
+            except sqlite3.Error as e:
+                print(f"[google][error] บันทึกผู้ใช้ไม่สำเร็จ ({e.__class__.__name__})")
+                self._google_reply(500, error="บันทึกบัญชีไม่สำเร็จ — ลองใหม่อีกครั้ง", cookies=clear)
+                return
+            username = user["username"]
+            sess = session_store.create(username, user["role"],
+                                        org_store.user_tier(project_root, username))
+            print(f"[google] เข้าสู่ระบบ: {username}" + (" (บัญชีใหม่)" if user["created"] else ""))
+            # token in the fragment: never sent to a server or written to access logs;
+            # app.js stores it like a password-login session and strips it from the URL
+            self._google_reply(302, location=f"{nxt}#lca_login={sess['token']}", cookies=clear)
 
         def _handle_users_list(self):
             if self._require("ADMIN") is None:
@@ -1441,21 +1567,40 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             except openai_gateway.GatewayError as e:
                 self._send_json(e.status, e.body())
                 return
+            prompt_est = estimate_tokens(payload["messages"])
+            ident["_token_estimate"] = prompt_est + int(payload["max_tokens"])
             if not self._quota_reserve(ident):
-                self._v1_error(429, "ใช้โควตาวันนี้ครบแล้ว", "insufficient_quota")
+                msg = ident.pop("_quota_msg", QUOTA_DAILY_MSG)
+                self._v1_error(429, msg, "insufficient_quota")
                 return
             delivered = {"any": False}
+            seen = {"chunks": 0, "usage": None}
 
             def refund():
                 # the charge stays once any chunk reached the client
                 if not delivered["any"]:
                     self._chat_release(ident)
 
+            def note(chunk: bytes) -> None:
+                seen["chunks"] += 1
+                if b'"usage"' in chunk:
+                    try:
+                        u = json.loads(chunk.decode("utf-8")[len("data:"):].strip()).get("usage")
+                        if isinstance(u, dict) and u.get("total_tokens"):
+                            seen["usage"] = int(u["total_tokens"])
+                    except (ValueError, TypeError, AttributeError):
+                        pass
+
             try:
                 with gen_gate.slot():
                     if not payload["stream"]:
-                        self._send_json(200, openai_gateway.complete(payload))
+                        result = openai_gateway.complete(payload)
+                        u = result.get("usage") if isinstance(result, dict) else None
+                        real = u.get("total_tokens") if isinstance(u, dict) else None
+                        self._tokens_settle(ident, real or prompt_est + int(payload["max_tokens"]))
+                        self._send_json(200, result)
                         return
+                    payload = dict(payload, stream_options={"include_usage": True})
                     chunks = openai_gateway.stream(payload)
                     first = next(chunks, None)   # ต่อ Ollama ไม่ได้ → error ก่อนส่ง header
                     self.send_response(200)
@@ -1465,10 +1610,12 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                     self._headers_sent = True
                     try:
                         if first is not None:
+                            note(first)
                             self.wfile.write(first)
                             self.wfile.flush()
                             delivered["any"] = True
                         for chunk in chunks:
+                            note(chunk)
                             self.wfile.write(chunk)
                             self.wfile.flush()
                             delivered["any"] = True
@@ -1483,6 +1630,11 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             except openai_gateway.GatewayError as e:
                 refund()
                 self._send_json(e.status, e.body())
+            finally:
+                # stream ended (or broke after delivery): settle what was sent
+                if ident.get("_tokens_reserved"):
+                    self._tokens_settle(ident, (seen["usage"] or prompt_est + seen["chunks"])
+                                        if delivered["any"] else 0)
 
         def _handle_models_pull(self):
             """ADMIN เท่านั้น: ส่งความคืบหน้าเป็น NDJSON ทีละบรรทัดจน status=success หรือ error"""
@@ -2348,13 +2500,56 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             # จองโควตาแบบ atomic "ก่อนเรียกโมเดล" — consume_quota ทำ check+หักใน lock เดียว
             # จึงกันคำขอพร้อมกันเกินโควตาได้ ถ้าเกินแล้วตอบ 429 ทันที ไม่เรียก LLM
             # (consume_quota คืน ok=False ด้วยถ้าบันทึกลง db ไม่สำเร็จ — fail-closed)
+            ident["_token_estimate"] = estimate_tokens(messages) + CHAT_OUTPUT_RESERVE
             if not self._quota_reserve(ident):
-                self._send_json(429, {"error": "เกินโควตาการใช้งานรายวันแล้ว "
-                                               "(อัปเกรดเป็น tier paid เพื่อใช้ได้ไม่จำกัด)"})
+                self._send_json(429, {"error": ident.pop("_quota_msg", QUOTA_DAILY_MSG)})
                 return None
             return model, messages, num_ctx, hub
 
         def _quota_reserve(self, ident) -> bool:
+            """Reserve 1 daily request, then (free tier) the token estimate of the monthly
+            allowance. False = over quota / db error; ident['_quota_msg'] says which."""
+            estimate = ident.pop("_token_estimate", None) or DEFAULT_TOKEN_RESERVE
+            if not self._request_reserve(ident):
+                ident["_quota_msg"] = QUOTA_DAILY_MSG
+                return False
+            if not self._tokens_apply(ident):
+                return True
+            month = org_store.reserve_tokens(project_root, ident["username"], estimate,
+                                             self._token_limit())
+            if month is None:
+                self._chat_release(ident)   # give the daily request back
+                ident["_quota_msg"] = QUOTA_MONTHLY_MSG
+                return False
+            ident["_tokens_reserved"] = (month, int(estimate))
+            model_backend.reset_usage()
+            return True
+
+        def _tokens_apply(self, ident) -> bool:
+            """Free-tier people (login session or free API key) have a monthly allowance."""
+            return (ident.get("tier") == "free" and bool(ident.get("username"))
+                    and ident.get("source") in ("session", "api_key"))
+
+        def _token_limit(self) -> int:
+            raw = config_manager.get_key(project_root, "FREE_MONTHLY_TOKENS")
+            try:
+                return max(0, int(str(raw).strip())) if raw not in (None, "") \
+                    else org_store.FREE_MONTHLY_TOKENS
+            except ValueError:
+                return org_store.FREE_MONTHLY_TOKENS
+
+        def _tokens_settle(self, ident, actual) -> None:
+            """Turn the token reservation into the real count (0 = release)."""
+            held = ident.pop("_tokens_reserved", None)
+            if not held:
+                return
+            try:
+                org_store.settle_tokens(project_root, ident["username"], held[0], held[1],
+                                        int(actual or 0))
+            except Exception as e:  # noqa: BLE001 — metering must not break the response
+                print(f"[quota][warn] บันทึก token ไม่สำเร็จ: {e.__class__.__name__}")
+
+        def _request_reserve(self, ident) -> bool:
             """Reserve 1 quota before calling a model. API key -> key bucket; login session
             -> user bucket by session tier. Machine owner (local/master_token) and guest
             (own per-IP limit) are not charged here. Sets ident['_quota_reserved'] to the
@@ -2374,6 +2569,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
 
         def _chat_release(self, ident):
             """คืนโควตาที่จองไว้ถ้าแชทไม่สำเร็จ (ไม่มี _chat_finalize มายืนยัน) — เรียกใน finally"""
+            if ident.get("_tokens_reserved"):
+                self._tokens_settle(ident, 0)
             kind = ident.pop("_quota_reserved", None)
             if not kind:
                 return
@@ -2394,6 +2591,11 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             """บันทึก usage + เก็บ dataset — หลังได้คำตอบเต็มแล้ว (blocking/stream ใช้ร่วม)"""
             # ยืนยันโควตาที่จองไว้ใน _chat_prepare (ก่อนเรียกโมเดล) — ไม่หักซ้ำ และไม่คืนแล้ว
             ident.pop("_quota_reserved", None)
+            if ident.get("_tokens_reserved"):
+                # real count from the runtime/provider; fallback = character estimate
+                real = ident.pop("_usage_tokens", None) or model_backend.take_usage()
+                self._tokens_settle(ident, real or (estimate_tokens(messages)
+                                                    + estimate_tokens([{"content": reply or ""}])))
             # บันทึก usage ลง SQLite (metering ย้อนหลัง/คิดเงินต่อ tier)
             if ident.get("role") == "GUEST":
                 _guest_quota_consume(ident.get("client") or "unknown")

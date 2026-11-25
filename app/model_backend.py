@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 import socket
 import sys
+import threading
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -34,10 +35,42 @@ from typing import Optional
 # ให้ import local_coder (repo root) ได้ ไม่ว่าถูกเรียกจากไหน
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from local_coder import call_ollama, get_tuning_options, OLLAMA_URL  # noqa: E402
+from local_coder import call_ollama, get_tuning_options, OLLAMA_URL, take_last_usage  # noqa: E402
 from app import config_manager  # noqa: E402
 
 DEFAULT_OPENAI_BASE = "http://127.0.0.1:8000/v1"
+
+
+# Real token count (prompt + output) of the last generation on this thread. Backends
+# record it when the runtime reports it; server reads it for the free-tier allowance.
+_usage = threading.local()
+
+
+def reset_usage() -> None:
+    _usage.tokens = None
+
+
+def record_usage(tokens) -> None:
+    try:
+        n = int(tokens)
+    except (TypeError, ValueError):
+        return
+    if n > 0:
+        _usage.tokens = n
+
+
+def take_usage():
+    """Pop the token count recorded on this thread (None = runtime did not report)."""
+    n = getattr(_usage, "tokens", None)
+    _usage.tokens = None
+    return n
+
+
+def _record_openai_usage(data) -> None:
+    usage = data.get("usage") if isinstance(data, dict) else None
+    if isinstance(usage, dict):
+        record_usage(usage.get("total_tokens") or
+                     (usage.get("prompt_tokens") or 0) + (usage.get("completion_tokens") or 0))
 
 
 class BackendError(Exception):
@@ -82,7 +115,9 @@ class OllamaBackend(Backend):
 
     def generate(self, model, messages, num_ctx=8192, options=None) -> str:
         try:
-            return call_ollama(model, messages, num_ctx, options=options)
+            reply = call_ollama(model, messages, num_ctx, options=options)
+            record_usage(take_last_usage())
+            return reply
         except SystemExit as e:
             # call_ollama ออกแบบมา exit ตอน error (CLI) — ในฐานะ library ต้องไม่ฆ่าโปรเซส
             raise BackendError("เรียก Ollama ไม่สำเร็จ (ตรวจว่า `ollama serve` รันอยู่ไหม)") from e
@@ -112,6 +147,9 @@ class OllamaBackend(Backend):
                         # บรรทัดเดียวพังไม่ควรล้มทั้งสตรีม — ข้ามแล้วไปต่อ
                         continue
                     content = chunk.get("message", {}).get("content", "")
+                    if chunk.get("done"):
+                        record_usage((chunk.get("prompt_eval_count") or 0)
+                                     + (chunk.get("eval_count") or 0))
                     if content:
                         yield content
         except urllib.error.URLError as e:
@@ -157,14 +195,18 @@ class OpenAICompatBackend(Backend):
         except urllib.error.URLError as e:
             raise BackendError(f"ต่อ OpenAI-compatible backend ไม่ได้: {e}") from e
         try:
-            return json.loads(raw)["choices"][0]["message"]["content"]
+            data = json.loads(raw)
+            content = data["choices"][0]["message"]["content"]
+            _record_openai_usage(data)
+            return content
         except (ValueError, KeyError, IndexError, TypeError) as e:
             raise BackendError(f"response จาก backend ผิดรูปแบบ: {e}") from e
 
     def generate_stream(self, model, messages, num_ctx=8192, options=None):
         # OpenAI streaming = Server-Sent Events: แต่ละบรรทัดขึ้นต้น "data: " ตามด้วย JSON
         # chunk, เนื้อหาอยู่ที่ choices[0].delta.content, จบด้วย "data: [DONE]"
-        payload = {"model": model, "messages": messages, "stream": True}
+        payload = {"model": model, "messages": messages, "stream": True,
+                   "stream_options": {"include_usage": True}}
         if options:
             for k in ("temperature", "top_p", "seed", "max_tokens"):
                 if k in options:
@@ -188,6 +230,9 @@ class OpenAICompatBackend(Backend):
                         break
                     try:
                         chunk = json.loads(data)
+                        _record_openai_usage(chunk)
+                        if not chunk.get("choices"):
+                            continue   # usage-only chunk
                         delta = chunk["choices"][0].get("delta", {}).get("content", "")
                     except (ValueError, KeyError, IndexError, TypeError):
                         # chunk เดียวพังไม่ล้มทั้งสตรีม — ข้าม

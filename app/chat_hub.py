@@ -197,12 +197,15 @@ def _meter(project_root, connection_id, provider, model, usage) -> None:
         print(f"[chat][warn] บันทึก conn_usage ไม่สำเร็จ: {exc}")
 
 
-def _quota(handler, ident, model, transcript, text, status) -> None:
+def _quota(handler, ident, model, transcript, text, status, usage=None) -> None:
     if status != "ok":
         return
     finalize = getattr(handler, "_chat_finalize", None)
     if finalize is None:
         return
+    if usage is not None and not getattr(usage, "estimated", True):
+        # real provider count settles the free-tier monthly token allowance
+        ident["_usage_tokens"] = int(usage.input_tokens or 0) + int(usage.output_tokens or 0)
     try:
         finalize(ident, model, transcript, text)
     except Exception as exc:
@@ -381,7 +384,8 @@ def _run_assistant(handler, project_root, ident, *, model, **kw):
         return _run_assistant_inner(handler, project_root, ident, model=model, **kw)
     own = dict(ident)
     if not reserve(own):
-        raise ChatQuotaError("เกินโควตาการใช้งานรายวันแล้ว (อัปเกรดเป็น tier paid เพื่อใช้ได้ไม่จำกัด)")
+        raise ChatQuotaError(own.get("_quota_msg")
+                             or "เกินโควตาการใช้งานรายวันแล้ว (อัปเกรดเป็น tier paid เพื่อใช้ได้ไม่จำกัด)")
     try:
         return _run_assistant_inner(handler, project_root, own, model=model, **kw)
     finally:
@@ -455,7 +459,7 @@ def _run_assistant_inner(handler, project_root, ident, *, conversation_id, paren
         }
     row = _finish_row(project_root, placeholder["id"], result, canonical, model)
     _meter(project_root, connection_id, canonical, model, result["usage"])
-    _quota(handler, ident, model, transcript, result["text"], result["status"])
+    _quota(handler, ident, model, transcript, result["text"], result["status"], result["usage"])
     return {
         "reply": result["text"],
         "provider": canonical,
@@ -518,7 +522,7 @@ def _send_turn(handler, project_root, ident, model, messages, num_ctx, hub, gen_
         on_delta=(sink["send_delta"] if sink else None),
     )
     _meter(project_root, connection_id, canonical, model, result["usage"])
-    _quota(handler, ident, model, transcript, result["text"], result["status"])
+    _quota(handler, ident, model, transcript, result["text"], result["status"], result["usage"])
     payload = {
         "reply": result["text"],
         "provider": canonical,
