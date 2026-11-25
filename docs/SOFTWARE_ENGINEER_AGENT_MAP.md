@@ -240,3 +240,8 @@ Interface มี input/output และ error behavior ระบุครบ ง
 | ส. 28 | build `lcalocalai.exe`, รีสตาร์ตเซิร์ฟเวอร์ LAN, วัดผลบนเครื่องจริง | หัวหน้า + นักวิจัย | `/api/health`, `/v1/models`, แชต ผ่านบนเครื่องจริง |
 | อา. 29 | เปิด PR รวม, อัปเดต `LCA_SPEC.md` และคู่มือ, ส่งให้เจ้าของ merge | หัวหน้า | PR เขียว CI รอเจ้าของ merge |
 สิ่งที่ต้องให้เจ้าของทำ/ตัดสินก่อนวันอาทิตย์: Google OAuth Client (ดู `docs/CREDENTIALS_GUIDE.md`), ตั้ง IP คงที่ที่ router, ตัดสินเรื่อง `cloud_tunnel`
+
+## ผล 2026-11-26 (SQLite + ทดสอบเจาะระบบ)
+- SQLite: QA PASS รวมเข้าสาขาหลักแล้ว (`8d44c45`). ต้นเหตุเทสต์ค้าง: ปิด connection ทุกครั้งทำให้ SQLite checkpoint+fsync ~90 ms ต่อการเขียนบน HDD แก้ด้วย `SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE` เหลือ 1.4 ms. ผล: 50x2 consume ได้ 100 พอดี (2 โปรเซสรวมได้ 100), verify_api_key 100k keys ~1.7–2.9 ms, session อยู่รอดหลัง restart, import org.json พร้อม backup
+- ทดสอบเจาะระบบ: blocker 1 (SSRF/อ่านไฟล์ผ่าน `/api/news?feed=`), major 2 (session ได้ tier paid จึงไม่หักโควตา, ADMIN เปิด tunnel ไปพอร์ตไหนก็ได้และ IP กลายเป็น 127.0.0.1), minor 1 (/v1 stream คืนโควตาแม้ส่งคำตอบไปแล้ว) → กำลังแก้ในสาขา `fix/security-round1`
+- ข้อสังเกตจาก QA (ไม่ block): org.json ที่มี BOM import ไม่ได้, `bootstrap_needed` ควรเป็น False ถ้ามี org.json ที่ยัง import ไม่สำเร็จ, รอ lock ได้นาน ~29 วินาที, ยังไม่จำกัดความยาว username
