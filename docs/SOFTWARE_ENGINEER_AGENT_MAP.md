@@ -245,3 +245,18 @@ Interface มี input/output และ error behavior ระบุครบ ง
 - SQLite: QA PASS รวมเข้าสาขาหลักแล้ว (`8d44c45`). ต้นเหตุเทสต์ค้าง: ปิด connection ทุกครั้งทำให้ SQLite checkpoint+fsync ~90 ms ต่อการเขียนบน HDD แก้ด้วย `SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE` เหลือ 1.4 ms. ผล: 50x2 consume ได้ 100 พอดี (2 โปรเซสรวมได้ 100), verify_api_key 100k keys ~1.7–2.9 ms, session อยู่รอดหลัง restart, import org.json พร้อม backup
 - ทดสอบเจาะระบบ: blocker 1 (SSRF/อ่านไฟล์ผ่าน `/api/news?feed=`), major 2 (session ได้ tier paid จึงไม่หักโควตา, ADMIN เปิด tunnel ไปพอร์ตไหนก็ได้และ IP กลายเป็น 127.0.0.1), minor 1 (/v1 stream คืนโควตาแม้ส่งคำตอบไปแล้ว) → กำลังแก้ในสาขา `fix/security-round1`
 - ข้อสังเกตจาก QA (ไม่ block): org.json ที่มี BOM import ไม่ได้, `bootstrap_needed` ควรเป็น False ถ้ามี org.json ที่ยัง import ไม่สำเร็จ, รอ lock ได้นาน ~29 วินาที, ยังไม่จำกัดความยาว username
+
+## เช็กลิสต์ก่อนเปิดใช้งานจริงแบบเก็บเงิน (เป้า 2026-11-28)
+เกณฑ์ "พร้อมเปิด" = เทสต์ทั้งชุดผ่าน + QA security PASS + ทดสอบบนเครื่องจริงผ่าน + รายการข้อจำกัดที่รู้แล้วเขียนไว้ชัด (ไม่มีใครรับประกัน 100% ได้)
+| รายการ | สถานะ | ใครต้องทำ |
+|---|---|---|
+| ช่องโหว่ blocker/major (SSRF news, quota ของ session, tunnel, stream refund) | กำลังแก้ | Agent |
+| บัญชี/คีย์/โควตาใน SQLite | เสร็จ (`8d44c45`) | — |
+| API แบบ OpenAI `/v1` | เสร็จ (`4f130d2`) | — |
+| หน้า Console จัดการ API key | กำลังทำ | Agent |
+| หน้าแชตใหม่ (แถบซ้าย/แผงขวา, ไฮไลต์โค้ด, แนบไฟล์) | กำลังทำบางส่วน | Agent |
+| ระบบรับเงิน | **ยังไม่มี** ต้องเลือกผู้ให้บริการ (เช่น Stripe/Omise/PromptPay) และสมัครบัญชีร้านค้าเอง โค้ดตอนนี้มีแค่ ledger บันทึก | เจ้าของ |
+| โดเมน + HTTPS สำหรับลูกค้านอก LAN | **ยังไม่มี** ต้องมีโดเมน (`.com` มีค่ารายปี) หรือใช้ subdomain ฟรี + ตัดสินเรื่อง `cloud_tunnel` | เจ้าของ |
+| Google login | ต้องมี OAuth Client ID/Secret จากเจ้าของ | เจ้าของ + Agent |
+| ข้อตกลงการใช้งาน/นโยบายความเป็นส่วนตัว (เก็บเงินและเก็บข้อมูลลูกค้า) | **ยังไม่มี** | เจ้าของ |
+| ความจุ | เครื่องเดียว 8 GB รับคนแชตพร้อมกันได้ ~9–13 คน | — |
