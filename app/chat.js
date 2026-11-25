@@ -244,6 +244,28 @@
     html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" rel="noopener noreferrer">$1</a>');
     return html.replace(/\n/g, "<br>");
   }
+  // highlight.js escapes every token before wrapping it in <span>, so innerHTML is safe here.
+  function codeBlock(code, lang) {
+    const codeEl = document.createElement("code");
+    const hl = window.LCAHighlight;
+    const name = hl ? hl.normalizeLang(lang) : null;
+    if (name) {
+      codeEl.className = "lang-" + name;
+      codeEl.innerHTML = hl.highlight(code, name);
+    } else {
+      codeEl.textContent = code;
+    }
+    return codeEl;
+  }
+  function copyCode(btn, code) {
+    const done = (label) => {
+      btn.textContent = label;
+      setTimeout(() => { btn.textContent = "คัดลอก"; }, 1200);
+    };
+    Promise.resolve()
+      .then(() => navigator.clipboard.writeText(code))
+      .then(() => done("คัดลอกแล้ว"), () => done("คัดลอกไม่ได้"));
+  }
   function renderBody(el, text, rich) {
     el.replaceChildren();
     if (!rich) {
@@ -255,15 +277,14 @@
       if (index % 2 === 1) {
         const nl = chunk.indexOf("\n");
         const code = nl >= 0 ? chunk.slice(nl + 1) : chunk;
+        const lang = nl >= 0 ? chunk.slice(0, nl).trim() : "";
         const pre = document.createElement("pre");
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "copy";
         btn.textContent = "คัดลอก";
-        btn.addEventListener("click", () => navigator.clipboard.writeText(code));
-        const codeEl = document.createElement("code");
-        codeEl.textContent = code;
-        pre.append(btn, codeEl);
+        btn.addEventListener("click", () => copyCode(btn, code));
+        pre.append(btn, codeBlock(code, lang));
         el.append(pre);
       } else if (chunk) {
         const div = document.createElement("div");
@@ -566,9 +587,10 @@
       if (S.abort) S.abort.abort();
       return;
     }
-    const text = input.value.trim();
+    const text = withAttachments(input.value.trim());
     if (!text) return;
     input.value = "";
+    clearAttachments();
     const picked = choice();
     try {
       if (S.editId && S.conv) {
@@ -691,7 +713,106 @@
     });
     if (!box.childElementCount) box.textContent = "ไม่พบ";
   }
+  /* Attach text files: read in the browser, sent inside the user message (no upload). */
+  const ATTACH_EXT = ["py", "js", "ts", "json", "md", "txt", "csv", "html", "css", "sh"];
+  const ATTACH_LANG = { py: "python", js: "javascript", ts: "typescript", md: "markdown", sh: "bash" };
+  const ATTACH_MAX_BYTES = 200 * 1024;
+  const ATTACH_MAX_FILES = 5;
+  const NL = String.fromCharCode(10);
+  let attachments = [];  // [{ name, size, text }]
+  function fmtSize(n) {
+    return n < 1024 ? n + " B" : (n / 1024).toFixed(1) + " KB";
+  }
+  function fileExt(name) {
+    const i = String(name).lastIndexOf(".");
+    return i >= 0 ? name.slice(i + 1).toLowerCase() : "";
+  }
+  function looksBinary(text) {
+    if (text.indexOf(String.fromCharCode(0)) >= 0) return true;
+    const bad = (text.slice(0, 4096).match(new RegExp(String.fromCharCode(0xfffd), "g")) || []).length;
+    return bad > 8;
+  }
+  async function readAttachment(file) {
+    if (!ATTACH_EXT.includes(fileExt(file.name))) return "ไฟล์ " + file.name + " ไม่ใช่ไฟล์ข้อความ/โค้ดที่รองรับ";
+    if (file.size > ATTACH_MAX_BYTES) return "ไฟล์ " + file.name + " ใหญ่เกิน 200 KB";
+    const text = await file.text();
+    if (looksBinary(text)) return "ไฟล์ " + file.name + " เป็นไฟล์ไบนารี แนบไม่ได้";
+    attachments.push({ name: file.name, size: file.size, text });
+    return "";
+  }
+  async function addAttachments(files) {
+    const errors = [];
+    for (const file of [...(files || [])]) {
+      if (attachments.length >= ATTACH_MAX_FILES) {
+        errors.push("แนบได้สูงสุด " + ATTACH_MAX_FILES + " ไฟล์");
+        break;
+      }
+      try {
+        const err = await readAttachment(file);
+        if (err) errors.push(err);
+      } catch (_) {
+        errors.push("อ่านไฟล์ " + file.name + " ไม่ได้");
+      }
+    }
+    renderAttachments();
+    if (errors.length) setNotice(errors.join(" · "));
+  }
+  function renderAttachments() {
+    const box = $("attach-chips");
+    box.replaceChildren();
+    attachments.forEach((a, i) => {
+      const chip = document.createElement("span");
+      chip.className = "attach-chip";
+      const name = document.createElement("span");
+      name.className = "name";
+      name.textContent = a.name;
+      const size = document.createElement("span");
+      size.className = "meta";
+      size.textContent = fmtSize(a.size);
+      const rm = document.createElement("button");
+      rm.type = "button";
+      rm.textContent = "×";
+      rm.setAttribute("aria-label", "เอาไฟล์ " + a.name + " ออก");
+      rm.addEventListener("click", () => { attachments.splice(i, 1); renderAttachments(); });
+      chip.append(name, size, rm);
+      box.append(chip);
+    });
+    box.hidden = attachments.length === 0;
+  }
+  function withAttachments(text) {
+    if (!attachments.length) return text;
+    const blocks = attachments.map((a) => {
+      const ext = fileExt(a.name);
+      const body = a.text.endsWith(NL) ? a.text : a.text + NL;
+      return "```" + (ATTACH_LANG[ext] || ext) + " " + a.name + NL + body + "```";
+    });
+    return [text].concat(blocks).filter(Boolean).join(NL + NL);
+  }
+  function clearAttachments() {
+    attachments = [];
+    renderAttachments();
+  }
+  function bindAttach() {
+    const picker = $("attach-file");
+    const composer = $("composer");
+    $("attach-btn").addEventListener("click", () => picker.click());
+    picker.addEventListener("change", () => {
+      addAttachments(picker.files).finally(() => { picker.value = ""; });
+    });
+    composer.addEventListener("dragover", (ev) => {
+      if (!ev.dataTransfer || ![...ev.dataTransfer.types].includes("Files")) return;
+      ev.preventDefault();
+      composer.classList.add("drop");
+    });
+    composer.addEventListener("dragleave", () => composer.classList.remove("drop"));
+    composer.addEventListener("drop", (ev) => {
+      ev.preventDefault();
+      composer.classList.remove("drop");
+      addAttachments(ev.dataTransfer && ev.dataTransfer.files);
+    });
+  }
   function bind() {
+    bindAttach();
     $("composer").addEventListener("submit", onSubmit);
     input.addEventListener("keydown", (ev) => {
       if (ev.key === "Enter" && !ev.shiftKey) {
