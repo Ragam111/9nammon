@@ -121,6 +121,15 @@ def stop() -> bool:
         return True
 
 
+def is_active() -> bool:
+    """True while a cloudflared process is alive (server then trusts CF-Connecting-IP)."""
+    proc = _state.get("proc")
+    try:
+        return proc is not None and proc.poll() is None
+    except Exception:  # noqa: BLE001 — a broken handle means not running
+        return False
+
+
 def status() -> dict:
     """Return current tunnel status."""
     with _lock:

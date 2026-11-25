@@ -97,6 +97,10 @@ class ChatAccessError(ChatStoreError):
     """ผู้ใช้ไม่มีสิทธิ์ในการสนทนานี้ (→ 403) — แยกจาก ChatStoreError ทั่วไป (→ 400)"""
 
 
+class ChatQuotaError(ChatStoreError):
+    """Daily quota used up (→ 429)."""
+
+
 def _can_see(conv_owner, ident) -> bool:
     """กฎพื้นที่: owner=NULL = พื้นที่บริษัท (ทุกคนที่ล็อกอินเห็น), owner=ชื่อ = พื้นที่ส่วนตัว
     (เจ้าของเท่านั้น), ADMIN/CEO เห็นทุกพื้นที่ (ดูแลระบบ)"""
@@ -366,8 +370,28 @@ def _transcript(project_root, conversation_id, up_to, lang) -> list:
         )
 
 
-def _run_assistant(handler, project_root, ident, *, conversation_id, parent_id, provider, model,
-                   connection_id, gen_gate, num_ctx, lang, origin, source_id, stream, sink=None):
+def _run_assistant(handler, project_root, ident, *, model, **kw):
+    """Quota wrapper around one generation. Callers that did not reserve already
+    (regen/branch/edit/compare) reserve here on a private ident copy — compare runs
+    targets in parallel threads — and refund when no ok reply was finalized."""
+    if not (model or "").strip():
+        raise ChatStoreError("ต้องระบุ model")
+    reserve = getattr(handler, "_quota_reserve", None)
+    if reserve is None or ident.get("_quota_reserved"):
+        return _run_assistant_inner(handler, project_root, ident, model=model, **kw)
+    own = dict(ident)
+    if not reserve(own):
+        raise ChatQuotaError("เกินโควตาการใช้งานรายวันแล้ว (อัปเกรดเป็น tier paid เพื่อใช้ได้ไม่จำกัด)")
+    try:
+        return _run_assistant_inner(handler, project_root, own, model=model, **kw)
+    finally:
+        if own.get("_quota_reserved"):
+            handler._chat_release(own)  # not finalized (error/busy/exception) -> refund
+
+
+def _run_assistant_inner(handler, project_root, ident, *, conversation_id, parent_id, provider,
+                         model, connection_id, gen_gate, num_ctx, lang, origin, source_id,
+                         stream, sink=None):
     """Insert a streaming assistant row, complete it, and return the public payload."""
     from app import admission
     canonical = _canonical(provider) if provider else None
@@ -695,6 +719,8 @@ def handle_get(handler, parsed, project_root) -> None:
             handler._send_json(404, {"error": "not found"})
     except ChatAccessError as exc:
         handler._send_json(403, {"error": str(exc)})
+    except ChatQuotaError as exc:
+        handler._send_json(429, {"error": str(exc)})
     except ChatStoreError as exc:
         handler._send_json(400, {"error": str(exc)})
 
@@ -734,6 +760,8 @@ def handle_post(handler, parsed, project_root, gen_gate) -> None:
             handler._send_json(404, {"error": "not found"})
     except ChatAccessError as exc:
         handler._send_json(403, {"error": str(exc)})
+    except ChatQuotaError as exc:
+        handler._send_json(429, {"error": str(exc)})
     except ChatStoreError as exc:
         handler._send_json(400, {"error": str(exc)})
     except Exception as exc:
