@@ -1,10 +1,11 @@
 # tests/test_phase1_auth.py
 import json
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from app.org_store import _hash_key, get_user_by_api_key
+from app.org_store import _hash_key, get_user_by_api_key, revoke_api_key
 from app.usage_store import check_and_consume_quota
 from app.admission import AdmissionController
 
@@ -40,20 +41,22 @@ class TestPhase1SecurityAndGuards(unittest.TestCase):
             "users": {"dev_nammon": {"username": "dev_nammon", "role": "USER", "active": True}},
             "api_keys": {"k1": {"owner": "dev_nammon", "key_hash": hashed, "tier": "free", "active": True, "revoked": False}},
         }
-        Path("org.json").write_text(json.dumps(mock_org), encoding="utf-8")
+        # org.json is imported once into data/lca.db (SQLite); use a temp project root
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "org.json").write_text(json.dumps(mock_org), encoding="utf-8")
 
-        user = get_user_by_api_key(raw_key)
-        self.assertIsNotNone(user)
-        self.assertEqual(user["username"], "dev_nammon")
-        self.assertEqual(user["tier"], "free")
+            user = get_user_by_api_key(raw_key, root)
+            self.assertIsNotNone(user)
+            self.assertEqual(user["username"], "dev_nammon")
+            self.assertEqual(user["tier"], "free")
 
-        wrong_user = get_user_by_api_key("lca_f_wrongkey")
-        self.assertIsNone(wrong_user)
+            wrong_user = get_user_by_api_key("lca_f_wrongkey", root)
+            self.assertIsNone(wrong_user)
 
-        mock_org["api_keys"]["k1"]["active"] = False
-        Path("org.json").write_text(json.dumps(mock_org), encoding="utf-8")
-        revoked_user = get_user_by_api_key(raw_key)
-        self.assertIsNone(revoked_user)
+            self.assertTrue(revoke_api_key(root, "k1", actor_role="CEO"))
+            revoked_user = get_user_by_api_key(raw_key, root)
+            self.assertIsNone(revoked_user)
 
     def test_2_usage_store_quota_guard(self):
         """ทดสอบ usage_store: Quota รายวัน (Free Tier 100 requests) เกินแล้วต้องตัด (429)"""

@@ -8,6 +8,8 @@ get_stats() เรียกจาก GET /api/admin/stats (ADMIN+) — คืน
 import sqlite3
 from pathlib import Path
 
+from app import db as _lca_db
+
 _DB_NAME = "stats.db"
 
 
@@ -15,6 +17,10 @@ def _connect(project_root: Path) -> sqlite3.Connection:
     db = project_root / _DB_NAME
     conn = sqlite3.connect(str(db), check_same_thread=False)
     conn.row_factory = sqlite3.Row
+    # WAL + NORMAL: no journal fsync per logged request (~140 ms on HDD)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    _lca_db.skip_close_checkpoint(conn)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS request_log (
             id      INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -45,6 +45,24 @@ def write_lock(project_root) -> threading.Lock:
         return lock
 
 
+_NO_CKPT = getattr(sqlite3, "SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE", None)
+
+
+def skip_close_checkpoint(conn: sqlite3.Connection) -> None:
+    """Closing the last connection after a write checkpoints + fsyncs + deletes the WAL.
+
+    On a Windows HDD that is ~90 ms per call, so per-request connections (auth/quota)
+    became the bottleneck (test_org_store looked hung). WAL auto-checkpoint at 1000
+    pages still runs; only the checkpoint-on-close is skipped (Python 3.12+).
+    """
+    if _NO_CKPT is None:
+        return
+    try:
+        conn.setconfig(_NO_CKPT, True)
+    except (AttributeError, sqlite3.Error):  # pragma: no cover - old sqlite
+        pass
+
+
 def connect_raw(path) -> sqlite3.Connection:
     """Open one connection and apply the per-connection PRAGMAs.
 
@@ -67,6 +85,7 @@ def connect_raw(path) -> sqlite3.Connection:
     conn.execute("PRAGMA cache_size=-8000")
     conn.execute("PRAGMA mmap_size=67108864")
     conn.execute("PRAGMA journal_size_limit=16777216")
+    skip_close_checkpoint(conn)
     try:
         conn.create_function("lca_seg", 1, seg, deterministic=True)
     except TypeError:  # pragma: no cover - very old sqlite bindings
@@ -259,6 +278,7 @@ def connect_light(path) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA busy_timeout=5000")
     conn.execute("PRAGMA synchronous=NORMAL")
+    skip_close_checkpoint(conn)
     return conn
 
 

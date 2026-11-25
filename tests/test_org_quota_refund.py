@@ -15,6 +15,7 @@ Covers:
 import http.client
 import json
 import os
+import sqlite3
 import sys
 import tempfile
 import threading
@@ -29,6 +30,7 @@ import server  # noqa: E402
 from app import model_backend, org_store, usage_store  # noqa: E402
 
 MASTER = "master-secret-token"
+_LOCKED = sqlite3.OperationalError("database is locked")
 
 
 def _make_key(root: Path) -> str:
@@ -52,24 +54,24 @@ class OrgQuotaStoreTest(unittest.TestCase):
         self._tmp.cleanup()
 
     def test_save_failure_consume_not_ok(self) -> None:
-        # (a) os.replace keeps failing (Windows reader holding org.json) => not persisted
-        with mock.patch("app.org_store.os.replace", side_effect=PermissionError("locked")), \
+        # (a) the db stays locked for every retry => not persisted
+        with mock.patch("app.org_store._open", side_effect=_LOCKED), \
                 mock.patch("app.org_store.time.sleep", lambda s: None):
             ok, _ = org_store.consume_quota(self.root, self.key_id)
         self.assertFalse(ok)
         self.assertEqual(_used(self.root, self.key_id), 0)
 
     def test_save_transient_permission_error_is_retried(self) -> None:
-        real = os.replace
+        real = org_store._open
         calls = {"n": 0}
 
-        def flaky(src, dst):
+        def flaky(path):
             calls["n"] += 1
             if calls["n"] == 1:
-                raise PermissionError("transient")
-            return real(src, dst)
+                raise sqlite3.OperationalError("database is locked")
+            return real(path)
 
-        with mock.patch("app.org_store.os.replace", side_effect=flaky):
+        with mock.patch("app.org_store._open", side_effect=flaky):
             ok, remaining = org_store.consume_quota(self.root, self.key_id)
         self.assertTrue(ok)
         self.assertEqual(_used(self.root, self.key_id), 1)
@@ -95,7 +97,7 @@ class OrgQuotaStoreTest(unittest.TestCase):
         self.assertIs(org_store.refund_quota(self.root, self.key_id),
                       org_store.RefundResult.NOTHING)
         org_store.consume_quota(self.root, self.key_id)
-        with mock.patch("app.org_store.os.replace", side_effect=PermissionError("locked")), \
+        with mock.patch("app.org_store._open", side_effect=_LOCKED), \
                 mock.patch("app.org_store.time.sleep", lambda s: None):
             res = org_store.refund_quota(self.root, self.key_id)
         self.assertIs(res, org_store.RefundResult.SAVE_FAILED)

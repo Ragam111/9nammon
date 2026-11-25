@@ -34,6 +34,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterator, Optional
 
+from app import db as _db
+
 USAGE_DB_NAME = "usage.db"
 
 # ราคาต่อ 1 หน่วยการใช้งาน (เช่น 1 request) แยกตาม tier — หน่วยเป็น "บาท" (ประมาณการ)
@@ -64,6 +66,10 @@ def _session(project_root: Path):
 def _connect(project_root: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(str(project_root / USAGE_DB_NAME), timeout=5.0)
     conn.row_factory = sqlite3.Row
+    # WAL + NORMAL: a commit no longer fsyncs a rollback journal (~150 ms per chat on HDD)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    _db.skip_close_checkpoint(conn)
     conn.execute(
         """CREATE TABLE IF NOT EXISTS usage (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

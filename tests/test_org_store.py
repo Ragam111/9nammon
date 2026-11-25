@@ -10,7 +10,20 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from app import org_store  # noqa: E402
+from app import db, org_store  # noqa: E402
+
+
+def _db_text(root: Path) -> str:
+    """All org rows as text (SQLite replaced org.json as the store)."""
+    import sqlite3
+    conn = sqlite3.connect(str(db.db_path(root)))
+    try:
+        rows = []
+        for table in ("org_users", "org_api_keys"):
+            rows += [repr(tuple(r)) for r in conn.execute(f"SELECT * FROM {table}")]
+        return " | ".join(rows)
+    finally:
+        conn.close()
 
 
 class OrgStoreTestBase(unittest.TestCase):
@@ -45,7 +58,7 @@ class PasswordTest(OrgStoreTestBase):
             org_store.create_user(self.root, "u1", "short", "USER", created_by_role="CEO")
 
     def test_password_never_stored_plaintext(self):
-        raw = (self.root / "org.json").read_text(encoding="utf-8")
+        raw = _db_text(self.root)
         self.assertNotIn("password123", raw)
         self.assertIn("pbkdf2_sha256", raw)
 
@@ -108,8 +121,8 @@ class ApiKeyTest(OrgStoreTestBase):
 
     def test_key_full_value_not_stored(self):
         issued = org_store.create_api_key(self.root, "dev", "free", actor_role="CEO")
-        raw = (self.root / "org.json").read_text(encoding="utf-8")
-        self.assertNotIn(issued["key"], raw)  # ต้องไม่มี key เต็มในไฟล์
+        raw = _db_text(self.root)
+        self.assertNotIn(issued["key"], raw)  # ต้องไม่มี key เต็มใน db
         self.assertIn("sha256:", raw)         # มีแต่ hash
 
     def test_wrong_key_rejected(self):
@@ -198,12 +211,12 @@ class QuotaTest(OrgStoreTestBase):
         kid = issued["key_id"]
         org_store.consume_quota(self.root, kid)
         # จำลองข้ามวัน: แก้ usage_date ให้เป็นเมื่อวาน
-        import json
-        p = self.root / "org.json"
-        data = json.loads(p.read_text(encoding="utf-8"))
-        data["api_keys"][kid]["usage_date"] = "2000-01-01"
-        data["api_keys"][kid]["used_today"] = 999
-        p.write_text(json.dumps(data), encoding="utf-8")
+        import sqlite3
+        conn = sqlite3.connect(str(db.db_path(self.root)))
+        with conn:
+            conn.execute("UPDATE org_api_keys SET usage_date='2000-01-01', used_today=999"
+                         " WHERE key_id=?", (kid,))
+        conn.close()
         ok, remaining = org_store.consume_quota(self.root, kid)
         self.assertTrue(ok)  # รีเซ็ตแล้วใช้ได้
         self.assertEqual(remaining, org_store.TIER_DAILY_LIMIT["free"] - 1)
