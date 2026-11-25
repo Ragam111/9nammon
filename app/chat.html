@@ -41,7 +41,10 @@
     <div id="offline" class="banner" hidden>ไม่มีอินเทอร์เน็ต — ใช้ได้เฉพาะโมเดล local</div>
     <div id="notice" class="banner warn" hidden></div>
     <div id="thread" class="thread"></div>
+    <div id="attach-chips" class="attach-chips" hidden></div>
     <form id="composer" class="composer">
+      <button id="attach-btn" type="button" class="attach-btn" title="แนบไฟล์ข้อความ/โค้ด (ลากวางได้)" aria-label="แนบไฟล์">&#128206;</button>
+      <input id="attach-file" type="file" multiple accept=".py,.js,.ts,.json,.md,.txt,.csv,.html,.css,.sh" hidden>
       <textarea id="input" rows="2" placeholder="พิมพ์ข้อความ… (Enter ส่ง, Shift+Enter ขึ้นบรรทัด)"></textarea>
       <button id="send" type="submit">ส่ง</button>
     </form>
@@ -54,6 +57,7 @@
   </section>
 </div>
 <script src="/app.js"></script>
+<script src="/highlight.js"></script>
 <script src="/chat.js"></script>
 </body>
 </html>
