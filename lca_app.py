@@ -26,7 +26,6 @@ import sys
 import threading
 import time
 import webbrowser
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -58,7 +57,7 @@ def build_server(root, preferred_port: int = DEFAULT_PORT, host: str = "127.0.0.
     ไม่ได้ส่ง token → server สุ่ม session ต่อการเปิด แล้วแปะไว้ที่ httpd.lca_session_token"""
     port = server.find_free_port(preferred_port, host=host)
     handler = server.make_handler(Path(root), None, bind_host=host)
-    httpd = ThreadingHTTPServer((host, port), handler)
+    httpd = server.ExclusiveHTTPServer((host, port), handler)
     httpd.lca_session_token = handler.session_token
     httpd.lca_session_auto = handler.session_token_auto
     return httpd, httpd.server_address[1]

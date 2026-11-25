@@ -2475,6 +2475,22 @@ def make_handler(project_root: Path, auth_token: Optional[str],
     return LocalAssistantHandler
 
 
+class ExclusiveHTTPServer(ThreadingHTTPServer):
+    """ThreadingHTTPServer ที่ไม่ยอม bind พอร์ตซ้ำกับโปรเซสอื่น
+
+    HTTPServer ตั้ง allow_reuse_address=1 ซึ่งบน Windows เปิด SO_REUSEADDR และยอมให้ bind
+    พอร์ตที่มีคนฟังอยู่ได้ (เคยเกิดเซิร์ฟเวอร์ 2 ตัวบน 8420: ตัวหนึ่ง 0.0.0.0 อีกตัว 127.0.0.1)
+    Windows ใช้ SO_EXCLUSIVEADDRUSE แทน; ระบบอื่นคง SO_REUSEADDR ไว้ (ที่นั่นไม่ยอม bind ทับคนที่ฟังอยู่)
+    """
+
+    allow_reuse_address = os.name != "nt"
+
+    def server_bind(self):
+        if os.name == "nt" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
 def find_free_port(preferred: int, host: str = "127.0.0.1", tries: int = 20) -> int:
     """คืนพอร์ตที่ว่างจริง — ลอง preferred ก่อน ถ้าชนไล่ขึ้นทีละ 1 (preferred+1, +2, ...)
     กันปัญหา 'พอร์ต 8420 ถูกใช้อยู่แล้ว server เปิดไม่ขึ้น' — หาที่ว่างให้อัตโนมัติ
@@ -2566,7 +2582,7 @@ def main():
 
     handler_cls = make_handler(project_root, cfg["token"], bind_host=cfg["host"])
     try:
-        httpd = ThreadingHTTPServer((cfg["host"], cfg["port"]), handler_cls)
+        httpd = ExclusiveHTTPServer((cfg["host"], cfg["port"]), handler_cls)
     except OSError:
         # พอร์ตถูกใช้อยู่ — ถ้าเป็นเครื่อง local (ไม่ใช่ cloud ที่ฉีด $PORT มา) หาพอร์ตว่างให้อัตโนมัติ
         if os.environ.get("PORT"):
@@ -2575,7 +2591,7 @@ def main():
         new_port = find_free_port(cfg["port"] + 1, cfg["host"])
         print(f"[info] พอร์ต {cfg['port']} ถูกใช้อยู่ — เปลี่ยนไปใช้พอร์ตว่าง {new_port} แทน")
         cfg["port"] = new_port
-        httpd = ThreadingHTTPServer((cfg["host"], cfg["port"]), handler_cls)
+        httpd = ExclusiveHTTPServer((cfg["host"], cfg["port"]), handler_cls)
     print(f"=== Local Assistant Server ===")
     print(f"โปรเจกต์: {project_root}")
     if handler_cls.session_token_auto:
