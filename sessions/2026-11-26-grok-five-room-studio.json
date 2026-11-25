@@ -1,0 +1,30 @@
+{
+  "skill": "rapid-iteration-ecosystem",
+  "version": "0.1.0",
+  "company": "Token LCA",
+  "token": "T-LCA",
+  "repo": "Ragam111/9nammon",
+  "recorded": "2026-11-26",
+  "surface": "grok-app-builder",
+  "brief": "อยากได้แอปแชตแบบ ChatGPT ก่อนมันจะเป็นเว็บ",
+  "rooms": ["โถง", "เทป", "แชต", "สภา", "คลัง"],
+  "rules": {
+    "guest": "คำตอบอยู่แค่หน้า ไม่เขียนเซิร์ฟเวอร์ และไม่ถูกนำเข้าบัญชีภายหลัง",
+    "account": "ถัง private กับ company ของบัญชีที่ล็อกอิน",
+    "opening": 8000,
+    "deduct": "เก็บม้วนสตูดิโอหักเท่ามือที่เดินถึง เก็บแชตหรือมติหัก 1",
+    "free": "เดินโถง ดาวน์โหลดม้วน และคำตอบบนหน้า",
+    "brain": "แผนที่ไฟล์บนเว็บ ไม่ใช่ Ollama สมองจริงอยู่ที่ connections.py บนเดสก์ท็อป",
+    "notConnected": ["กุญแจของ Ollama", "รหัสไททันของแอดมิน", "โทเคนเข้าเครื่อง"]
+  },
+  "steps": [
+    { "n": 1, "title": "รับโจทย์จากคน", "layer": "บริบท", "files": [], "done": true },
+    { "n": 2, "title": "เปิดม้วนเทป", "layer": "พื้นฐาน", "files": ["sessions/tape.json", "sessions/public-hall-tape.json"], "done": true },
+    { "n": 3, "title": "เขียนหน้าที่คนเห็น", "layer": "ฟรอนต์เอนด์", "files": ["app/index.html", "app/login.html", "app/chat.js", "app/app.css", "lca_app.py"], "done": true },
+    { "n": 4, "title": "ต่อสายตอบทีละคำ", "layer": "แบ็กเอนด์", "files": ["server.py", "app/auth_backend.py", "app/admission.py", "app/model_backend.py", "local_coder.py", "app/context_manager.py", "sysmanager/", "connections.py"], "done": true },
+    { "n": 5, "title": "แช่แข็งสกิล", "layer": "คอร์", "files": ["skills/rapid-iteration-ecosystem/SKILL.md", "skills/rapid-iteration-ecosystem/TAPE.md"], "done": true },
+    { "n": 6, "title": "แยกพื้นที่", "layer": "บัญชี", "files": ["app/login.html", "app/space_store.py", "org_store.py"], "done": true },
+    { "n": 7, "title": "หักเหรียญ", "layer": "เหรียญ", "files": ["app/usage_store.py", "app/history_store.py"], "done": true },
+    { "n": 8, "title": "แพ็กเปิดตัว", "layer": "ติดตั้ง", "files": ["install/pack.json", "installer_gui.py", "install.ps1", "start-lca.bat", "Dockerfile"], "done": true }
+  ]
+}
