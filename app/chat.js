@@ -791,7 +791,10 @@
     if (!attachments.length) return text;
     const blocks = attachments.map((a) => {
       const ext = fileExt(a.name);
-      const body = a.text.endsWith(NL) ? a.text : a.text + NL;
+      // The renderer splits on ``` so a fence inside the file would end the block early.
+      // A zero-width space between backticks keeps the text readable but not a fence.
+      const raw = a.text.replace(/```/g, "``​`");
+      const body = raw.endsWith(NL) ? raw : raw + NL;
       return "```" + (ATTACH_LANG[ext] || ext) + " " + a.name + NL + body + "```";
     });
     return [text].concat(blocks).filter(Boolean).join(NL + NL);

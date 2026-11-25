@@ -16,8 +16,15 @@
   }
 
   const NUM = "\\b(?:0[xX][0-9a-fA-F]+|\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?)\\b";
-  const DQ = '"(?:[^"\\\\\\n]|\\\\.)*"';
-  const SQ = "'(?:[^'\\\\\\n]|\\\\.)*'";
+  // Delimited tokens end at their closer OR at end of line / end of input, so a
+  // missing closer never fails and restarts at every opener (O(n^2)). No $ (flag m).
+  const EOL = "(?=\\n)|(?![\\s\\S])";
+  const EOI = "(?![\\s\\S])";
+  const DQ = '"(?:[^"\\\\\\n]|\\\\.)*\\\\?(?:"|' + EOL + ")";
+  const SQ = "'(?:[^'\\\\\\n]|\\\\.)*\\\\?(?:'|" + EOL + ")";
+  const BT = "`(?:[^`\\\\]|\\\\[\\s\\S])*\\\\?(?:`|" + EOI + ")";
+  const BLOCK = "/\\*[\\s\\S]*?(?:\\*/|" + EOI + ")";
+  const TRIPLE = '"""[\\s\\S]*?(?:"""|' + EOI + ")|'''[\\s\\S]*?(?:'''|" + EOI + ")";
 
   const PY_KW = "False None True and as assert async await break class continue def del elif else except " +
     "finally for from global if import in is lambda nonlocal not or pass raise return try while with yield self print";
@@ -32,13 +39,13 @@
   const RULES = {
     python: [
       ["com", "#[^\\n]*"],
-      ["str", '"""[\\s\\S]*?"""|\'\'\'[\\s\\S]*?\'\'\'|[rbfRBF]{0,2}(?:' + DQ + "|" + SQ + ")"],
+      ["str", TRIPLE + "|[rbfRBF]{0,2}(?:" + DQ + "|" + SQ + ")"],
       ["kw", words(PY_KW)],
       ["num", NUM],
     ],
     javascript: [
-      ["com", "//[^\\n]*|/\\*[\\s\\S]*?\\*/"],
-      ["str", DQ + "|" + SQ + "|`(?:[^`\\\\]|\\\\.)*`"],
+      ["com", "//[^\\n]*|" + BLOCK],
+      ["str", DQ + "|" + SQ + "|" + BT],
       ["kw", words(JS_KW)],
       ["num", NUM],
     ],
@@ -54,12 +61,12 @@
       ["num", NUM],
     ],
     html: [
-      ["com", "<!--[\\s\\S]*?-->"],
+      ["com", "<!--[\\s\\S]*?(?:-->|" + EOI + ")"],
       ["str", DQ + "|" + SQ],
       ["kw", "</?[A-Za-z][\\w-]*|/?>"],
     ],
     css: [
-      ["com", "/\\*[\\s\\S]*?\\*/"],
+      ["com", BLOCK],
       ["str", DQ + "|" + SQ],
       // Lookbehind anchors: a repeatable run may only start at its first char (no ReDoS).
       ["kw", "@[\\w-]+|![\\w]+|(?<![\\w-])[a-z][a-z-]*(?=\\s*:)"],

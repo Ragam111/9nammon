@@ -81,3 +81,36 @@ test("code over MAX_LENGTH is escaped only, no spans", () => {
   assert.ok(!out.includes("<span"));
   assert.ok(out.startsWith("&quot;&quot;&quot;&lt;b&gt;"));
 });
+
+test("unterminated delimited tokens are linear (no O(n^2))", () => {
+  const cases = [
+    ['"a\\', ["python", "javascript", "json", "bash", "css"]],
+    ["'a\\", ["python", "javascript"]],
+    ["`a\\", ["javascript"]],
+    ["/*a", ["javascript", "css"]],
+    ["<!--a", ["html"]],
+    ['"""a', ["python"]],
+    ["'''a", ["python"]],
+  ];
+  for (const [unit, langs] of cases) {
+    const code = unit.repeat(Math.floor(99000 / unit.length));
+    for (const lang of langs) {
+      const t0 = Date.now();
+      const out = HL.highlight(code, lang);
+      const ms = Date.now() - t0;
+      assert.ok(ms < 500, lang + " " + JSON.stringify(unit) + " took " + ms + "ms");
+      assert.equal(unescape(strip(out)), code, lang + ": text must round-trip");
+      assert.ok(!/<(?!span class="hl-|\/span>)/.test(out), lang + ": only hl spans allowed");
+    }
+  }
+});
+
+test("unterminated strings and comments stop at end of line or input", () => {
+  assert.match(HL.highlight('x = "open\ny = 1', "python"), /hl-str">&quot;open<\/span>\ny = <span class="hl-num">1</);
+  assert.match(HL.highlight("a = 'open\\\nb", "javascript"), /hl-str">&#39;open\\<\/span>\nb/);
+  assert.match(HL.highlight("x /* open", "javascript"), /hl-com">\/\* open<\/span>$/);
+  assert.match(HL.highlight("<p><!-- open", "html"), /hl-com">&lt;!-- open<\/span>$/);
+  assert.match(HL.highlight('s = """doc\nmore', "python"), /hl-str">&quot;&quot;&quot;doc\nmore<\/span>$/);
+  assert.match(HL.highlight("`a ${b}\nc", "javascript"), /hl-str">`a \$\{b\}\nc<\/span>$/);
+  assert.match(HL.highlight('"a" "b', "json"), /hl-str">&quot;a&quot;<\/span> <span class="hl-str">&quot;b<\/span>$/);
+});
