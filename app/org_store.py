@@ -405,12 +405,74 @@ def clean_key_name(name) -> str:
 
 def _insert_key(conn, key_id: str, raw_key: str, owner: str, tier: str,
                 name: str = "", created_by: str | None = None) -> None:
+    limit = TIER_DAILY_LIMIT[tier]
+    if tier == "free":
+        # a paid plan (app/payments.py) that is still running also covers keys issued later
+        row = conn.execute("SELECT daily_limit FROM org_plan_limits WHERE username=?"
+                           " AND expires_at > ?", (owner, time.time())).fetchone()
+        if row is not None:
+            limit = row["daily_limit"]
     conn.execute(
         "INSERT INTO org_api_keys(key_id, key_hash, prefix, owner, tier, daily_limit,"
         " used_today, usage_date, active, created_at, name, created_by)"
         " VALUES (?,?,?,?,?,?,0,?,1,?,?,?)",
         (key_id, _hash_key(raw_key), raw_key[:_KEY_PREFIX_SHOW], owner, tier,
-         TIER_DAILY_LIMIT[tier], _today_str(), _now_iso(), name or None, created_by))
+         limit, _today_str(), _now_iso(), name or None, created_by))
+
+
+# ---------- paid plans (app/payments.py) ----------
+# A plan only changes daily_limit of the owner's tier="free" keys; tier "paid" keys stay
+# unlimited. The *_in helpers run inside the caller's write transaction (run_write).
+
+def run_write(project_root: Path, fn):
+    """Public wrapper of the write transaction (BEGIN IMMEDIATE + retry) for sibling stores."""
+    return _write(project_root, fn)
+
+
+def run_read(project_root: Path, sql: str, params: tuple = (), one: bool = False):
+    return _read(project_root, sql, params, one)
+
+
+def set_plan_limit_in(conn, username: str, plan: str, daily_limit: int, order_id: str,
+                      expires_at: float) -> None:
+    if daily_limit < 0:
+        raise ValueError("daily_limit ต้อง >= 0")
+    conn.execute(
+        "INSERT INTO org_plan_limits(username, plan, daily_limit, order_id, expires_at)"
+        " VALUES (?,?,?,?,?) ON CONFLICT(username) DO UPDATE SET plan=excluded.plan,"
+        " daily_limit=excluded.daily_limit, order_id=excluded.order_id,"
+        " expires_at=excluded.expires_at",
+        (username, plan, int(daily_limit), order_id, float(expires_at)))
+    conn.execute("UPDATE org_api_keys SET daily_limit=? WHERE owner=? AND tier='free'",
+                 (int(daily_limit), username))
+
+
+def clear_plan_limit_in(conn, username: str, order_id: str | None = None) -> bool:
+    """Back to the free limit. With order_id: only if that order is the running plan."""
+    sql, params = "DELETE FROM org_plan_limits WHERE username=?", [username]
+    if order_id is not None:
+        sql += " AND order_id=?"
+        params.append(order_id)
+    if conn.execute(sql, tuple(params)).rowcount == 0:
+        return False
+    conn.execute("UPDATE org_api_keys SET daily_limit=? WHERE owner=? AND tier='free'",
+                 (TIER_DAILY_LIMIT["free"], username))
+    return True
+
+
+def expire_plan_limits_in(conn, now: float) -> list:
+    """Clear every plan whose expires_at <= now; returns [(username, order_id)]"""
+    rows = conn.execute("SELECT username, order_id FROM org_plan_limits WHERE expires_at <= ?",
+                        (float(now),)).fetchall()
+    for r in rows:
+        clear_plan_limit_in(conn, r["username"], r["order_id"])
+    return [(r["username"], r["order_id"]) for r in rows]
+
+
+def plan_limit(project_root: Path, username: str) -> dict | None:
+    row = _read(project_root, "SELECT username, plan, daily_limit, order_id, expires_at"
+                              " FROM org_plan_limits WHERE username=?", (username,), one=True)
+    return dict(row) if row else None
 
 
 def create_api_key(project_root: Path, owner: str, tier: str, actor_role: str,

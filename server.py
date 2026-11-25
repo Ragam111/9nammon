@@ -38,6 +38,7 @@ from sysmanager.sysinfo import get_system_info  # noqa: E402  (spec เครื
 from app import job_queue  # noqa: E402  (คิวงาน server เก็บด้วย SQLite)
 from app import history_store  # noqa: E402  (ประวัติ snapshot + error log, SQLite)
 from app import finance_ledger  # noqa: E402  (บันทึกการเงิน record-only, SQLite)
+from app import payments_api  # noqa: E402  (แพ็กเกจ + คำสั่งซื้อ PromptPay QR, ยืนยันโดย ADMIN)
 from app import usage_store  # noqa: E402  (บันทึกการใช้งาน API ต่อ key, SQLite)
 from app.rate_limit import RateLimiter  # noqa: E402  (จำกัด request ต่อ IP)
 from app import notifier  # noqa: E402  (แจ้งเตือน Discord/email, config-driven)
@@ -122,6 +123,8 @@ STATIC_ROUTES = {
     "/highlight.js": ("highlight.js", "application/javascript; charset=utf-8", True),
     "/rea":     ("rea.html",     "text/html; charset=utf-8",              False),
     "/models":  ("models.html",  "text/html; charset=utf-8",              False),
+    "/plans":   ("plans.html",   "text/html; charset=utf-8",              False),
+    "/qr.js":   ("qr.js",        "application/javascript; charset=utf-8", True),
     "/rea-data.js": ("rea-data.js", "application/javascript; charset=utf-8", False),
     "/fonts/IBMPlexSansThai-Regular.sub.woff2": ("fonts/IBMPlexSansThai-Regular.sub.woff2", "font/woff2", True),
     "/fonts/IBMPlexSansThai-SemiBold.sub.woff2": ("fonts/IBMPlexSansThai-SemiBold.sub.woff2", "font/woff2", True),
@@ -720,6 +723,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._fail_last_resort(e)
 
         def _route_get(self, parsed):
+            if parsed.path.startswith("/api/"):
+                payments_api.tick(project_root)  # แพ็กเกจครบ 30 วัน → กลับเป็น free (≤ 1 ครั้ง/นาที)
             if parsed.path in STATIC_ROUTES:
                 if not self._page_allowed(parsed.path):
                     return
@@ -816,6 +821,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._handle_news(parsed)
             elif chat_hub.wants_get(parsed.path):
                 chat_hub.handle_get(self, parsed, project_root)
+            elif payments_api.wants_get(parsed.path):
+                payments_api.handle_get(self, parsed, project_root)
             elif parsed.path == "/api/admin/tunnel/status":
                 self._handle_tunnel_status()
             else:
@@ -1806,6 +1813,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._fail_last_resort(e)
 
         def _route_post(self, parsed):
+            if parsed.path.startswith("/api/"):
+                payments_api.tick(project_root)
             try:
                 if parsed.path == "/api/chat":
                     self._handle_chat()
@@ -1818,6 +1827,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                     self._handle_auth_logout()
                 elif chat_hub.wants_post(parsed.path):
                     chat_hub.handle_post(self, parsed, project_root, gen_gate)
+                elif payments_api.wants_post(parsed.path):
+                    payments_api.handle_post(self, parsed, project_root)
                 elif parsed.path == "/api/todos":
                     self._handle_todos_post()
                 elif parsed.path == "/api/todos/toggle":
