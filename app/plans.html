@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>แพ็กเกจ / Plans — LCA</title>
+  <link rel="stylesheet" href="/app.css" />
+  <script src="/app.js" defer></script>
+  <script src="/qr.js" defer></script>
+  <style>
+    .page-dev .plans { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+    .page-dev .plan h3 { margin: 0 0 4px; font-size: 18px; }
+    .page-dev .price { font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .page-dev .save { display: inline-block; margin-top: 6px; font-size: 12px; padding: 2px 8px; border-radius: 6px;
+                      color: var(--lca-ok); border: 1px solid var(--lca-ok); }
+    .page-dev .plan button { width: 100%; margin-top: 10px; }
+    .page-dev #qr-box { display: none; margin-bottom: 14px; }
+    .page-dev #qr { width: min(280px, 80vw); margin: 8px auto; display: block; background: #fff; }
+    .page-dev .row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .page-dev .row-actions input { flex: 1 1 140px; min-width: 0; }
+    .page-dev .tbl { overflow-x: auto; }
+    .page-dev .payload { font-family: var(--lca-mono); font-size: 11px; word-break: break-all; }
+    .page-dev .events { font-size: 12px; color: var(--lca-muted); }
+    @media (max-width: 560px) { .page-dev td, .page-dev th { padding: 6px 4px; } }
+  </style>
+</head>
+<body class="page-dev">
+  <header>
+    <h1>LCA · แพ็กเกจ</h1>
+    <a href="/" class="muted" style="margin-left:auto">← กลับหน้าแชต</a>
+    <a href="/login?next=/plans" class="muted">เข้าสู่ระบบ</a>
+  </header>
+
+  <main>
+    <p class="note" id="pp-note"></p>
+    <div class="plans" id="plans"><p class="muted">กำลังโหลดแพ็กเกจ…</p></div>
+    <p class="note">ชำระผ่านพร้อมเพย์ (ไม่มีค่าธรรมเนียม) — ผู้ดูแลตรวจยอดเงินเข้าแล้วกดยืนยัน แพ็กเกจจึงเริ่มใช้งาน
+      · ราคาและโควตาเป็นค่าที่เจ้าของระบบตั้ง</p>
+
+    <div class="card" id="qr-box" style="margin-top:14px">
+      <h2>สแกนเพื่อชำระ</h2>
+      <div id="qr" aria-live="polite"></div>
+      <div class="kv"><span>คำสั่งซื้อ</span><span id="qr-order"></span></div>
+      <div class="kv"><span>ยอดชำระ</span><span id="qr-amount"></span></div>
+      <div class="kv"><span>ชำระภายใน</span><span id="qr-deadline"></span></div>
+      <p class="note">หลังโอนแล้ว รอผู้ดูแลยืนยัน (สถานะจะเปลี่ยนเป็น "ใช้งานอยู่") · ข้อความ payload สำหรับแอปที่วางข้อความได้:</p>
+      <div class="payload" id="qr-payload"></div>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <h2>คำสั่งซื้อของฉัน</h2>
+      <p class="err" id="my-err" style="display:none"></p>
+      <div class="tbl"><table>
+        <thead><tr><th>วันที่</th><th>แพ็กเกจ</th><th>ยอด</th><th>สถานะ</th><th>ทำรายการ</th></tr></thead>
+        <tbody id="my-orders"><tr><td colspan="5" class="muted">—</td></tr></tbody>
+      </table></div>
+    </div>
+
+    <div class="card" id="admin" style="display:none; margin-top:14px">
+      <h2>ผู้ดูแล: ยืนยันการชำระ / คืนเงิน</h2>
+      <div class="row-actions" style="margin-bottom:8px">
+        <select id="admin-status" class="sel">
+          <option value="">ทุกสถานะ</option>
+          <option value="pending">รอชำระ</option>
+          <option value="refund_requested">ขอคืนเงิน</option>
+          <option value="active">ใช้งานอยู่</option>
+          <option value="refunded">คืนเงินแล้ว</option>
+          <option value="cancelled">ยกเลิก</option>
+        </select>
+        <button id="admin-reload">โหลดใหม่</button>
+      </div>
+      <p class="note">ยืนยันเฉพาะเมื่อเห็นเงินเข้าบัญชีพร้อมเพย์จริงตรงยอด · คืนเงิน = โอนคืนเองนอกระบบก่อน แล้วค่อยกด</p>
+      <p class="err" id="admin-err" style="display:none"></p>
+      <div class="tbl"><table>
+        <thead><tr><th>วันที่</th><th>ลูกค้า</th><th>แพ็กเกจ</th><th>ยอด</th><th>สถานะ</th><th>ทำรายการ</th></tr></thead>
+        <tbody id="admin-orders"></tbody>
+      </table></div>
+    </div>
+  </main>
+
+  <script>
+    function qs(id) { return document.getElementById(id); }
+    // escape every server-provided string before it goes into innerHTML
+    function esc(v) {
+      return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
+        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+      });
+    }
+    var STATUS = { pending: "รอชำระ", paid: "ชำระแล้ว", active: "ใช้งานอยู่", cancelled: "ยกเลิก",
+                   refund_requested: "ขอคืนเงิน", refunded: "คืนเงินแล้ว",
+                   refund_rejected: "ปฏิเสธคืนเงิน", expired: "หมดอายุ" };
+    var PLANS = {}, READY = false;
+    function baht(n) { return Number(n || 0).toLocaleString("th-TH", { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + " ฿"; }
+    function num(n) { return Number(n || 0).toLocaleString("th-TH"); }
+    function when(t) { return t ? new Date(t * 1000).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" }) : "—"; }
+    function planName(id) { return PLANS[id] ? PLANS[id].name : id; }
+
+    async function api(method, url, body) {
+      var opt = { method: method, headers: window.lca.headers(body ? { "Content-Type": "application/json" } : null) };
+      if (body) opt.body = JSON.stringify(body);
+      var res = await fetch(url, opt);
+      var data = await res.json().catch(function () { return {}; });
+      return { ok: res.ok, status: res.status, data: data };
+    }
+
+    function planCard(p) {
+      var save = p.savings_note ? '<span class="save">' + esc(p.savings_note) + "</span>" : "";
+      var per = p.price_per_1k != null ? '<div class="note">' + esc(baht(p.price_per_1k)) + " / 1,000 requests</div>" : "";
+      var btn = "";
+      if (p.buyable) {
+        btn = READY ? '<button data-buy="' + esc(p.id) + '">ซื้อ ' + esc(p.name) + "</button>"
+                    : '<button disabled title="เจ้าของระบบต้องตั้ง PROMPTPAY_ID ก่อน">ยังซื้อไม่ได้</button>';
+      }
+      return '<div class="card plan"><h3>' + esc(p.name) + '</h3><div class="price">' +
+        (p.price_thb > 0 ? esc(baht(p.price_thb)) + '<span class="muted" style="font-size:13px"> / เดือน</span>' : "ฟรี") +
+        "</div>" + '<div class="kv"><span>requests / เดือน</span><span>' + esc(num(p.monthly_requests)) + "</span></div>" +
+        '<div class="kv"><span>tokens / เดือน</span><span>' + esc(num(p.monthly_tokens)) + "</span></div>" +
+        '<div class="kv"><span>สูงสุด / วัน</span><span>' + (p.daily_limit ? esc(num(p.daily_limit)) : "ไม่จำกัด") + "</span></div>" +
+        per + save + btn + "</div>";
+    }
+
+    async function loadPlans() {
+      var r = await api("GET", "/api/plans");
+      if (!r.ok) { qs("plans").innerHTML = '<p class="err">โหลดแพ็กเกจไม่ได้</p>'; return; }
+      READY = !!r.data.promptpay_ready;
+      PLANS = {};
+      r.data.plans.forEach(function (p) { PLANS[p.id] = p; });
+      qs("pp-note").textContent = READY ? "" :
+        "ยังซื้อแพ็กเกจไม่ได้: เจ้าของระบบต้องตั้งค่า PROMPTPAY_ID (เบอร์พร้อมเพย์หรือเลขประจำตัว 13 หลัก) ใน config.json ก่อน";
+      qs("plans").innerHTML = r.data.plans.map(planCard).join("");
+    }
+
+    function showQr(o) {
+      if (!o || o.status !== "pending" || !o.payload) { qs("qr-box").style.display = "none"; return; }
+      try {
+        qs("qr").innerHTML = window.LcaQR.toSvg(window.LcaQR.encodeText(o.payload));  // svg built from booleans only
+      } catch (e) {
+        qs("qr").textContent = "สร้าง QR ไม่ได้: " + e.message;
+      }
+      qs("qr-order").textContent = o.order_id;
+      qs("qr-amount").textContent = baht(o.amount_thb);
+      qs("qr-deadline").textContent = when(o.pay_deadline);
+      qs("qr-payload").textContent = o.payload;
+      qs("qr-box").style.display = "block";
+    }
+
+    async function buy(planId) {
+      var r = await api("POST", "/api/orders", { plan: planId });
+      if (r.status === 401 || r.status === 403) { location.href = "/login?next=/plans"; return; }
+      if (!r.ok) { alert(r.data.error || ("ผิดพลาด " + r.status)); return; }
+      showQr(r.data.order);
+      qs("qr-box").scrollIntoView({ behavior: "smooth" });
+      loadMine();
+    }
+
+    function myActions(o) {
+      if (o.status === "pending") {
+        return '<div class="row-actions"><button data-show="' + esc(o.order_id) + '">QR</button>' +
+               '<button data-cancel="' + esc(o.order_id) + '">ยกเลิก</button></div>';
+      }
+      if (o.status === "paid" || o.status === "active") {
+        return '<div class="row-actions"><input id="reason-' + esc(o.order_id) + '" placeholder="เหตุผลที่ขอคืนเงิน" maxlength="500" />' +
+               '<button data-refund="' + esc(o.order_id) + '">ขอคืนเงิน</button></div>';
+      }
+      if (o.status === "refund_requested") return '<span class="muted">รอผู้ดูแลพิจารณา</span>';
+      return "";
+    }
+
+    var MINE = [];
+    async function loadMine() {
+      var r = await api("GET", "/api/orders");
+      var err = qs("my-err");
+      if (r.status === 401 || r.status === 403) {
+        err.textContent = "เข้าสู่ระบบเพื่อดูคำสั่งซื้อ"; err.style.display = "block";
+        qs("my-orders").innerHTML = ""; return;
+      }
+      if (!r.ok) { err.textContent = r.data.error || ("ผิดพลาด " + r.status); err.style.display = "block"; return; }
+      err.style.display = "none";
+      MINE = r.data.orders;
+      qs("my-orders").innerHTML = MINE.length ? MINE.map(function (o) {
+        var until = o.status === "active" && o.active_until ? '<div class="note">ถึง ' + esc(when(o.active_until)) + "</div>" : "";
+        return "<tr><td>" + esc(when(o.created_at)) + "</td><td>" + esc(planName(o.plan)) + "</td><td>" +
+          esc(baht(o.amount_thb)) + "</td><td>" + esc(STATUS[o.status] || o.status) + until + "</td><td>" +
+          myActions(o) + "</td></tr>";
+      }).join("") : '<tr><td colspan="5" class="muted">ยังไม่มีคำสั่งซื้อ</td></tr>';
+      var pending = MINE.filter(function (o) { return o.status === "pending"; })[0];
+      if (pending) showQr(pending); else qs("qr-box").style.display = "none";
+    }
+
+    async function act(url, body, after) {
+      var r = await api("POST", url, body || {});
+      if (!r.ok) alert(r.data.error || ("ผิดพลาด " + r.status));
+      after();
+    }
+
+    function adminActions(o) {
+      var id = esc(o.order_id);
+      if (o.status === "pending") return '<button data-confirm="' + id + '">ยืนยันรับเงิน</button>';
+      if (o.status === "refund_requested") {
+        return '<div class="row-actions"><button data-do-refund="' + id + '">คืนเงินแล้ว</button>' +
+               '<button data-reject="' + id + '">ปฏิเสธ</button></div>';
+      }
+      return "";
+    }
+
+    async function loadAdmin() {
+      var st = qs("admin-status").value;
+      var r = await api("GET", "/api/admin/orders" + (st ? "?status=" + encodeURIComponent(st) : ""));
+      var err = qs("admin-err");
+      if (!r.ok) { err.textContent = r.data.error || ("ผิดพลาด " + r.status); err.style.display = "block"; return; }
+      err.style.display = "none";
+      qs("admin-orders").innerHTML = r.data.orders.length ? r.data.orders.map(function (o) {
+        var reason = o.refund_reason ? '<div class="note">เหตุผล: ' + esc(o.refund_reason) + "</div>" : "";
+        var log = (o.events || []).map(function (e) {
+          return esc(when(e.at)) + " " + esc(e.actor) + ": " + esc(STATUS[e.to_status] || e.to_status);
+        }).join("<br>");
+        return "<tr><td>" + esc(when(o.created_at)) + '<div class="note lca-mono">' + esc(o.order_id) + "</div></td><td>" +
+          esc(o.username) + "</td><td>" + esc(planName(o.plan)) + "</td><td>" + esc(baht(o.amount_thb)) + "</td><td>" +
+          esc(STATUS[o.status] || o.status) + reason + '<div class="events">' + log + "</div></td><td>" +
+          adminActions(o) + "</td></tr>";
+      }).join("") : '<tr><td colspan="6" class="muted">ไม่มีรายการ</td></tr>';
+    }
+
+    document.addEventListener("click", function (ev) {
+      var t = ev.target.closest("button");
+      if (!t) return;
+      var d = t.dataset;
+      if (d.buy) buy(d.buy);
+      else if (d.show) showQr(MINE.filter(function (o) { return o.order_id === d.show; })[0]);
+      else if (d.cancel) { if (confirm("ยกเลิกคำสั่งซื้อนี้?")) act("/api/orders/" + encodeURIComponent(d.cancel) + "/cancel", {}, loadMine); }
+      else if (d.refund) {
+        var reason = (qs("reason-" + d.refund) || {}).value || "";
+        if (!reason.trim()) { alert("กรุณาระบุเหตุผลที่ขอคืนเงิน"); return; }
+        act("/api/orders/" + encodeURIComponent(d.refund) + "/refund-request", { reason: reason.trim() }, loadMine);
+      }
+      else if (d.confirm) { if (confirm("ยืนยันว่าได้รับเงินตรงยอดแล้ว?")) act("/api/admin/orders/" + encodeURIComponent(d.confirm) + "/confirm-paid", {}, loadAdmin); }
+      else if (d.doRefund) { if (confirm("โอนคืนลูกค้าแล้วใช่ไหม?")) act("/api/admin/orders/" + encodeURIComponent(d.doRefund) + "/refund", {}, loadAdmin); }
+      else if (d.reject) { if (confirm("ปฏิเสธการคืนเงิน?")) act("/api/admin/orders/" + encodeURIComponent(d.reject) + "/reject-refund", {}, loadAdmin); }
+    });
+
+    window.addEventListener("DOMContentLoaded", async function () {
+      qs("admin-reload").addEventListener("click", loadAdmin);
+      qs("admin-status").addEventListener("change", loadAdmin);
+      await loadPlans();
+      loadMine();
+      var me = await window.lca.whoami();
+      if (me && (me.role === "ADMIN" || me.role === "CEO")) { qs("admin").style.display = "block"; loadAdmin(); }
+    });
+  </script>
+</body>
+</html>
