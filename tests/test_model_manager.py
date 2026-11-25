@@ -93,6 +93,29 @@ class PullTest(unittest.TestCase):
             list(mm.pull("qwen2.5:1.5b", opener=opener))
         self.assertIn("disk full", str(cm.exception))
 
+    def test_connection_dropped_mid_stream_raises_thai_error(self):
+        import http.client
+
+        class _Broken:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def __iter__(self):
+                yield b'{"status":"pulling manifest"}\n'
+                yield b'{"status":"downloading","completed":1,"total":9}\n'
+                raise http.client.IncompleteRead(b"")
+
+        def opener(req, timeout=None):
+            return _Broken()
+        got = []
+        with self.assertRaises(mm.ModelManagerError):
+            for e in mm.pull("qwen2.5:1.5b", opener=opener):
+                got.append(e["status"])
+        self.assertEqual(got, ["pulling manifest", "downloading"])
+
     def test_ollama_unreachable_raises_thai_error(self):
         with self.assertRaises(mm.ModelManagerError):
             list(mm.pull("qwen2.5:1.5b", opener=_down_opener))

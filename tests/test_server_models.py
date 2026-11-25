@@ -81,6 +81,18 @@ class ServerModelsTest(unittest.TestCase):
         last = json.loads(data.splitlines()[-1])
         self.assertEqual(last["status"], "error")
 
+    def test_pull_unexpected_error_mid_stream_stays_ndjson(self):
+        def boom(name):
+            yield {"status": "pulling manifest"}
+            raise RuntimeError("unexpected")
+        with mock.patch.object(model_manager, "pull", side_effect=boom):
+            status, data = self._req("POST", "/api/models/pull", {"model": "qwen2.5:1.5b"})
+        self.assertEqual(status, 200)
+        self.assertNotIn("HTTP/1.", data)
+        lines = [json.loads(x) for x in data.splitlines() if x.strip()]
+        self.assertEqual(lines[0]["status"], "pulling manifest")
+        self.assertEqual(lines[-1]["status"], "error")
+
 
 if __name__ == "__main__":
     unittest.main()

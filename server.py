@@ -1338,6 +1338,7 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
             self.send_header("Cache-Control", "no-cache")
             self.end_headers()
+            self._headers_sent = True  # ห้ามตอบ 500 ซ้อนต่อท้าย stream
 
             def emit(obj):
                 self.wfile.write((json.dumps(obj, ensure_ascii=False) + "\n").encode("utf-8"))
@@ -1349,6 +1350,15 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 emit({"status": "done", "model": name})
             except model_manager.ModelManagerError as e:
                 emit({"status": "error", "error": str(e)})
+            except OSError:
+                raise  # client หลุด — เขียนต่อไม่ได้
+            except Exception as e:  # noqa: BLE001 — header ส่งไปแล้ว: แจ้งเป็นบรรทัด NDJSON แทน 500
+                try:
+                    history_store.log_error(project_root, "error", f"{self.command} {self.path}",
+                                            f"{type(e).__name__}: {e}")
+                except Exception:
+                    pass
+                emit({"status": "error", "error": "ติดตั้งไม่สำเร็จ (ข้อผิดพลาดภายใน) — ดู error log ที่ /dev"})
 
         # ---------- LAN discovery: scan subnet หา LCA nodes (ADMIN) ----------
         def _handle_nodes_discover(self, parsed):
@@ -1789,6 +1799,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                                             f"{type(e).__name__}: {e}")
                 except Exception:
                     pass
+                if getattr(self, "_headers_sent", False):
+                    return  # header ถูกส่งไปแล้ว (เช่น stream) — ห้ามต่อท้าย 500
                 try:
                     self._send_json(500, {"error": f"internal error: {type(e).__name__}",
                                           "type": type(e).__name__})

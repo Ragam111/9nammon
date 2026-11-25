@@ -8,6 +8,7 @@ stdlib ล้วน (urllib) — Ollama ต้องอยู่ที่ 127.0.
 """
 from __future__ import annotations
 
+import http.client
 import json
 import urllib.error
 import urllib.request
@@ -96,6 +97,12 @@ def pull(name: str, base: str = OLLAMA_BASE, timeout: float = 30.0,
     except (OSError, urllib.error.URLError) as e:
         raise ModelManagerError("ติดต่อ Ollama ไม่ได้ — ตรวจว่า Ollama ทำงานอยู่") from e
     with resp:
+        yield from _read_events(resp)
+
+
+def _read_events(resp) -> Iterator[dict]:
+    """อ่าน NDJSON จาก Ollama — connection หลุดกลางทาง (Ollama crash/restart) → ModelManagerError"""
+    try:
         for raw in resp:
             line = raw.decode("utf-8", "replace").strip()
             if not line:
@@ -108,3 +115,5 @@ def pull(name: str, base: str = OLLAMA_BASE, timeout: float = 30.0,
                 raise ModelManagerError(f"Ollama ติดตั้งไม่สำเร็จ: {event['error']}")
             if isinstance(event, dict):
                 yield event
+    except (OSError, http.client.HTTPException) as e:
+        raise ModelManagerError("การเชื่อมต่อกับ Ollama หลุดกลางทาง — ลองติดตั้งใหม่อีกครั้ง") from e
