@@ -34,6 +34,9 @@ jobs:
       - name: Build LCA-Desktop.exe (แอปก้อนเดียว เปิดแชตได้เลย)
         run: pyinstaller --onefile --windowed --name LCA-Desktop --add-data "app;app" --add-data "sysmanager;sysmanager" --add-data "local_coder.py;." lca_app.py
 
+      - name: Build lcalocalai.exe (ไฟล์เดียว รวมเซิร์ฟเวอร์ + หน้าเว็บ ใช้กับโมเดลในเครื่องผ่าน Ollama)
+        run: pyinstaller --onefile --windowed --name lcalocalai --add-data "app;app" --add-data "sysmanager;sysmanager" --add-data "local_coder.py;." lca_app.py
+
       # เก็บเป็น artifact ของ run เสมอ — กดดาวน์โหลด .exe ได้แม้ตอนรันเองแบบไม่มี tag
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
@@ -47,6 +50,13 @@ jobs:
         with:
           name: LCA-Desktop-exe
           path: dist/LCA-Desktop.exe
+          if-no-files-found: error
+
+      - name: Upload lcalocalai artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lcalocalai-exe
+          path: dist/lcalocalai.exe
           if-no-files-found: error
 
       # แปะเข้า Release เฉพาะตอน push tag (ใช้ gh CLI ที่ติดมากับ runner อยู่แล้ว)
