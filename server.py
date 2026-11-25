@@ -72,7 +72,7 @@ from app import conn_usage  # noqa: E402  (นับ token/ค่าใช้จ
 from app import skills_store  # noqa: E402  (Skills: prompt+สมองสำเร็จรูป ใช้ซ้ำได้)
 from app import bots  # noqa: E402  (Bot: skill + run endpoint ให้ automation เรียก)
 from app import cloud_tunnel  # noqa: E402  (Cloudflare Quick Tunnel — เปิด tunnel ชั่วคราวออก internet)
-from app import session_store  # noqa: E402  (session token หลัง login username/password — in-memory)
+from app import session_store  # noqa: E402  (session token หลัง login username/password — SQLite หลัง configure())
 from sysmanager.monitor import collect as _collect, Analyzer as _Analyzer  # noqa: E402
 from sysmanager.monitor import lca_context as _lca_context  # noqa: E402  (Phase 2: บริบท Ollama)
 
@@ -2212,7 +2212,7 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 messages = [{"role": "system", "content": get_system_prompt(lang)}] + messages
             # จองโควตาแบบ atomic "ก่อนเรียกโมเดล" — consume_quota ทำ check+หักใน lock เดียว
             # จึงกันคำขอพร้อมกันเกินโควตาได้ ถ้าเกินแล้วตอบ 429 ทันที ไม่เรียก LLM
-            # (consume_quota คืน ok=False ด้วยถ้าบันทึก org.json ไม่สำเร็จ — fail-closed)
+            # (consume_quota คืน ok=False ด้วยถ้าบันทึกลง db ไม่สำเร็จ — fail-closed)
             if ident.get("key_id"):
                 ok, _remaining = org_store.consume_quota(project_root, ident["key_id"])
                 if not ok:
@@ -2232,8 +2232,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 print(f"[quota][warn] คืนโควตาไม่สำเร็จ: {e}")
                 return
             if result is org_store.RefundResult.SAVE_FAILED:
-                # คืนแล้วแต่บันทึก org.json ไม่ได้ — ผู้ใช้ยังโดนหัก 1 ครั้ง (ไม่ log ค่า key)
-                print("[quota][warn] คืนโควตาแล้วแต่บันทึก org.json ไม่สำเร็จ "
+                # คืนแล้วแต่บันทึกลง db ไม่ได้ — ผู้ใช้ยังโดนหัก 1 ครั้ง (ไม่ log ค่า key)
+                print("[quota][warn] คืนโควตาแล้วแต่บันทึกลง db ไม่สำเร็จ "
                       f"(key_id={ident.get('key_id')})")
 
         def _chat_finalize(self, ident, model, messages, reply):
@@ -2642,6 +2642,9 @@ def main():
         print(f"[ปฏิเสธ] {e}")
         sys.exit(1)
 
+    # users/keys/quota/sessions อยู่ใน data/lca.db (SQLite WAL) — import org.json ครั้งแรก (มี backup)
+    org_store.init_storage(project_root)
+    session_store.configure(project_root)
     handler_cls = make_handler(project_root, cfg["token"], bind_host=cfg["host"])
     try:
         httpd = ExclusiveHTTPServer((cfg["host"], cfg["port"]), handler_cls)

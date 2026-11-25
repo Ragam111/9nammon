@@ -1,11 +1,17 @@
 """
 org_store.py — ระบบองค์กร: ผู้ใช้ (User) + บทบาท (Role) + API key แบบมี tier/quota
-เก็บเป็น JSON ต่อโปรเจกต์ (ไฟล์ org.json ที่ project_root)
+เก็บใน SQLite (WAL) ต่อโปรเจกต์: ``data/lca.db`` ตาราง org_users / org_api_keys /
+org_user_usage / org_meta (migration ``0012_org_auth``) ผ่าน app/db.py
 
-ทำไมต้องมี:
-    server.py เดิมใช้ token เดี่ยวตัวเดียว (ใครมี token ก็ทำได้ทุกอย่าง) ไม่พอสำหรับ
-    องค์กรที่มีหลายคน/หลายสิทธิ์ โมดูลนี้เพิ่ม "ใครเป็นใคร" + "ทำอะไรได้บ้าง" + โควตา
-    การใช้ API (free/paid) โดยยังคงสไตล์ stdlib ล้วนเหมือนโมดูลอื่นในโปรเจกต์
+ทำไมย้ายจาก org.json:
+    org.json ต้อง read-modify-write ทั้งไฟล์ทุกครั้ง (ช้าเมื่อ key เยอะ, verify_api_key ไล่ทุก key)
+    และ lock อยู่แค่ใน process เดียว — หลายโปรเซสหักโควตาพร้อมกันแล้วนับเพี้ยนได้.
+    SQLite: index ที่ key_hash, หักโควตาด้วย UPDATE เดียวแบบ atomic (ข้ามโปรเซสได้)
+
+ย้ายข้อมูล (ครั้งเดียว):
+    ครั้งแรกที่เปิด store ของโปรเจกต์ ถ้ามี org.json และยังไม่เคย import → copy ไป
+    ``backups/org.json.<เวลา>.bak`` ก่อน แล้ว import users / api_keys / used_today / usage
+    บันทึกใน org_meta('org_json_imported'). ไม่ลบ/ไม่แก้ org.json เดิม (หลัง import ไม่ถูกอ่านอีก)
 
 บทบาท (สูง -> ต่ำ):   CEO > ADMIN > USER
     USER  : แชท/ใช้งาน AI ได้ (กินโควตาตาม tier ของ API key)
@@ -16,9 +22,9 @@ org_store.py — ระบบองค์กร: ผู้ใช้ (User) + บ
     - รหัสผ่านเก็บเป็น pbkdf2_hmac(sha256) + salt สุ่ม ไม่เคยเก็บ plaintext
     - API key สุ่มด้วย secrets, เก็บเฉพาะ sha256 hash + prefix ไว้โชว์ระบุตัว
     - คืนค่า key เต็มๆ "ครั้งเดียวตอนสร้าง" เท่านั้น หลังจากนั้นกู้คืนไม่ได้ (by design)
-    - org.json ต้องอยู่ใน .gitignore เสมอ (เหมือน config.json/todos.json)
+    - data/ และ backups/ อยู่ใน .gitignore
 
-Interface หลักที่ server.py เรียกใช้:
+Interface หลักที่ server.py เรียกใช้ (เหมือนเดิม):
     bootstrap_needed(project_root) -> bool
     create_user(project_root, username, password, role, created_by_role) -> dict
     verify_password(project_root, username, password) -> dict | None
@@ -33,33 +39,25 @@ Interface หลักที่ server.py เรียกใช้:
     list_api_keys(project_root) -> list[dict]                       # ไม่คืน key/hash
 """
 
+from __future__ import annotations
+
 import enum
-import functools
 import hashlib
 import hmac
 import json
-import os
 import secrets
-import tempfile
+import shutil
+import sqlite3
 import threading
 import time
+from contextlib import contextmanager
 from datetime import date, datetime
 from pathlib import Path
 
+from app import db
+
 ORG_FILE_NAME = "org.json"
-
-# server รันบน ThreadingHTTPServer → การ read-modify-write org.json ต้องกันชนกัน
-# ไม่งั้น request พร้อมกันทำให้ quota เพี้ยนหรือเขียนทับกันหาย (lost update)
-_lock = threading.RLock()
-
-
-def _synchronized(fn):
-    """ครอบฟังก์ชันที่ทำ read-modify-write org.json ให้ทำทีละตัว (atomic ต่อ process)"""
-    @functools.wraps(fn)
-    def wrapper(*args, **kwargs):
-        with _lock:
-            return fn(*args, **kwargs)
-    return wrapper
+IMPORT_META = "org_json_imported"
 
 # ลำดับชั้นบทบาท — ตัวเลขมากกว่า = สิทธิ์สูงกว่า
 ROLE_LEVEL = {"USER": 1, "ADMIN": 2, "CEO": 3}
@@ -76,72 +74,182 @@ _PBKDF2_ITERATIONS = 200_000
 _KEY_PREFIX = "lca"          # รูปแบบ key: lca_<tier>_<random>
 _KEY_PREFIX_SHOW = 12        # จำนวนอักษรหัว key ที่เก็บไว้โชว์ระบุตัว (ปลอดภัย)
 
+_WRITE_ATTEMPTS = 5          # retry เมื่อ db ถูก lock ชั่วคราว (หลังหมด busy_timeout)
+_WRITE_BACKOFF_S = 0.02
 
-# ---------- storage (JSON ต่อโปรเจกต์ ตาม pattern todo_store/config_manager) ----------
+_PREPARED: set[str] = set()
+_PREPARE_LOCK = threading.Lock()
+
+
+# ---------- storage (SQLite ผ่าน app/db.py) ----------
 
 def _org_path(project_root: Path) -> Path:
-    return project_root / ORG_FILE_NAME
+    return Path(project_root) / ORG_FILE_NAME
 
 
-def _load(project_root: Path) -> dict:
-    """อ่าน org.json — ไม่มีไฟล์คืนโครงว่าง, ไฟล์เสียเตือนแล้วคืนโครงว่าง (ไม่ crash)"""
-    path = _org_path(project_root)
-    if not path.exists():
-        return {"users": {}, "api_keys": {}}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as e:
-        print(f"[org][warn] อ่าน {ORG_FILE_NAME} ไม่ได้: {e} — ถือว่าว่างเปล่า")
-        return {"users": {}, "api_keys": {}}
-    if not isinstance(data, dict):
-        print(f"[org][warn] {ORG_FILE_NAME} รูปแบบผิด — ถือว่าว่างเปล่า")
-        return {"users": {}, "api_keys": {}}
-    data.setdefault("users", {})
-    data.setdefault("api_keys", {})
-    return data
+def _open(path: Path) -> sqlite3.Connection:
+    """จุดเดียวที่เปิด connection (tests patch ตรงนี้เพื่อจำลอง db ล้ม)"""
+    return db.connect_light(path)
 
 
-_REPLACE_ATTEMPTS = 5      # Windows: os.replace may hit a transient PermissionError
-_REPLACE_BACKOFF_S = 0.02  # when another reader holds org.json open
+def _is_busy(err: sqlite3.Error) -> bool:
+    msg = str(err).lower()
+    return "locked" in msg or "busy" in msg
 
 
-def _replace_with_retry(src: str, dst: Path) -> None:
-    """os.replace with a few retries on PermissionError (Windows sharing violation)."""
-    for i in range(_REPLACE_ATTEMPTS):
+@contextmanager
+def _txn(project_root: Path, path: Path):
+    """BEGIN IMMEDIATE ... COMMIT; ใช้ write_lock เดียวกับ db.write_txn (ทีละ writer ใน process)"""
+    with db.write_lock(project_root):
+        conn = _open(path)
         try:
-            os.replace(src, dst)
-            return
-        except PermissionError:
-            if i == _REPLACE_ATTEMPTS - 1:
-                raise
-            time.sleep(_REPLACE_BACKOFF_S * (i + 1))
-
-
-def _save(project_root: Path, data: dict) -> bool:
-    """เขียนแบบ atomic (temp + os.replace) — คืน True ถ้าบันทึกสำเร็จ, False ถ้าล้ม
-
-    ผู้อ่านพร้อมกันเห็นไฟล์เก่าหรือใหม่เต็มๆ เสมอ ไม่เห็นไฟล์ครึ่งๆ กลางๆ.
-    ผู้เรียกที่ความถูกต้องสำคัญ (เช่น consume_quota) ต้องเช็คผลนี้ ห้ามถือว่าสำเร็จเอง
-    """
-    path = _org_path(project_root)
-    try:
-        fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".org.", suffix=".tmp")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-            _replace_with_retry(tmp, path)
-        except OSError:
-            # เก็บกวาด temp ถ้าเขียน/replace ไม่สำเร็จ
+            conn.execute("BEGIN IMMEDIATE")
             try:
-                os.unlink(tmp)
-            except OSError:
-                pass
-            raise
-    except OSError as e:
-        # fail loud (Rule 14) แต่ไม่ทำโปรแกรมพัง — คืน False ให้ผู้เรียกรู้ว่า state ไม่ถูกบันทึก
-        print(f"[org][error] เขียน {ORG_FILE_NAME} ไม่ได้: {e}")
-        return False
-    return True
+                yield conn
+            except BaseException:
+                try:
+                    conn.execute("ROLLBACK")
+                except sqlite3.Error:
+                    pass
+                raise
+            conn.execute("COMMIT")
+        finally:
+            conn.close()
+
+
+def _prepare(project_root: Path) -> Path:
+    """migrate + import org.json ครั้งเดียวต่อ db ต่อ process → คืน path ของ db"""
+    path = db.db_path(project_root)
+    key = str(path)
+    with _PREPARE_LOCK:
+        if key in _PREPARED and path.exists():
+            return path
+        db.ensure_ready(project_root)
+        _import_org_json(Path(project_root), path)
+        _PREPARED.add(key)
+    return path
+
+
+def _write(project_root: Path, fn):
+    """รัน fn(conn) ใน write transaction — retry เมื่อ db busy/locked ชั่วคราว"""
+    path = _prepare(project_root)
+    for i in range(_WRITE_ATTEMPTS):
+        try:
+            with _txn(project_root, path) as conn:
+                return fn(conn)
+        except sqlite3.OperationalError as e:
+            if i == _WRITE_ATTEMPTS - 1 or not _is_busy(e):
+                raise
+            time.sleep(_WRITE_BACKOFF_S * (i + 1))
+    raise RuntimeError("unreachable")  # pragma: no cover
+
+
+def _read(project_root: Path, sql: str, params: tuple = (), one: bool = False):
+    path = _prepare(project_root)
+    conn = _open(path)
+    try:
+        cur = conn.execute(sql, params)
+        return cur.fetchone() if one else cur.fetchall()
+    finally:
+        conn.close()
+
+
+# ---------- one-time import from org.json ----------
+
+def _backup_org_json(project_root: Path, src: Path) -> Path:
+    dest_dir = project_root / "backups"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    dest = dest_dir / f"org.json.{stamp}.bak"
+    n = 1
+    while dest.exists():
+        dest = dest_dir / f"org.json.{stamp}-{n}.bak"
+        n += 1
+    shutil.copy2(src, dest)
+    return dest
+
+
+def _int(value, default: int = 0) -> int:
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def _import_rows(conn: sqlite3.Connection, data: dict) -> dict:
+    users = data.get("users") if isinstance(data.get("users"), dict) else {}
+    keys = data.get("api_keys") if isinstance(data.get("api_keys"), dict) else {}
+    usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
+    done = {"users": 0, "keys": 0, "usage": 0, "skipped": 0}
+    for name, u in users.items():
+        if not isinstance(u, dict) or u.get("role") not in VALID_ROLES:
+            done["skipped"] += 1
+            continue
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO org_users(username, role, password, active, created_at,"
+            " display_name, google_email) VALUES (?,?,?,?,?,?,?)",
+            (name, u["role"], u.get("password") or "", 1 if u.get("active", False) else 0,
+             u.get("created_at"), u.get("display_name"), u.get("google_email")))
+        done["users"] += cur.rowcount
+    for key_id, k in keys.items():
+        if not isinstance(k, dict) or not k.get("key_hash") or not k.get("owner"):
+            done["skipped"] += 1
+            continue
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO org_api_keys(key_id, key_hash, prefix, owner, tier,"
+            " daily_limit, used_today, usage_date, active, created_at)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (key_id, k["key_hash"], k.get("prefix"), k["owner"], k.get("tier") or "free",
+             _int(k.get("daily_limit", 0)), _int(k.get("used_today", 0)), k.get("usage_date"),
+             1 if k.get("active", False) else 0, k.get("created_at")))
+        done["keys"] += cur.rowcount
+    for name, entry in usage.items():
+        if isinstance(entry, dict) and entry.get("date"):
+            cur = conn.execute(
+                "INSERT OR IGNORE INTO org_user_usage(username, usage_date, count) VALUES (?,?,?)",
+                (name, str(entry["date"]), _int(entry.get("count", 0))))
+            done["usage"] += cur.rowcount
+    return done
+
+
+def _import_org_json(project_root: Path, path: Path) -> dict | None:
+    """import org.json ครั้งเดียว (backup ก่อนเสมอ, ไม่ลบไฟล์เดิม) — คืนสรุปหรือ None"""
+    src = _org_path(project_root)
+    if not src.is_file():
+        return None
+    conn = _open(path)
+    try:
+        if conn.execute("SELECT 1 FROM org_meta WHERE name=?", (IMPORT_META,)).fetchone():
+            return None
+    finally:
+        conn.close()
+    try:
+        data = json.loads(src.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        print(f"[org][warn] อ่าน {ORG_FILE_NAME} เพื่อ import ไม่ได้: {e} — ข้าม (ยังไม่ทำเครื่องหมาย)")
+        return None
+    if not isinstance(data, dict):
+        print(f"[org][warn] {ORG_FILE_NAME} รูปแบบผิด — ข้าม import")
+        return None
+    backup = _backup_org_json(project_root, src)
+    with _txn(project_root, path) as conn:
+        if conn.execute("SELECT 1 FROM org_meta WHERE name=?", (IMPORT_META,)).fetchone():
+            return None  # อีกโปรเซส import ไปแล้ว
+        done = _import_rows(conn, data)
+        info = {**done, "backup": str(backup.relative_to(project_root)),
+                "at": datetime.now().isoformat(timespec="seconds")}
+        conn.execute("INSERT INTO org_meta(name, value) VALUES (?,?)",
+                     (IMPORT_META, json.dumps(info, ensure_ascii=False)))
+    print(f"[org] import {ORG_FILE_NAME} -> lca.db: users={done['users']} keys={done['keys']} "
+          f"skipped={done['skipped']} backup={info['backup']}")
+    return info
+
+
+def init_storage(project_root: Path) -> dict | None:
+    """เรียกตอน server เริ่ม: migrate + import org.json (ครั้งแรก) — คืนข้อมูลการ import ถ้ามี"""
+    _prepare(Path(project_root))
+    row = _read(Path(project_root), "SELECT value FROM org_meta WHERE name=?", (IMPORT_META,), one=True)
+    return json.loads(row["value"]) if row else None
 
 
 # ---------- password hashing ----------
@@ -184,11 +292,19 @@ def role_at_least(role: str, required: str) -> bool:
 # ---------- users ----------
 
 def bootstrap_needed(project_root: Path) -> bool:
-    """ยังไม่มี user เลย = ต้อง bootstrap (อนุญาตให้สร้าง CEO คนแรกได้โดยไม่ต้องมีสิทธิ์)"""
-    return len(_load(project_root)["users"]) == 0
+    """ยังไม่มี user เลย = ต้อง bootstrap. db ล้ม → False (fail-closed: ไม่เปิดให้สร้าง CEO)"""
+    try:
+        row = _read(project_root, "SELECT COUNT(*) AS n FROM org_users", one=True)
+    except sqlite3.Error as e:
+        print(f"[org][error] อ่าน org_users ไม่ได้: {e}")
+        return False
+    return row["n"] == 0
 
 
-@_synchronized
+def _now_iso() -> str:
+    return datetime.now().isoformat(timespec="seconds")
+
+
 def create_user(project_root: Path, username: str, password: str, role: str,
                 created_by_role: str | None = None) -> dict:
     """สร้าง user ใหม่ คืน record (ไม่มี hash)
@@ -205,74 +321,70 @@ def create_user(project_root: Path, username: str, password: str, role: str,
         raise ValueError("รหัสผ่านต้องยาวอย่างน้อย 8 ตัวอักษร")
     if role not in VALID_ROLES:
         raise ValueError(f"role ไม่ถูกต้อง: {role} (ต้องเป็น {sorted(VALID_ROLES)})")
+    hashed = _hash_password(password)  # ช้า (PBKDF2) — ทำก่อนจับ write lock
 
-    data = _load(project_root)
-    if username in data["users"]:
-        raise ValueError(f"มี user ชื่อ {username} อยู่แล้ว")
+    def op(conn):
+        if conn.execute("SELECT 1 FROM org_users WHERE username=?", (username,)).fetchone():
+            raise ValueError(f"มี user ชื่อ {username} อยู่แล้ว")
+        is_bootstrap = conn.execute("SELECT COUNT(*) FROM org_users").fetchone()[0] == 0
+        if is_bootstrap:
+            if role != "CEO":
+                raise ValueError("user คนแรกต้องเป็น CEO (bootstrap)")
+        else:
+            if created_by_role is None:
+                raise ValueError("ต้องมีสิทธิ์ผู้สร้าง (actor) เพื่อสร้าง user")
+            if not role_at_least(created_by_role, "ADMIN"):
+                raise ValueError("ต้องเป็น ADMIN ขึ้นไปจึงสร้าง user ได้")
+            # ห้ามสร้าง role ที่สูงกว่าหรือเท่ากับตัวเอง (ADMIN สร้าง CEO/ADMIN ไม่ได้)
+            if ROLE_LEVEL[role] >= ROLE_LEVEL[created_by_role] and created_by_role != "CEO":
+                raise ValueError(f"{created_by_role} สร้าง role {role} ไม่ได้ (สิทธิ์ไม่พอ)")
+        conn.execute("INSERT INTO org_users(username, role, password, active, created_at)"
+                     " VALUES (?,?,?,1,?)", (username, role, hashed, _now_iso()))
 
-    is_bootstrap = len(data["users"]) == 0
-    if is_bootstrap:
-        if role != "CEO":
-            raise ValueError("user คนแรกต้องเป็น CEO (bootstrap)")
-    else:
-        if created_by_role is None:
-            raise ValueError("ต้องมีสิทธิ์ผู้สร้าง (actor) เพื่อสร้าง user")
-        if not role_at_least(created_by_role, "ADMIN"):
-            raise ValueError("ต้องเป็น ADMIN ขึ้นไปจึงสร้าง user ได้")
-        # ห้ามสร้าง role ที่สูงกว่าหรือเท่ากับตัวเอง (ADMIN สร้าง CEO/ADMIN ไม่ได้)
-        if ROLE_LEVEL[role] >= ROLE_LEVEL[created_by_role] and created_by_role != "CEO":
-            raise ValueError(f"{created_by_role} สร้าง role {role} ไม่ได้ (สิทธิ์ไม่พอ)")
-
-    data["users"][username] = {
-        "role": role,
-        "password": _hash_password(password),
-        "active": True,
-        "created_at": datetime.now().isoformat(timespec="seconds"),
-    }
-    _save(project_root, data)
+    _write(project_root, op)
     return {"username": username, "role": role, "active": True}
 
 
 def verify_password(project_root: Path, username: str, password: str) -> dict | None:
     """ตรวจ username/password — คืน record (ไม่มี hash) ถ้าถูกและ active, ไม่งั้น None"""
-    data = _load(project_root)
-    user = data["users"].get(username)
-    if not user or not user.get("active", False):
+    try:
+        user = _read(project_root, "SELECT role, password, active FROM org_users WHERE username=?",
+                     (username,), one=True)
+    except sqlite3.Error as e:
+        print(f"[org][error] อ่าน user ไม่ได้: {e}")
         return None
-    if not _verify_password_hash(password, user.get("password", "")):
+    if not user or not user["active"]:
+        return None
+    if not _verify_password_hash(password, user["password"] or ""):
         return None
     return {"username": username, "role": user["role"], "active": True}
 
 
-@_synchronized
 def set_user_active(project_root: Path, username: str, active: bool, actor_role: str) -> bool:
     """เปิด/ปิด user — ต้องเป็น ADMIN ขึ้นไป คืน True ถ้าเจอและแก้สำเร็จ"""
     if not role_at_least(actor_role, "ADMIN"):
         raise ValueError("ต้องเป็น ADMIN ขึ้นไปจึงเปิด/ปิด user ได้")
-    data = _load(project_root)
-    user = data["users"].get(username)
-    if not user:
-        return False
-    # ADMIN ปิด CEO ไม่ได้
-    if ROLE_LEVEL[user["role"]] >= ROLE_LEVEL["CEO"] and actor_role != "CEO":
-        raise ValueError("ADMIN ปิดบัญชี CEO ไม่ได้")
-    user["active"] = bool(active)
-    _save(project_root, data)
-    return True
+
+    def op(conn):
+        row = conn.execute("SELECT role FROM org_users WHERE username=?", (username,)).fetchone()
+        if not row:
+            return False
+        # ADMIN ปิด CEO ไม่ได้
+        if ROLE_LEVEL[row["role"]] >= ROLE_LEVEL["CEO"] and actor_role != "CEO":
+            raise ValueError("ADMIN ปิดบัญชี CEO ไม่ได้")
+        conn.execute("UPDATE org_users SET active=? WHERE username=?",
+                     (1 if active else 0, username))
+        return True
+
+    return _write(project_root, op)
 
 
 def list_users(project_root: Path) -> list:
     """คืนรายชื่อ user (ไม่มี password hash) — เรียงตามชื่อ"""
-    data = _load(project_root)
-    out = []
-    for name, u in sorted(data["users"].items()):
-        out.append({
-            "username": name,
-            "role": u.get("role"),
-            "active": u.get("active", False),
-            "created_at": u.get("created_at"),
-        })
-    return out
+    rows = _read(project_root, "SELECT username, role, active, created_at FROM org_users"
+                               " ORDER BY username")
+    return [{"username": r["username"], "role": r["role"], "active": bool(r["active"]),
+             "created_at": r["created_at"]} for r in rows]
 
 
 # ---------- api keys ----------
@@ -281,7 +393,14 @@ def _today_str() -> str:
     return date.today().isoformat()
 
 
-@_synchronized
+def _insert_key(conn, key_id: str, raw_key: str, owner: str, tier: str) -> None:
+    conn.execute(
+        "INSERT INTO org_api_keys(key_id, key_hash, prefix, owner, tier, daily_limit,"
+        " used_today, usage_date, active, created_at) VALUES (?,?,?,?,?,?,0,?,1,?)",
+        (key_id, _hash_key(raw_key), raw_key[:_KEY_PREFIX_SHOW], owner, tier,
+         TIER_DAILY_LIMIT[tier], _today_str(), _now_iso()))
+
+
 def create_api_key(project_root: Path, owner: str, tier: str, actor_role: str) -> dict:
     """ออก API key ใหม่ให้ owner — ต้องเป็น ADMIN ขึ้นไป
 
@@ -293,26 +412,16 @@ def create_api_key(project_root: Path, owner: str, tier: str, actor_role: str) -
     if tier not in VALID_TIERS:
         raise ValueError(f"tier ไม่ถูกต้อง: {tier} (ต้องเป็น {sorted(VALID_TIERS)})")
 
-    data = _load(project_root)
-    if owner not in data["users"]:
-        raise ValueError(f"ไม่พบ user เจ้าของ key: {owner}")
-
     tier_letter = tier[0]  # f / p
     raw_key = f"{_KEY_PREFIX}_{tier_letter}_{secrets.token_urlsafe(32)}"
     key_id = secrets.token_hex(8)
 
-    data["api_keys"][key_id] = {
-        "key_hash": _hash_key(raw_key),
-        "prefix": raw_key[:_KEY_PREFIX_SHOW],   # ปลอดภัยที่จะโชว์ (ระบุตัว key)
-        "owner": owner,
-        "tier": tier,
-        "daily_limit": TIER_DAILY_LIMIT[tier],
-        "used_today": 0,
-        "usage_date": _today_str(),
-        "active": True,
-        "created_at": datetime.now().isoformat(timespec="seconds"),
-    }
-    _save(project_root, data)
+    def op(conn):
+        if not conn.execute("SELECT 1 FROM org_users WHERE username=?", (owner,)).fetchone():
+            raise ValueError(f"ไม่พบ user เจ้าของ key: {owner}")
+        _insert_key(conn, key_id, raw_key, owner, tier)
+
+    _write(project_root, op)
     return {
         "key_id": key_id,
         "key": raw_key,                 # <<< โชว์ครั้งเดียว
@@ -323,32 +432,40 @@ def create_api_key(project_root: Path, owner: str, tier: str, actor_role: str) -
     }
 
 
+_VERIFY_SQL = (
+    "SELECT k.key_id, k.key_hash, k.owner, k.tier, k.daily_limit,"
+    " u.role AS role, u.active AS user_active"
+    " FROM org_api_keys k LEFT JOIN org_users u ON u.username = k.owner"
+    " WHERE k.key_hash = ? AND k.active = 1 LIMIT 1"
+)
+
+
 def verify_api_key(project_root: Path, raw_key: str) -> dict | None:
     """ตรวจ API key ดิบ — คืน record (key_id/owner/tier/role ฯลฯ ไม่มี hash) ถ้าใช้ได้
 
-    ใช้ได้ = key มีอยู่ + active + เจ้าของยังมีตัวตนและ active
+    ใช้ได้ = key มีอยู่ + active + เจ้าของยังมีตัวตนและ active. ค้นด้วย index key_hash
+    db ล้ม → None (fail-closed)
     """
     if not raw_key:
         return None
     target = _hash_key(raw_key)
-    data = _load(project_root)
-    for key_id, rec in data["api_keys"].items():
-        if not rec.get("active", False):
-            continue
-        if hmac.compare_digest(rec.get("key_hash", ""), target):
-            owner = rec.get("owner")
-            user = data["users"].get(owner)
-            if not user or not user.get("active", False):
-                return None  # เจ้าของถูกปิด → key ใช้ไม่ได้
-            return {
-                "key_id": key_id,
-                "username": owner,   # ให้ identity มี field เดียวกับ master/local (/api/me)
-                "owner": owner,
-                "role": user["role"],
-                "tier": rec.get("tier"),
-                "daily_limit": rec.get("daily_limit", 0),
-            }
-    return None
+    try:
+        rec = _read(project_root, _VERIFY_SQL, (target,), one=True)
+    except sqlite3.Error as e:
+        print(f"[org][error] ตรวจ API key ไม่ได้: {e}")
+        return None
+    if rec is None or not hmac.compare_digest(rec["key_hash"], target):
+        return None
+    if not rec["role"] or not rec["user_active"]:
+        return None  # เจ้าของถูกปิด/ไม่มีตัวตน → key ใช้ไม่ได้
+    return {
+        "key_id": rec["key_id"],
+        "username": rec["owner"],   # ให้ identity มี field เดียวกับ master/local (/api/me)
+        "owner": rec["owner"],
+        "role": rec["role"],
+        "tier": rec["tier"],
+        "daily_limit": rec["daily_limit"],
+    }
 
 
 def has_quota(project_root: Path, key_id: str) -> bool:
@@ -357,116 +474,118 @@ def has_quota(project_root: Path, key_id: str) -> bool:
     ใช้ที่ server เพื่อปฏิเสธเร็วก่อนอ่าน body. การหักจริงคือ consume_quota (จองแบบ atomic
     ก่อนเรียกโมเดล) และถ้าโมเดล/แชทล้มเหลว server จะเรียก refund_quota คืนให้
     """
-    data = _load(project_root)
-    rec = data["api_keys"].get(key_id)
-    if not rec or not rec.get("active", False):
+    try:
+        rec = _read(project_root, "SELECT active, daily_limit, used_today, usage_date"
+                                  " FROM org_api_keys WHERE key_id=?", (key_id,), one=True)
+    except sqlite3.Error as e:
+        print(f"[org][error] อ่านโควตาไม่ได้: {e}")
         return False
-    limit = rec.get("daily_limit", 0)
-    if limit == 0:
+    if not rec or not rec["active"]:
+        return False
+    if rec["daily_limit"] == 0:
         return True  # paid = ไม่จำกัด
-    if rec.get("usage_date") != _today_str():
+    if rec["usage_date"] != _today_str():
         return True  # ข้ามวันแล้ว โควตารีเซ็ต
-    return rec.get("used_today", 0) < limit
+    return rec["used_today"] < rec["daily_limit"]
 
 
-@_synchronized
+# หัก 1 แบบ atomic ในคำสั่งเดียว: ข้ามวัน = เริ่มนับ 1 ใหม่, ไม่งั้น +1 เฉพาะเมื่อยังไม่ถึง limit
+_CONSUME_SQL = (
+    "UPDATE org_api_keys SET"
+    " used_today = CASE WHEN usage_date = :today THEN used_today + 1 ELSE 1 END,"
+    " usage_date = :today"
+    " WHERE key_id = :key_id AND active = 1 AND daily_limit > 0"
+    " AND (usage_date IS NOT :today OR used_today < daily_limit)"
+    " RETURNING used_today, daily_limit"
+)
+
+
 def consume_quota(project_root: Path, key_id: str) -> tuple:
     """หัก 1 โควตาของ key — คืน (ok, remaining)
 
     - tier paid (daily_limit=0) → ไม่จำกัด ok=True, remaining=-1 (แทน unlimited)
     - รีเซ็ตตัวนับอัตโนมัติเมื่อข้ามวัน
     - เกินโควตา → ok=False ไม่หักเพิ่ม
-    - บันทึกลงดิสก์ไม่สำเร็จ → ok=False (fail-closed; ไม่ปล่อยผ่านทั้งที่ไม่ได้นับ)
+    - บันทึกลง db ไม่สำเร็จ → ok=False (fail-closed; ไม่ปล่อยผ่านทั้งที่ไม่ได้นับ)
     - server เรียกเพื่อ "จอง" ก่อนเรียกโมเดล และเรียก refund_quota เมื่อไม่ได้คำตอบ
     """
-    data = _load(project_root)
-    rec = data["api_keys"].get(key_id)
-    if not rec or not rec.get("active", False):
+    params = {"today": _today_str(), "key_id": key_id}
+
+    def op(conn):
+        row = conn.execute(_CONSUME_SQL, params).fetchone()
+        if row is not None:
+            return (True, row["daily_limit"] - row["used_today"])
+        rec = conn.execute("SELECT active, daily_limit FROM org_api_keys WHERE key_id=?",
+                           (key_id,)).fetchone()
+        if rec and rec["active"] and rec["daily_limit"] == 0:
+            return (True, -1)  # unlimited (paid)
+        return (False, 0)      # ไม่มี key / ปิดแล้ว / เต็มโควตา
+
+    try:
+        return _write(project_root, op)
+    except sqlite3.Error as e:
+        print(f"[org][error] หักโควตาไม่สำเร็จ: {e}")
         return (False, 0)
-
-    limit = rec.get("daily_limit", 0)
-    if limit == 0:
-        return (True, -1)  # unlimited (paid)
-
-    today = _today_str()
-    if rec.get("usage_date") != today:
-        rec["usage_date"] = today
-        rec["used_today"] = 0
-
-    if rec["used_today"] >= limit:
-        _save(project_root, data)  # บันทึกการรีเซ็ตวันที่ (ถ้ามี) ไว้ด้วย
-        return (False, 0)
-
-    rec["used_today"] += 1
-    if not _save(project_root, data):
-        return (False, 0)  # ไม่ได้บันทึกการหัก → ห้ามให้ผ่าน (กันข้ามโควตาบน Windows)
-    return (True, limit - rec["used_today"])
 
 
 class RefundResult(enum.Enum):
     """ผลของ refund_quota — bool() เป็น True เฉพาะ REFUNDED (เข้ากันได้กับโค้ดเดิมที่เช็ค bool)"""
     REFUNDED = "refunded"        # คืนแล้วและบันทึกสำเร็จ
     NOTHING = "nothing"          # ไม่มีอะไรต้องคืน (ไม่มี key / paid / ข้ามวัน / used=0)
-    SAVE_FAILED = "save_failed"  # คืนในหน่วยความจำแล้วแต่บันทึก org.json ไม่สำเร็จ
+    SAVE_FAILED = "save_failed"  # บันทึกการคืนลง db ไม่สำเร็จ
 
     def __bool__(self) -> bool:
         return self is RefundResult.REFUNDED
 
 
-@_synchronized
 def refund_quota(project_root: Path, key_id: str) -> RefundResult:
     """คืน 1 โควตาที่ consume_quota จองไว้ (ใช้เมื่อโมเดล/แชทล้มเหลว)
 
     - ไม่ติดลบ (used_today ต่ำสุด 0); tier paid/ข้ามวันแล้ว = NOTHING
     - บันทึกไม่สำเร็จ = SAVE_FAILED (ผู้เรียกควร log warn)
     """
-    data = _load(project_root)
-    rec = data["api_keys"].get(key_id)
-    if not rec or rec.get("daily_limit", 0) == 0:
-        return RefundResult.NOTHING
-    if rec.get("usage_date") != _today_str():
-        return RefundResult.NOTHING  # ข้ามวันแล้ว ตัวนับรีเซ็ตไปเอง ไม่คืนข้ามวัน
-    used = int(rec.get("used_today", 0))
-    if used <= 0:
-        return RefundResult.NOTHING
-    rec["used_today"] = used - 1
-    if not _save(project_root, data):
+    def op(conn):
+        cur = conn.execute(
+            "UPDATE org_api_keys SET used_today = used_today - 1"
+            " WHERE key_id=? AND daily_limit > 0 AND usage_date=? AND used_today > 0",
+            (key_id, _today_str()))
+        return RefundResult.REFUNDED if cur.rowcount == 1 else RefundResult.NOTHING
+
+    try:
+        return _write(project_root, op)
+    except sqlite3.Error as e:
+        print(f"[org][error] คืนโควตาไม่สำเร็จ: {e}")
         return RefundResult.SAVE_FAILED
-    return RefundResult.REFUNDED
 
 
-@_synchronized
 def revoke_api_key(project_root: Path, key_id: str, actor_role: str) -> bool:
     """ยกเลิก API key (ปิดใช้งาน ไม่ลบประวัติ) — ต้องเป็น ADMIN ขึ้นไป"""
     if not role_at_least(actor_role, "ADMIN"):
         raise ValueError("ต้องเป็น ADMIN ขึ้นไปจึงยกเลิก API key ได้")
-    data = _load(project_root)
-    rec = data["api_keys"].get(key_id)
-    if not rec:
-        return False
-    rec["active"] = False
-    _save(project_root, data)
-    return True
+
+    def op(conn):
+        cur = conn.execute("UPDATE org_api_keys SET active=0 WHERE key_id=?", (key_id,))
+        return cur.rowcount == 1
+
+    return _write(project_root, op)
 
 
 def list_api_keys(project_root: Path) -> list:
     """คืนรายการ key (prefix เท่านั้น ไม่มี key เต็ม/hash ตาม Rule 23) — เรียงตามวันที่สร้าง"""
-    data = _load(project_root)
-    out = []
-    for key_id, rec in data["api_keys"].items():
-        out.append({
-            "key_id": key_id,
-            "prefix": rec.get("prefix"),
-            "owner": rec.get("owner"),
-            "tier": rec.get("tier"),
-            "daily_limit": rec.get("daily_limit", 0),
-            "used_today": rec.get("used_today", 0),
-            "usage_date": rec.get("usage_date"),
-            "active": rec.get("active", False),
-            "created_at": rec.get("created_at"),
-        })
-    out.sort(key=lambda r: r.get("created_at") or "")
-    return out
+    rows = _read(project_root,
+                 "SELECT key_id, prefix, owner, tier, daily_limit, used_today, usage_date,"
+                 " active, created_at FROM org_api_keys ORDER BY COALESCE(created_at, ''), rowid")
+    return [{
+        "key_id": r["key_id"],
+        "prefix": r["prefix"],
+        "owner": r["owner"],
+        "tier": r["tier"],
+        "daily_limit": r["daily_limit"],
+        "used_today": r["used_today"],
+        "usage_date": r["usage_date"],
+        "active": bool(r["active"]),
+        "created_at": r["created_at"],
+    } for r in rows]
 
 
 # ---------- test compatibility helpers ----------
@@ -481,82 +600,66 @@ def get_user_by_api_key(raw_key: str, project_root: Path | str | None = None) ->
     rec = verify_api_key(root, raw_key)
     if not rec:
         return None
-    data = _load(root)
-    user = data["users"].get(rec["owner"])
-    if not user or not user.get("active", False):
-        return None
     out = dict(rec)
     out["username"] = rec.get("username") or rec.get("owner")
-    out["tier"] = rec.get("tier")
-    out["active"] = bool(user.get("active", False))
+    out["active"] = True  # verify_api_key คืนเฉพาะเมื่อเจ้าของ active
     return out
 
 
 def check_and_consume_quota(username: str, tier: str = "free", project_root: Path | str | None = None) -> bool:
     """Compatibility wrapper used by Phase 1 tests.
 
-    This function performs a simplified quota guard for a user-level quota bucket.
-    It is intentionally fail-closed: a free-tier user exceeding the daily limit is rejected.
+    Per-user daily bucket, atomic in one UPSERT. Fail-closed: a free-tier user over
+    the daily limit, or a db error, is rejected.
     """
     root = Path(project_root) if project_root is not None else Path.cwd()
-    data = _load(root)
     if tier not in VALID_TIERS:
         return True
     if tier == "paid":
         return True
+    params = {"u": username, "today": _today_str(), "limit": TIER_DAILY_LIMIT[tier]}
 
-    today = _today_str()
-    bucket = data.setdefault("usage", {})
-    entry = bucket.get(username)
-    if isinstance(entry, dict) and entry.get("date") == today:
-        count = int(entry.get("count", 0))
-    else:
-        count = 0
-    if count >= TIER_DAILY_LIMIT[tier]:
-        bucket[username] = {"date": today, "count": count}
-        _save(root, data)
+    def op(conn):
+        cur = conn.execute(
+            "INSERT INTO org_user_usage(username, usage_date, count) VALUES (:u, :today, 1)"
+            " ON CONFLICT(username) DO UPDATE SET"
+            " count = CASE WHEN usage_date = excluded.usage_date THEN count + 1 ELSE 1 END,"
+            " usage_date = excluded.usage_date"
+            " WHERE usage_date <> excluded.usage_date OR count < :limit", params)
+        return cur.rowcount == 1
+
+    try:
+        return _write(root, op)
+    except sqlite3.Error as e:
+        print(f"[org][error] หักโควตาผู้ใช้ไม่สำเร็จ: {e}")
         return False
-    bucket[username] = {"date": today, "count": count + 1}
-    return _save(root, data)  # fail-closed: ไม่ได้บันทึกการหัก = ไม่ให้ผ่าน
 
 
 # ---------- google oauth ----------
 
 def create_or_update_google_user(project_root: Path, email: str, display_name: str) -> dict:
-    """Create or update a Google-authenticated user in the existing org.json schema.
-
-    This keeps the repository's structure consistent with the rest of the app:
-    {
-      "users": {"username": {...}},
-      "api_keys": {"key_id": {...}}
-    }
-    """
+    """Create or update a Google-authenticated user (role USER for new accounts)."""
     email = (email or "").strip().lower()
     if not email or "@" not in email:
         raise ValueError("อีเมล Google ไม่ถูกต้อง")
-
-    data = _load(project_root)
     username = email
-    user = data["users"].get(username)
     display = (display_name or email.split("@")[0]).strip() or email.split("@")[0]
+    random_pw = _hash_password(secrets.token_urlsafe(24))
 
-    if user is None:
-        data["users"][username] = {
-            "role": "USER",
-            "password": _hash_password(secrets.token_urlsafe(24)),
-            "active": True,
-            "display_name": display,
-            "google_email": email,
-            "created_at": datetime.now().isoformat(timespec="seconds"),
-        }
-        _save(project_root, data)
-        return {"username": username, "role": "USER", "tier": "free"}
+    def op(conn):
+        row = conn.execute("SELECT role FROM org_users WHERE username=?", (username,)).fetchone()
+        if row is None:
+            conn.execute(
+                "INSERT INTO org_users(username, role, password, active, display_name,"
+                " google_email, created_at) VALUES (?, 'USER', ?, 1, ?, ?, ?)",
+                (username, random_pw, display, email, _now_iso()))
+            return "USER"
+        conn.execute("UPDATE org_users SET display_name=?, google_email=?, active=1"
+                     " WHERE username=?", (display, email, username))
+        return row["role"] or "USER"
 
-    user["display_name"] = display
-    user["google_email"] = email
-    user["active"] = True
-    _save(project_root, data)
-    return {"username": username, "role": user.get("role", "USER"), "tier": "free"}
+    role = _write(project_root, op)
+    return {"username": username, "role": role, "tier": "free"}
 
 
 def issue_google_internal_token(project_root: Path, username: str, tier: str = "free") -> str:
@@ -568,23 +671,13 @@ def issue_google_internal_token(project_root: Path, username: str, tier: str = "
     project_root = Path(project_root)
     if tier not in VALID_TIERS:
         raise ValueError(f"tier ไม่ถูกต้อง: {tier} (ต้องเป็น {sorted(VALID_TIERS)})")
-
-    data = _load(project_root)
-    if username not in data["users"]:
-        raise ValueError(f"ไม่พบ user: {username}")
-
     raw_key = f"lca_f_g_{secrets.token_urlsafe(16)}"
     key_id = secrets.token_hex(8)
-    data["api_keys"][key_id] = {
-        "key_hash": _hash_key(raw_key),
-        "prefix": raw_key[:_KEY_PREFIX_SHOW],
-        "owner": username,
-        "tier": tier,
-        "daily_limit": TIER_DAILY_LIMIT[tier],
-        "used_today": 0,
-        "usage_date": _today_str(),
-        "active": True,
-        "created_at": datetime.now().isoformat(timespec="seconds"),
-    }
-    _save(project_root, data)
+
+    def op(conn):
+        if not conn.execute("SELECT 1 FROM org_users WHERE username=?", (username,)).fetchone():
+            raise ValueError(f"ไม่พบ user: {username}")
+        _insert_key(conn, key_id, raw_key, username, tier)
+
+    _write(project_root, op)
     return raw_key

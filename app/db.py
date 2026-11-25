@@ -232,6 +232,36 @@ def write_txn(project_root):
     return _ConnCtx(project_root, True)
 
 
+# ---------- light path for hot calls (auth / quota on every request) ----------
+# ensure_migrated + connect_raw cost two opens and ~12 PRAGMAs per call. Hot paths
+# migrate once per database file per process, then open a light connection.
+
+_READY: set[str] = set()
+_READY_GUARD = threading.Lock()
+
+
+def ensure_ready(project_root) -> Path:
+    """Migrate once per process per db file; returns the db path."""
+    path = db_path(project_root)
+    key = str(path.resolve()) if path.exists() else str(path)
+    with _READY_GUARD:
+        if key in _READY and path.exists():
+            return path
+    ensure_migrated(project_root)
+    with _READY_GUARD:
+        _READY.add(str(path.resolve()))
+    return path
+
+
+def connect_light(path) -> sqlite3.Connection:
+    """Connection for a db that is already migrated (WAL is persistent in the file)."""
+    conn = sqlite3.connect(str(path), timeout=5.0, isolation_level=None)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout=5000")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    return conn
+
+
 def read_txn(project_root):
     """Reader connection. WAL allows readers beside the writer."""
     return _ConnCtx(project_root, False)
