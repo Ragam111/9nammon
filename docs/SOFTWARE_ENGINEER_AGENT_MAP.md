@@ -230,3 +230,13 @@ Interface มี input/output และ error behavior ระบุครบ ง
 1. (S) IP จริงจาก proxy ที่เชื่อถือได้ (`LCA_TRUST_PROXY=1`) + rate limit ต่อ key/ผู้ใช้ + เพดาน generation ต่อผู้ใช้ + ล้าง key ว่างใน RateLimiter
 2. (M) ย้ายผู้ใช้/API key/โควตา/session จาก `org.json` ไป SQLite (WAL) หักโควตาแบบ atomic และ migrate พร้อม backup
 3. (M) Google login แบบทดสอบบน localhost (state + PKCE) + โควตาฟรี 1,000,000 token/เดือน นับจากจำนวน token จริง
+
+## แผนสปรินต์ถึงวันอาทิตย์ 2026-11-29
+| วัน | งาน | ผู้ทำ | เกณฑ์เสร็จ |
+|---|---|---|---|
+| พ. 25 | SQLite สำหรับบัญชี/คีย์/โควตา/session (สาขา `wip/sqlite-org-store`) + ทดสอบเจาะระบบรอบใหม่ | Engineer (worktree แยก) + QA security | QA PASS, รายการช่องโหว่พร้อมหลักฐาน |
+| พฤ. 26 | แก้ช่องโหว่ระดับ blocker/major ที่ QA เจอ แล้วรวม SQLite เข้าสาขาหลัก | Engineer → QA | เทสต์ทั้งชุดผ่าน |
+| ศ. 27 | Google login บน localhost (state + PKCE) + โควตาฟรีนับเป็น token | Engineer → QA | เทสต์กับ fake Google ผ่าน |
+| ส. 28 | build `lcalocalai.exe`, รีสตาร์ตเซิร์ฟเวอร์ LAN, วัดผลบนเครื่องจริง | หัวหน้า + นักวิจัย | `/api/health`, `/v1/models`, แชต ผ่านบนเครื่องจริง |
+| อา. 29 | เปิด PR รวม, อัปเดต `LCA_SPEC.md` และคู่มือ, ส่งให้เจ้าของ merge | หัวหน้า | PR เขียว CI รอเจ้าของ merge |
+สิ่งที่ต้องให้เจ้าของทำ/ตัดสินก่อนวันอาทิตย์: Google OAuth Client (ดู `docs/CREDENTIALS_GUIDE.md`), ตั้ง IP คงที่ที่ router, ตัดสินเรื่อง `cloud_tunnel`

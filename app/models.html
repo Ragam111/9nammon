@@ -30,6 +30,20 @@
 
   <h2>ติดตั้งใน Ollama แล้ว</h2>
   <ul id="installed"></ul>
+
+  <h2>เรียกใช้ผ่าน API (รูปแบบเดียวกับ OpenAI)</h2>
+  <p>ใช้ API key ของ LCA (ขึ้นต้นด้วย <code>lca_</code>) แทนคีย์ของ OpenAI ส่วนชื่อ model ใช้ชื่อจากรายการด้านบน</p>
+  <pre><code>curl <span class="origin"></span>/v1/models -H "Authorization: Bearer lca_xxx"
+
+curl <span class="origin"></span>/v1/chat/completions -H "Authorization: Bearer lca_xxx" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"qwen2.5-coder:0.5b","messages":[{"role":"user","content":"สวัสดี"}]}'</code></pre>
+  <pre><code>from openai import OpenAI
+client = OpenAI(base_url="<span class="origin"></span>/v1", api_key="lca_xxx")
+r = client.chat.completions.create(model="qwen2.5-coder:0.5b",
+        messages=[{"role": "user", "content": "สวัสดี"}])
+print(r.choices[0].message.content)</code></pre>
+  <script>document.querySelectorAll(".origin").forEach((el) => { el.textContent = location.origin; });</script>
 </main>
 <script src="/app.js"></script>
 <script>

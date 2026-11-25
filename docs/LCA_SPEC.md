@@ -80,3 +80,10 @@
 | `/api/version` ตอบ `unknown` | แก้แล้ว: ใช้ `VERSION` ของโปรแกรมเมื่อโฟลเดอร์ข้อมูลไม่มี และใส่ในตัว exe | `db0cdd5` |
 | เซิร์ฟเวอร์ซ้อนบนพอร์ตเดียว | แก้แล้ว: `ExclusiveHTTPServer` (Windows ใช้ `SO_EXCLUSIVEADDRUSE`) ทำซ้ำได้ก่อนแก้บนเครื่องนี้ | `d6e1b93` |
 | ไฟล์ exe ขาด psutil | แก้แล้ว: CI ติดตั้ง `requirements.txt` ก่อน build | สาขาเดียวกัน |
+
+## OpenAI-compatible API (2026-11-25, commit `4f130d2`)
+ลูกค้าใช้ client ของ OpenAI ได้ทันที เปลี่ยน `base_url` เป็น `http://<IP เครื่อง>:8420/v1` และใช้ API key ของ LCA (`lca_...`)
+- `GET /v1/models`: โมเดลที่ Ollama ติดตั้งจริงตอนนี้
+- `POST /v1/chat/completions`: stream และไม่ stream, จำกัด max_tokens 1024, รับเฉพาะโมเดลที่ติดตั้ง
+- ตรวจกับ Ollama จริงแล้ว: เห็น 3 โมเดล, แชต 200, stream จบด้วย `[DONE]`
+หมายเหตุ: IP ของเครื่องใน Wi-Fi เปลี่ยนได้ (เคยเป็น .44 ตอนนี้ .36) ควรตั้ง IP คงที่ (DHCP reservation) ที่ router

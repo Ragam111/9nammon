@@ -46,6 +46,7 @@ from app import dataset_store  # noqa: E402  (เก็บตัวอย่า�
 from app import config_manager  # noqa: E402  (อ่าน flag COLLECT_TRAINING_DATA จาก config.json)
 from app import resource_budget  # noqa: E402  (ก้านสมอง: เลือกโมเดล/backend ตาม RAM)
 from app import model_manager  # noqa: E402  (แผน C: รายการโมเดล local + ติดตั้งผ่าน Ollama)
+from app import openai_gateway  # noqa: E402  (OpenAI-compatible /v1 ให้ลูกค้าใช้โมเดลในเครื่อง)
 from app import model_backend  # noqa: E402  (adapter: Ollama / OpenAI-compatible สลับด้วย config)
 from app import chat_hub  # noqa: E402  (chat hub: providers + conversation DB; fallback ยังเป็น model_backend)
 from app import cluster_store  # noqa: E402  (ทะเบียน + มอนิเตอร์ health ของหลาย node)
@@ -418,7 +419,16 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             """
             # เทียบ master token แบบ constant-time กัน timing attack (hmac.compare_digest)
             provided = self.headers.get("X-Auth-Token")
-            return self._identity_from(provided, self.headers.get("X-API-Key"))
+            api_key = self.headers.get("X-API-Key")
+            # client ของ OpenAI ส่ง "Authorization: Bearer <key>" — key ของ LCA ขึ้นต้นด้วย lca_
+            auth = (self.headers.get("Authorization") or "").strip()
+            if auth[:7].lower() == "bearer ":
+                bearer = auth[7:].strip()
+                if bearer.startswith("lca_") and not api_key:
+                    api_key = bearer
+                elif bearer and not provided:
+                    provided = bearer
+            return self._identity_from(provided, api_key)
 
         def _identity_from(self, provided, raw_key) -> Optional[dict]:
             """แปลง (X-Auth-Token, X-API-Key) → identity. ลำดับ: master/session-of-launch,
@@ -618,7 +628,7 @@ def make_handler(project_root: Path, auth_token: Optional[str],
         def _rate_limited(self, parsed) -> bool:
             """จำกัดเฉพาะ /api/ ต่อ key/ผู้ใช้ (หรือต่อ IP ถ้าไม่มีตัวตน) — เกินโควตาตอบ 429 แล้วคืน True"""
             gen_gate.bind_user(None)
-            if not parsed.path.startswith("/api/"):
+            if not (parsed.path.startswith("/api/") or parsed.path.startswith("/v1/")):
                 return False
             key, gate_user = self._limit_key()
             gen_gate.bind_user(gate_user)
@@ -791,6 +801,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._handle_models_recommend()
             elif parsed.path == "/api/models/catalog":
                 self._handle_models_catalog()
+            elif parsed.path == "/v1/models":
+                self._handle_v1_models()
             elif parsed.path == "/api/nodes/discover":
                 self._handle_nodes_discover(parsed)
             elif parsed.path == "/api/nodes/sync":
@@ -1372,6 +1384,78 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 total = 0
             self._send_json(200, model_manager.catalog(resource_budget.available_ram(), total))
 
+        # ---------- OpenAI-compatible API (/v1) — โมเดลในเครื่องผ่าน Ollama ----------
+        def _v1_error(self, status: int, message: str, code: str):
+            self._send_json(status, {"error": {"message": message, "type": code, "code": code}})
+
+        def _v1_ident(self):
+            ident = self._identity()
+            if ident is None:
+                self._v1_error(401, "ต้องส่ง Authorization: Bearer <API key ของ LCA>", "invalid_api_key")
+            return ident
+
+        def _handle_v1_models(self):
+            if self._v1_ident() is None:
+                return
+            self._send_json(200, openai_gateway.list_models())
+
+        def _handle_v1_chat(self):
+            ident = self._v1_ident()
+            if ident is None:
+                return
+            try:
+                body = self._read_json_body()
+            except (ValueError, json.JSONDecodeError) as e:
+                self._v1_error(400, str(e), "invalid_request_error")
+                return
+            installed = {m["id"] for m in openai_gateway.list_models()["data"]}
+            try:
+                payload = openai_gateway.build_request(body, installed)
+            except openai_gateway.GatewayError as e:
+                self._send_json(e.status, e.body())
+                return
+            key_id = ident.get("key_id")
+            if key_id:
+                ok = org_store.consume_quota(project_root, key_id)[0]
+                if not ok:
+                    self._v1_error(429, "ใช้โควตาวันนี้ครบแล้ว", "insufficient_quota")
+                    return
+
+            def refund():
+                if key_id:
+                    org_store.refund_quota(project_root, key_id)
+
+            try:
+                with gen_gate.slot():
+                    if not payload["stream"]:
+                        self._send_json(200, openai_gateway.complete(payload))
+                        return
+                    chunks = openai_gateway.stream(payload)
+                    first = next(chunks, None)   # ต่อ Ollama ไม่ได้ → error ก่อนส่ง header
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+                    self.send_header("Cache-Control", "no-cache")
+                    self.end_headers()
+                    self._headers_sent = True
+                    try:
+                        if first is not None:
+                            self.wfile.write(first)
+                            self.wfile.flush()
+                        for chunk in chunks:
+                            self.wfile.write(chunk)
+                            self.wfile.flush()
+                    except openai_gateway.GatewayError as e:
+                        refund()
+                        err = json.dumps(e.body(), ensure_ascii=False)
+                        self.wfile.write(("data: " + err + "\n\n").encode("utf-8"))
+                        self.wfile.flush()
+            except admission.Busy as e:
+                refund()
+                self._v1_error(503, str(e), "server_busy")
+            except openai_gateway.GatewayError as e:
+                refund()
+                self._send_json(e.status, e.body())
+
         def _handle_models_pull(self):
             """ADMIN เท่านั้น: ส่งความคืบหน้าเป็น NDJSON ทีละบรรทัดจน status=success หรือ error"""
             if self._require("ADMIN") is None:
@@ -1762,6 +1846,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                     self._handle_notify()
                 elif parsed.path == "/api/models/pull":
                     self._handle_models_pull()
+                elif parsed.path == "/v1/chat/completions":
+                    self._handle_v1_chat()
                 elif parsed.path == "/api/support/ticket":
                     self._handle_support_create()
                 elif parsed.path == "/api/admin/support/tickets/status":
