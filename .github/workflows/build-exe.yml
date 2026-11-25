@@ -32,10 +32,10 @@ jobs:
         run: pyinstaller --onefile --windowed --name TokenLCAlimit installer_gui.py
 
       - name: Build LCA-Desktop.exe (แอปก้อนเดียว เปิดแชตได้เลย)
-        run: pyinstaller --onefile --windowed --name LCA-Desktop --add-data "app;app" --add-data "sysmanager;sysmanager" --add-data "local_coder.py;." lca_app.py
+        run: pyinstaller --onefile --windowed --name LCA-Desktop --add-data "app;app" --add-data "sysmanager;sysmanager" --add-data "local_coder.py;." --add-data "VERSION;." lca_app.py
 
       - name: Build lcalocalai.exe (ไฟล์เดียว รวมเซิร์ฟเวอร์ + หน้าเว็บ ใช้กับโมเดลในเครื่องผ่าน Ollama)
-        run: pyinstaller --onefile --windowed --name lcalocalai --add-data "app;app" --add-data "sysmanager;sysmanager" --add-data "local_coder.py;." lca_app.py
+        run: pyinstaller --onefile --windowed --name lcalocalai --add-data "app;app" --add-data "sysmanager;sysmanager" --add-data "local_coder.py;." --add-data "VERSION;." lca_app.py
 
       # เก็บเป็น artifact ของ run เสมอ — กดดาวน์โหลด .exe ได้แม้ตอนรันเองแบบไม่มี tag
       - name: Upload installer artifact

@@ -16,8 +16,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import server  # noqa: E402
-from app import model_backend  # noqa: E402
+import server
+from app import model_backend
 
 
 class ServerHealthTest(unittest.TestCase):
@@ -102,8 +102,10 @@ class ServerHealthTest(unittest.TestCase):
         self.assertEqual(data["version"], "9.9.9")
 
     def test_version_fallback_when_no_file(self):
-        # ไม่มี VERSION file → fallback "unknown" ไม่ raise
-        _, data = self._get("/api/version")
+        # ไม่มี VERSION ทั้งในโปรเจกต์และในโปรแกรม → fallback "unknown" ไม่ raise
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as empty,                 mock.patch.object(server, "_resource_root", return_value=Path(empty)):
+            _, data = self._get("/api/version")
         self.assertEqual(data["version"], "unknown")
 
     def test_version_python_shape(self):

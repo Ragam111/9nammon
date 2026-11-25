@@ -632,7 +632,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             ไม่คืน commit sha / build id — repo URL ไม่ใช่ secret แต่ก็ไม่เปิดเผย build detail
             โดยไม่จำเป็น. ใช้ read_version() ร่วมกับ --version CLI (ดู main())"""
             self._send_json(200, {
-                "version": read_version(project_root),
+                # VERSION ในโฟลเดอร์โปรเจกต์ก่อน (เดิม) แล้วค่อยใช้ของโปรแกรม (ข้าง server.py หรือใน exe)
+                "version": (lambda v: v if v != "unknown" else read_version())(read_version(project_root)),
                 "python": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
                 "name": "LCA (Local Code Assistant)",
             })
