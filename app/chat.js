@@ -844,6 +844,12 @@
       await refreshLists();
       const health = await api("/api/health");
       $("net-dot").textContent = health.ollama === "up" ? "local ● ออนไลน์" : "local ● ไม่พบ Ollama";
+      const local = S.providers.find((p) => p.local);
+      if (health.ollama !== "up") {
+        setNotice("ไม่พบ Ollama — เปิดแอป Ollama แล้วรีเฟรชหน้านี้ (ดูสถานะและติดตั้งโมเดลที่หน้า /models)");
+      } else if (!local || !(local.models || []).length) {
+        setNotice("ยังไม่มีโมเดลในเครื่อง — ติดตั้งได้ที่หน้า /models");
+      }
     } catch (err) {
       setNotice(err.message);
     }

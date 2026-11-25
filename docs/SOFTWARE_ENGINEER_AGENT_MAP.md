@@ -172,3 +172,16 @@ Interface มี input/output และ error behavior ระบุครบ ง
 
 สิ่งที่ Agent 1 ต้องรวมก่อนส่งมอบคือแพ็กเกจรุ่นที่จะปล่อย รายงาน `test-report-<version>-<platform>.jsonl` จำนวน passed/failed/skipped, checksum, คำสั่งติดตั้งสำหรับ PowerShell และ Linux และ known limitations สถานะสุดท้ายใช้ `RELEASE_CANDIDATE`, `BLOCKED` หรือ `WINDOWS_UNVERIFIED`
 
+
+## AI-Driven SDLC: 4 Agent ของ LCA กับจุดตรวจของคน
+| ขั้น SDLC | Agent ที่รับผิดชอบ | งานของ Agent | จุดตรวจของคน |
+|---|---|---|---|
+| Plan | Agent 1 หัวหน้า | คัดงานจาก `docs/LCA_SPEC.md` ให้คะแนนความพร้อม จัดลำดับ | เจ้าของอนุมัติขอบเขต |
+| Design | Agent 2 สถาปัตยกรรม | เขียนสเปกสั้น ระบุ dependency และ interface | เจ้าของเห็นชอบแบบเมื่อแตะนโยบาย/ความปลอดภัย |
+| Build | Agent 2 | ทำเทสต์ให้ล้มก่อน แก้ให้น้อยที่สุด เปิด PR | — |
+| Test (วนจนผ่าน) | Agent 3 QA | รันเทสต์ทั้งชุด พยายามทำให้พัง ส่งกลับถ้าไม่ผ่าน (แก้ได้ไม่เกิน 2 รอบต่อจุด) | — |
+| Review | Agent 3 QA | ตรวจ PR รอบแรก, security, ผล CI | เจ้าของอนุมัติ PR |
+| Deploy | Agent 1 หัวหน้า | build `lcalocalai.exe` ผ่าน CI, รีสตาร์ตเซิร์ฟเวอร์ LAN | เจ้าของอนุมัติ merge และการปล่อยให้ลูกค้า |
+| Operate | Agent 4 นักวิจัย | เฝ้า `/api/health`, RAM, Ollama, วัดเวลาตอบ แล้วส่งผลกลับเป็นงานใหม่ใน Plan | เจ้าของรับเรื่อง incident |
+
+ประหยัด token: ทุก Agent อ่าน `docs/LCA_SPEC.md` และ ledger ในไฟล์นี้ก่อน แล้วอ่านเฉพาะไฟล์ที่เปลี่ยนตั้งแต่ commit ล่าสุด (`git diff --stat <commit>..HEAD`) ไม่สแกน repo ทั้งหมดซ้ำ และส่งต่องานเป็นสรุปสั้น (path, ผลเทสต์, ขั้นถัดไป) ไม่ส่งเนื้อหาไฟล์
