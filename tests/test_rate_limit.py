@@ -45,6 +45,22 @@ class RateLimiterTest(unittest.TestCase):
         rl.reset("ip1")
         self.assertTrue(rl.allow("ip1", now=0))
 
+    def test_empty_keys_pruned_after_window(self):
+        # acceptance 6: 10,000 unique IPs, after the window the dict shrinks to 0
+        rl = RateLimiter(max_requests=5, window_seconds=60)
+        for i in range(10_000):
+            self.assertTrue(rl.allow(f"10.0.{i // 256}.{i % 256}", now=0))
+        self.assertEqual(rl.size(), 10_000)
+        self.assertEqual(rl.prune(now=61), 0)
+        self.assertEqual(rl.size(), 0)
+
+    def test_allow_sweeps_stale_keys_automatically(self):
+        rl = RateLimiter(max_requests=5, window_seconds=60)
+        for i in range(100):
+            rl.allow(f"ip{i}", now=0)
+        rl.allow("fresh", now=200)      # one call after the window sweeps the rest
+        self.assertEqual(rl.size(), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

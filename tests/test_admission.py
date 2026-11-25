@@ -122,5 +122,47 @@ class GateFromConfigTest(unittest.TestCase):
         self.assertEqual(g.max_concurrent, 1)
 
 
+class PerUserCapTest(unittest.TestCase):
+    """acceptance 5: user A at the per-user cap gets Busy while user B is served"""
+
+    def test_same_user_second_slot_busy_other_user_served(self):
+        g = admission.AdmissionGate(max_concurrent=2, max_wait=0.2, max_per_user=1)
+        with g.slot(user="A"):
+            with self.assertRaises(admission.UserBusy):
+                with g.slot(user="A"):
+                    pass
+            with g.slot(user="B"):
+                pass
+        with g.slot(user="A"):   # released -> A can run again
+            pass
+
+    def test_user_busy_is_busy_subclass(self):
+        self.assertTrue(issubclass(admission.UserBusy, admission.Busy))
+
+    def test_bound_user_via_thread_local(self):
+        g = admission.AdmissionGate(max_concurrent=2, max_wait=0.2, max_per_user=1)
+        g.bind_user("A")
+        try:
+            with g.slot():
+                with self.assertRaises(admission.UserBusy):
+                    with g.slot(user="A"):
+                        pass
+        finally:
+            g.bind_user(None)
+
+    def test_no_user_only_global_cap(self):
+        g = admission.AdmissionGate(max_concurrent=2, max_wait=0.2, max_per_user=1)
+        with g.slot():
+            with g.slot():
+                pass
+
+    def test_per_user_from_config_and_env(self):
+        g = admission.gate_from_config(
+            None, config_get=lambda root, k: "2" if k == "MAX_CONCURRENT_PER_USER" else None)
+        self.assertEqual(g.max_per_user, 2)
+        g = admission.gate_from_config(None, config_get=lambda root, k: None)
+        self.assertEqual(g.max_per_user, 1)
+
+
 if __name__ == "__main__":
     unittest.main()

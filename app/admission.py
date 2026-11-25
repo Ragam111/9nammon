@@ -14,6 +14,7 @@ stdlib ล้วน (threading). ปรับ N ได้ด้วย config MAX
 
 from __future__ import annotations
 
+import os
 import threading
 from contextlib import contextmanager
 from typing import Optional
@@ -21,10 +22,15 @@ from typing import Optional
 DEFAULT_MAX_CONCURRENT = 1      # netbook: รันทีละงาน (กัน RAM thrash)
 DEFAULT_MAX_WAIT = 30.0         # วินาที — รอคิวนานกว่านี้ = ปฏิเสธ
 DEFAULT_MAX_QUEUE = 8           # คนรอในคิวพร้อมกันได้สูงสุด (กันกองพะเนิน)
+DEFAULT_MAX_PER_USER = 1        # concurrent generations per user (on top of the global cap)
 
 
 class Busy(Exception):
     """เครื่องเต็ม/คิวยาว — ผู้เรียกแปลงเป็น HTTP 503 (ลองใหม่ภายหลัง)"""
+
+
+class UserBusy(Busy):
+    """This user already holds the per-user maximum of generations (still a 503 Busy)."""
 
 
 class AdmissionGate:
@@ -40,8 +46,12 @@ class AdmissionGate:
 
     def __init__(self, max_concurrent: int = DEFAULT_MAX_CONCURRENT,
                  max_wait: float = DEFAULT_MAX_WAIT,
-                 max_queue: int = DEFAULT_MAX_QUEUE):
+                 max_queue: int = DEFAULT_MAX_QUEUE,
+                 max_per_user: int = DEFAULT_MAX_PER_USER):
         self.max_concurrent = max(1, int(max_concurrent))
+        self.max_per_user = max(1, int(max_per_user))
+        self._per_user: dict = {}  # user key -> running/waiting slots
+        self._tls = threading.local()
         self.max_wait = float(max_wait)
         self.max_queue = max(0, int(max_queue))
         self._sem = threading.Semaphore(self.max_concurrent)
@@ -55,8 +65,44 @@ class AdmissionGate:
         return {"max_concurrent": self.max_concurrent, "waiting": waiting,
                 "max_queue": self.max_queue}
 
+    def bind_user(self, user) -> None:
+        """Bind the identity of the request handled by this thread (None = anonymous).
+        slot() without an explicit user uses it, so callers that only see the gate
+        (e.g. chat_hub) still get the per-user cap."""
+        self._tls.user = user
+
+    def _take_user(self, user) -> None:
+        if user is None:
+            return
+        with self._lock:
+            n = self._per_user.get(user, 0)
+            if n >= self.max_per_user:
+                raise UserBusy("คุณมีงานกำลังรันอยู่แล้ว — รอให้เสร็จก่อนแล้วลองใหม่")
+            self._per_user[user] = n + 1
+
+    def _give_user(self, user) -> None:
+        if user is None:
+            return
+        with self._lock:
+            n = self._per_user.get(user, 0) - 1
+            if n > 0:
+                self._per_user[user] = n
+            else:
+                self._per_user.pop(user, None)  # no empty keys left behind
+
     @contextmanager
-    def slot(self):
+    def slot(self, user=None):
+        if user is None:
+            user = getattr(self._tls, "user", None)
+        self._take_user(user)
+        try:
+            with self._global_slot():
+                yield
+        finally:
+            self._give_user(user)
+
+    @contextmanager
+    def _global_slot(self):
         # กันคิวพะเนิน: ถ้าคนรออยู่แล้วเท่ากับเพดานคิว → ปฏิเสธทันที ไม่ต้องไปต่อแถว
         with self._lock:
             if self._waiting >= self.max_queue and self.max_queue > 0:
@@ -82,14 +128,22 @@ def gate_from_config(project_root, config_get=None) -> AdmissionGate:
     if config_get is None:
         from app import config_manager
         config_get = config_manager.get_key
-    raw = config_get(project_root, "MAX_CONCURRENT_GENERATIONS")
-    n = DEFAULT_MAX_CONCURRENT
-    if raw:
-        try:
-            n = max(1, int(str(raw).strip()))
-        except (TypeError, ValueError):
-            n = DEFAULT_MAX_CONCURRENT  # ค่าพัง → ปลอดภัยไว้ก่อน (1)
-    return AdmissionGate(max_concurrent=n)
+    n = _int_setting(config_get(project_root, "MAX_CONCURRENT_GENERATIONS"),
+                     DEFAULT_MAX_CONCURRENT)
+    # per-user cap: env LCA_MAX_CONCURRENT_PER_USER wins over config MAX_CONCURRENT_PER_USER
+    raw_user = os.environ.get("LCA_MAX_CONCURRENT_PER_USER") or         config_get(project_root, "MAX_CONCURRENT_PER_USER")
+    per_user = _int_setting(raw_user, DEFAULT_MAX_PER_USER)
+    return AdmissionGate(max_concurrent=n, max_per_user=per_user)
+
+
+def _int_setting(raw, default: int) -> int:
+    """Parse a positive int setting; missing/bad value -> default (safe side)."""
+    if not raw:
+        return default
+    try:
+        return max(1, int(str(raw).strip()))
+    except (TypeError, ValueError):
+        return default
 
 
 class AdmissionController:

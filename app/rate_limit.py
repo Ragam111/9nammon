@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import threading
 import time
-from collections import defaultdict, deque
+from collections import deque
 
 
 class RateLimiter:
@@ -29,8 +29,9 @@ class RateLimiter:
     def __init__(self, max_requests: int, window_seconds: float = 60.0):
         self.max_requests = int(max_requests)
         self.window = float(window_seconds)
-        self._hits: dict[str, deque] = defaultdict(deque)
+        self._hits: dict[str, deque] = {}
         self._lock = threading.Lock()
+        self._last_sweep = 0.0
 
     def allow(self, client_id: str, now: float | None = None) -> bool:
         if self.max_requests <= 0:
@@ -38,7 +39,14 @@ class RateLimiter:
         now = time.monotonic() if now is None else now
         cutoff = now - self.window
         with self._lock:
-            q = self._hits[client_id]
+            # sweep stale keys at most once per window so memory does not grow
+            # with every unique IP ever seen
+            if now - self._last_sweep >= self.window:
+                self._prune_locked(cutoff)
+                self._last_sweep = now
+            q = self._hits.get(client_id)
+            if q is None:
+                q = self._hits[client_id] = deque()
             # ตัดรายการที่พ้นหน้าต่างเวลาออก (sliding window)
             while q and q[0] <= cutoff:
                 q.popleft()
@@ -46,6 +54,28 @@ class RateLimiter:
                 return False
             q.append(now)
             return True
+
+    def _prune_locked(self, cutoff: float) -> None:
+        """Drop expired hits and delete keys whose deque became empty (lock held)."""
+        for key in list(self._hits):
+            q = self._hits[key]
+            while q and q[0] <= cutoff:
+                q.popleft()
+            if not q:
+                del self._hits[key]
+
+    def prune(self, now: float | None = None) -> int:
+        """Remove expired entries and empty keys now; return the remaining key count."""
+        now = time.monotonic() if now is None else now
+        with self._lock:
+            self._prune_locked(now - self.window)
+            self._last_sweep = now
+            return len(self._hits)
+
+    def size(self) -> int:
+        """Number of tracked client keys (for tests/monitoring)."""
+        with self._lock:
+            return len(self._hits)
 
     def reset(self, client_id: str | None = None) -> None:
         """ล้างสถิติ (ทั้งหมดหรือเฉพาะ client) — มีไว้เผื่อ test/ดูแลระบบ"""

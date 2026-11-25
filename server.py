@@ -18,6 +18,7 @@ View       : app/index.html (หน้าเว็บ) + JSON response (สำ�
 
 import argparse
 import hmac
+import ipaddress
 import json
 import os
 import secrets
@@ -129,6 +130,30 @@ _LOOPBACK_NAMES = frozenset({"127.0.0.1", "localhost", "::1"})
 # bind ทุกอินเทอร์เฟซ: ไคลเอนต์ส่ง IP/ชื่อจริง ไม่ได้ส่ง 0.0.0.0
 _WILDCARD_BINDS = frozenset({"0.0.0.0", "::", "::0"})
 _STATE_CHANGING = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+def _valid_ip(value) -> Optional[str]:
+    """Return the normalised IP string, or None if value is not an IP address."""
+    try:
+        return str(ipaddress.ip_address(str(value).strip()))
+    except ValueError:
+        return None
+
+
+def resolve_client_ip(peer: str, headers, trust: Optional[bool] = None) -> str:
+    """Real client IP. Proxy headers are trusted only when the TCP peer is loopback
+    (e.g. cloudflared on this machine) AND LCA_TRUST_PROXY=1; then CF-Connecting-IP,
+    else the first X-Forwarded-For entry. Otherwise (or on garbage) the TCP peer."""
+    if trust is None:
+        trust = os.environ.get("LCA_TRUST_PROXY", "").strip() == "1"
+    peer_ip = _valid_ip(peer)
+    if not trust or peer_ip is None or not ipaddress.ip_address(peer_ip).is_loopback:
+        return peer or "unknown"
+    cf = _valid_ip(headers.get("CF-Connecting-IP") or "")
+    if cf:
+        return cf
+    xff = (headers.get("X-Forwarded-For") or "").split(",")[0]
+    return _valid_ip(xff) or peer
+
 
 # หน้าที่ต้องมีสิทธิ์ก่อนถึงจะได้ shell — USER/GUEST ไม่เห็นแม้แต่โครงหน้า (กันข้อมูล
 # dev/observability รั่ว). ไม่มีตัวตน → redirect /login, มีแต่สิทธิ์ไม่ถึง → 403
@@ -463,7 +488,7 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             if not feature_flags.is_on(project_root, "guest_chat"):
                 self._send_json(401, {"error": "unauthorized — ต้องมี X-Auth-Token หรือ X-API-Key ที่ถูกต้อง"})
                 return None
-            client = self.client_address[0] if self.client_address else "unknown"
+            client = self._client_ip()
             if not _guest_quota_ok(client):
                 self._send_json(429, {"error": f"guest ใช้ได้ {GUEST_DAILY_LIMIT} ข้อความต่อวันต่อเครื่อง "
                                                "— ล็อกอินเพื่อใช้ต่อ"})
@@ -567,12 +592,37 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 raise ValueError("request body ต้องเป็น JSON object")
             return data
 
+        def _client_ip(self) -> str:
+            """Real client IP (trusted proxy aware) — use for rate limit / guest quota / login guard"""
+            peer = self.client_address[0] if self.client_address else "unknown"
+            return resolve_client_ip(peer, self.headers)
+
+        def _limit_key(self) -> tuple:
+            """(limiter key, per-user gate key). Valid API key -> key id, session/token ->
+            username, anonymous -> client IP (gate key None = global cap only)."""
+            try:
+                ident = self._identity()
+            except Exception:  # noqa: BLE001 — a broken store must not break rate limiting
+                ident = None
+            if ident:
+                if ident.get("source") in ("local", "master_token"):
+                    # machine owner / operator: own bucket, global cap only (old behaviour)
+                    return f"user:{ident.get('username')}", None
+                if ident.get("key_id"):
+                    return f"key:{ident['key_id']}", f"user:{ident.get('username')}"
+                if ident.get("username"):
+                    return f"user:{ident['username']}", f"user:{ident['username']}"
+            ip = self._client_ip()
+            return f"ip:{ip}", f"ip:{ip}"
+
         def _rate_limited(self, parsed) -> bool:
-            """จำกัดเฉพาะ /api/ ต่อ IP — ถ้าเกินโควตาตอบ 429 แล้วคืน True (ผู้เรียกต้อง return)"""
+            """จำกัดเฉพาะ /api/ ต่อ key/ผู้ใช้ (หรือต่อ IP ถ้าไม่มีตัวตน) — เกินโควตาตอบ 429 แล้วคืน True"""
+            gen_gate.bind_user(None)
             if not parsed.path.startswith("/api/"):
                 return False
-            client = self.client_address[0] if self.client_address else "unknown"
-            if not api_rate_limiter.allow(client):
+            key, gate_user = self._limit_key()
+            gen_gate.bind_user(gate_user)
+            if not api_rate_limiter.allow(key):
                 self._send_json(429, {"error": "เรียก API ถี่เกินไป — รอสักครู่แล้วลองใหม่ (rate limit)"})
                 return True
             return False
@@ -784,7 +834,7 @@ def make_handler(project_root: Path, auth_token: Optional[str],
         def _handle_auth_login(self):
             """public: {username, password} → {token, role, ...}. token ใช้เป็น X-Auth-Token
             brute-force guard ต่อ IP (session_store.login_allowed) — ล้มเหลวเกิน → 429"""
-            client = self.client_address[0] if self.client_address else "unknown"
+            client = self._client_ip()
             if not session_store.login_allowed(client):
                 self._send_json(429, {"error": "ล็อกอินพลาดบ่อยเกินไป — รอ 1 นาทีแล้วลองใหม่"})
                 return
