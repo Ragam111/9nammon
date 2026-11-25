@@ -1,5 +1,4 @@
 """เปิดเซิร์ฟเวอร์ซ้ำบนพอร์ตที่มีคนฟังอยู่ต้องล้ม (กันเซิร์ฟเวอร์ซ้อนบน Windows)"""
-import socket
 import sys
 import unittest
 from http.server import BaseHTTPRequestHandler
