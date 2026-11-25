@@ -214,3 +214,19 @@ Interface มี input/output และ error behavior ระบุครบ ง
 2. `/api/health` และ `/models` เช็ค Ollama ที่ 127.0.0.1 ตายตัว ไม่ตรงกับ `OLLAMA_BASE_URL` ที่แชตใช้
 3. `ConnectionAbortedError` (WinError 10053) ไม่ถูกนับเป็น client หลุด จึงลง error log
 4. `tests/test_agent_tools.py` ต้องมี `grep` ใน PATH ควร skip เมื่อไม่มี
+
+## ผลกะ 1 (2026-11-25, นักวิจัย + สถาปนิก, ~238k token)
+**ความจุ (นักวิจัย):** ผู้ใช้ active ต้องการ ~1.67 tok/s (ตอบ 200 token ทุก 2 นาที) PC เครื่องนี้ด้วย 0.5b (22 tok/s) รับได้ ~9–13 คน active ≈ ผู้ใช้ลงทะเบียน ~100 คน
+| ผู้ใช้ลงทะเบียน | PC แบบนี้ที่ต้องใช้ | ทางที่แนะนำ | ค่าใช้จ่าย/เดือน (ประมาณ) |
+|---|---|---|---|
+| ~100 (เบต้า) | 1 | A: Cloudflare named Tunnel + บังคับ login + rate limit + ตรึง 0.5b | ~$0 + ค่าโดเมน |
+| 10,000 | 76 | C: LCA เป็น gateway + API แบบ OpenAI-compatible (เช่น Groq 8B) แล้วค่อยเพิ่ม B: GPU เช่า + vLLM | ~$123 (API) ถึง $250–1,000 (GPU) |
+| 1,000,000 | 7,576 | D: GPU fleet autoscale หลาย region + API overflow + ทีม ops | ~$12k–40k ยังไม่รวม ops |
+ตัวเลขราคาและ throughput ของ GPU บางส่วนมาจากแหล่งภายนอกที่ยังไม่ได้ยืนยันเอง
+
+**ช่องว่างที่ต้องปิดก่อนเปิดเบต้า (สถาปนิก):** IP จริงหลัง tunnel, rate limit/admission ต่อผู้ใช้, บัญชีและโควตาเก็บใน `org.json` (ช้าและไม่ทนหลายโปรเซส), session อยู่ใน RAM, Google login ยังไม่มี route, โควตายังนับเป็นจำนวน request ไม่ใช่ token, ไม่มี HTTPS ในตัว, ไม่มี audit log
+
+**3 งานของกะ 2 (เรียงตามลำดับ):**
+1. (S) IP จริงจาก proxy ที่เชื่อถือได้ (`LCA_TRUST_PROXY=1`) + rate limit ต่อ key/ผู้ใช้ + เพดาน generation ต่อผู้ใช้ + ล้าง key ว่างใน RateLimiter
+2. (M) ย้ายผู้ใช้/API key/โควตา/session จาก `org.json` ไป SQLite (WAL) หักโควตาแบบ atomic และ migrate พร้อม backup
+3. (M) Google login แบบทดสอบบน localhost (state + PKCE) + โควตาฟรี 1,000,000 token/เดือน นับจากจำนวน token จริง
