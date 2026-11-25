@@ -253,9 +253,9 @@ Interface มี input/output และ error behavior ระบุครบ ง
 | ช่องโหว่ blocker/major (SSRF news, quota ของ session, tunnel, stream refund) | กำลังแก้ | Agent |
 | บัญชี/คีย์/โควตาใน SQLite | เสร็จ (`8d44c45`) | — |
 | API แบบ OpenAI `/v1` | เสร็จ (`4f130d2`) | — |
-| หน้า Console จัดการ API key | กำลังทำ | Agent |
-| หน้าแชตใหม่ (แถบซ้าย/แผงขวา, ไฮไลต์โค้ด, แนบไฟล์) | กำลังทำบางส่วน | Agent |
-| ระบบรับเงิน | **ยังไม่มี** ต้องเลือกผู้ให้บริการ (เช่น Stripe/Omise/PromptPay) และสมัครบัญชีร้านค้าเอง โค้ดตอนนี้มีแค่ ledger บันทึก | เจ้าของ |
+| หน้า Console จัดการ API key | เสร็จ (`9edbd83`) | — |
+| หน้าแชตใหม่ (แถบซ้าย/แผงขวา, ไฮไลต์โค้ด, แนบไฟล์) | ไฮไลต์+แนบไฟล์เสร็จ (`3c6e3b3`), UI 3 คอลัมน์ยังไม่เริ่ม | Agent |
+| ระบบรับเงิน | โค้ด PromptPay QR + แผน Free/Plus/Pro/Max + ยกเลิก/คืนเงิน/รอตรวจ เสร็จ (`3af4365`) ยืนยันการโอนด้วยมือโดยแอดมิน เจ้าของต้องตั้ง `PROMPTPAY_ID` ใน config เอง | เจ้าของ |
 | โดเมน + HTTPS สำหรับลูกค้านอก LAN | **ยังไม่มี** ต้องมีโดเมน (`.com` มีค่ารายปี) หรือใช้ subdomain ฟรี + ตัดสินเรื่อง `cloud_tunnel` | เจ้าของ |
 | Google login | ต้องมี OAuth Client ID/Secret จากเจ้าของ | เจ้าของ + Agent |
 | ข้อตกลงการใช้งาน/นโยบายความเป็นส่วนตัว (เก็บเงินและเก็บข้อมูลลูกค้า) | **ยังไม่มี** | เจ้าของ |
@@ -265,3 +265,9 @@ Interface มี input/output และ error behavior ระบุครบ ง
 - QA PASS ทั้ง 4 ข้อ (probe 56 ครั้ง FAIL 0) รวมเข้าสาขาหลักแล้ว (`f1a8e52`): SSRF `/api/news` ปิด (รับเฉพาะ key ใน allowlist, บล็อก redirect ไป private/file), session ได้ tier จริงและถูกหักโควตาร่วมกันทั้ง `/api/chat` และ `/v1`, เปิด tunnel ต้องเป็น CEO และใช้พอร์ตของเซิร์ฟเวอร์เอง, `/v1` stream ไม่คืนโควตาเมื่อส่งคำตอบไปแล้ว
 - เซิร์ฟเวอร์ LAN ที่รันอยู่ยังเป็นโค้ดก่อนแก้ ต้องรีสตาร์ต (เจ้าของสั่งปิดโปรเซสเอง)
 - ไฮไลต์โค้ด: QA FAIL เรื่องช้าแบบกำลังสองกับ string/comment ที่ไม่ปิด → งานแก้แยก `lca-highlight-redos-fix`
+
+## ผล 2026-11-26 (Console keys + ระบบรับเงิน)
+- Console API keys QA PASS รวมแล้ว (`9edbd83`)
+- ระบบรับเงิน PromptPay QA PASS รวมแล้ว (`3af4365`), migration เลื่อนเป็น 0014 เพราะชนกับ 0013_api_key_meta, เทสต์ 162 ผ่าน
+- ข้อสังเกตไม่บล็อก: `format_amount` รับ NaN, `confirm_paid` แยก 2 transaction
+- Google login: workflow กำลังรัน
