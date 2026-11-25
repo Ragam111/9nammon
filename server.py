@@ -2007,9 +2007,16 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             if not owner:
                 self._send_json(400, {"error": "ต้องระบุ owner (username เจ้าของ key)"})
                 return
-            issued = org_store.create_api_key(project_root, owner, tier, actor_role=ident["role"],
-                                              name=data.get("name") or "",
-                                              created_by=ident.get("username"))
+            try:
+                issued = org_store.create_api_key(project_root, owner, tier, actor_role=ident["role"],
+                                                  name=data.get("name") or "",
+                                                  created_by=ident.get("username"))
+            except PermissionError as e:
+                self._send_json(403, {"error": str(e)})
+                return
+            except ValueError as e:
+                self._send_json(400, {"error": str(e)})
+                return
             # issued มี 'key' เต็ม — โชว์ครั้งเดียว ผู้ใช้ต้องเก็บเอง
             self._send_json(200, {"api_key": issued,
                                   "note": "เก็บค่า key นี้ไว้เดี๋ยวนี้ — ระบบจะไม่โชว์อีก"})

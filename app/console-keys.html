@@ -39,7 +39,10 @@
     border:1px solid var(--lca-line);border-radius:8px;padding:6px 10px;min-height:36px}
   .card{background:var(--lca-surface);border:1px solid var(--lca-line);border-radius:var(--lca-r-lg);overflow:hidden}
   table{width:100%;border-collapse:collapse}
+  .table-wrap{overflow-x:auto;max-width:100%}
   th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--lca-line);vertical-align:top}
+  td,td span,td div{min-width:0;overflow-wrap:anywhere;word-break:break-word}
+  td:first-child{max-width:240px}
   th{font-size:12px;color:var(--lca-muted);font-weight:600;background:var(--lca-surface-2)}
   tr:last-child td{border-bottom:0}
   .mono{font-family:var(--lca-mono);font-size:13px}
@@ -77,14 +80,19 @@
     .nav{flex-direction:row;overflow-x:auto;gap:4px}
     .nav a{white-space:nowrap;padding:6px 10px}
     main{padding:16px var(--lca-gutter) 40px}
+    .filters label{flex:1 1 140px}
+    .filters select{flex:1}
+  }
+  /* Card layout below 1000px: the 8-column table does not fit beside the sidebar. */
+  @media (max-width:1000px){
     thead{display:none}
     table,tbody,tr,td{display:block;width:100%}
+    td:first-child{max-width:none}
     tr{border-bottom:1px solid var(--lca-line);padding:8px 0}
     tr:last-child{border-bottom:0}
     td{border:0;padding:4px 12px;display:flex;gap:10px}
     td::before{content:attr(data-label);color:var(--lca-muted);font-size:12px;min-width:92px;flex-shrink:0}
-    .filters label{flex:1 1 140px}
-    .filters select{flex:1}
+    td > *{flex:1 1 auto;min-width:0;overflow-wrap:anywhere;word-break:break-word}
   }
 </style>
 </head>
@@ -125,6 +133,7 @@
     </div>
     <div class="msg" id="msg" role="status" aria-live="polite"></div>
     <div class="card">
+      <div class="table-wrap">
       <table>
         <thead><tr>
           <th>ชื่อ</th><th>คีย์</th><th>ระดับ</th><th>เจ้าของ / สร้างโดย</th>
@@ -132,6 +141,7 @@
         </tr></thead>
         <tbody id="keys-body"></tbody>
       </table>
+      </div>
       <div class="empty" id="empty" hidden>
         <strong id="empty-title">ยังไม่มี API key</strong>
         <span id="empty-text">กด "สร้างคีย์" เพื่อออกคีย์แรก</span>

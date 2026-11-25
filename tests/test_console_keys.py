@@ -135,6 +135,35 @@ class ConsoleKeysTest(unittest.TestCase):
         self.assertEqual(st, 200, d)
         self.assertEqual(len(d["api_key"]["name"]), 64)
 
+    def test_admin_cannot_issue_key_for_ceo_or_admin(self) -> None:
+        tok = self._token("ops", "opspass123")
+        hdr = {"X-Auth-Token": tok}
+        for owner in ("boss", "ops"):
+            st, d = self._create(owner=owner, headers=hdr)
+            self.assertEqual(st, 403, d)
+            self.assertNotIn("api_key", d)
+        st, d = self._req("GET", "/api/admin/apikeys", headers=hdr)
+        self.assertEqual(st, 200, d)
+        rows = d["api_keys"]
+        self.assertFalse([r for r in rows if r.get("owner") in ("boss", "ops")])
+
+    def test_ceo_can_issue_key_for_ceo(self) -> None:
+        tok = self._token("boss", "password123")
+        st, d = self._create(owner="boss", headers={"X-Auth-Token": tok})
+        self.assertEqual(st, 200, d)
+        st, me = self._req("GET", "/api/me", headers={"Authorization": "Bearer " + d["api_key"]["key"]})
+        self.assertEqual(st, 200, me)
+        self.assertEqual(me["role"], "CEO")
+
+    def test_admin_issued_key_is_never_ceo(self) -> None:
+        tok = self._token("ops", "opspass123")
+        st, d = self._create(owner="alice", headers={"X-Auth-Token": tok})
+        self.assertEqual(st, 200, d)
+        st, me = self._req("GET", "/api/me", headers={"Authorization": "Bearer " + d["api_key"]["key"]})
+        self.assertEqual(st, 200, me)
+        self.assertEqual(me["role"], "USER")
+        self.assertNotEqual(me["role"], "CEO")
+
     def test_create_bad_tier_is_400(self) -> None:
         st, _ = self._create(tier="gold")
         self.assertEqual(st, 400)

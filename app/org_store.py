@@ -417,6 +417,8 @@ def create_api_key(project_root: Path, owner: str, tier: str, actor_role: str,
                    name: str = "", created_by: str | None = None) -> dict:
     """ออก API key ใหม่ให้ owner — ต้องเป็น ADMIN ขึ้นไป
 
+    Raises PermissionError ถ้า owner มี role >= actor (ยกเว้น actor เป็น CEO)
+
     คืน dict ที่มี field 'key' = ค่าเต็ม (โชว์ครั้งเดียวเท่านั้น!) + metadata
     หลังจากนี้ระบบเก็บแค่ hash กู้ค่าเต็มคืนไม่ได้
     """
@@ -431,8 +433,13 @@ def create_api_key(project_root: Path, owner: str, tier: str, actor_role: str,
     name = clean_key_name(name)
 
     def op(conn):
-        if not conn.execute("SELECT 1 FROM org_users WHERE username=?", (owner,)).fetchone():
+        row = conn.execute("SELECT role FROM org_users WHERE username=?", (owner,)).fetchone()
+        if not row:
             raise ValueError(f"ไม่พบ user เจ้าของ key: {owner}")
+        # Same rule as create_user: key carries the owner's role, so a non-CEO actor
+        # may only issue keys for owners strictly below its own level.
+        if ROLE_LEVEL.get(row["role"], 99) >= ROLE_LEVEL[actor_role] and actor_role != "CEO":
+            raise PermissionError(f"{actor_role} ออก key ให้ owner role {row['role']} ไม่ได้ (สิทธิ์ไม่พอ)")
         _insert_key(conn, key_id, raw_key, owner, tier, name, created_by)
 
     _write(project_root, op)
