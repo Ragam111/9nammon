@@ -112,6 +112,8 @@ STATIC_ROUTES = {
     "/spaces":  ("spaces.html",  "text/html; charset=utf-8",              False),
     "/install": ("install.html", "text/html; charset=utf-8",              False),
     "/console": ("console.html", "text/html; charset=utf-8",              False),
+    "/console/keys": ("console-keys.html", "text/html; charset=utf-8",    False),
+    "/console-keys.js": ("console-keys.js", "application/javascript; charset=utf-8", False),
     "/app.css": ("app.css",      "text/css; charset=utf-8",               True),
     "/app.js":  ("app.js",       "application/javascript; charset=utf-8",  True),
     "/chat":    ("chat.html",    "text/html; charset=utf-8",              False),
@@ -161,7 +163,7 @@ def resolve_client_ip(peer: str, headers, trust: Optional[bool] = None) -> str:
 
 # หน้าที่ต้องมีสิทธิ์ก่อนถึงจะได้ shell — USER/GUEST ไม่เห็นแม้แต่โครงหน้า (กันข้อมูล
 # dev/observability รั่ว). ไม่มีตัวตน → redirect /login, มีแต่สิทธิ์ไม่ถึง → 403
-PROTECTED_PAGES = {"/dev": "ADMIN", "/console": "ADMIN"}
+PROTECTED_PAGES = {"/dev": "ADMIN", "/console": "ADMIN", "/console/keys": "ADMIN"}
 PAGE_COOKIE = "lca_key"
 
 # GUEST (เปิดด้วย feature flag guest_chat): แชทได้เฉพาะโมเดล local, ไม่บันทึก, โควตาต่อ IP ต่อวัน
@@ -2009,7 +2011,16 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             if not owner:
                 self._send_json(400, {"error": "ต้องระบุ owner (username เจ้าของ key)"})
                 return
-            issued = org_store.create_api_key(project_root, owner, tier, actor_role=ident["role"])
+            try:
+                issued = org_store.create_api_key(project_root, owner, tier, actor_role=ident["role"],
+                                                  name=data.get("name") or "",
+                                                  created_by=ident.get("username"))
+            except PermissionError as e:
+                self._send_json(403, {"error": str(e)})
+                return
+            except ValueError as e:
+                self._send_json(400, {"error": str(e)})
+                return
             # issued มี 'key' เต็ม — โชว์ครั้งเดียว ผู้ใช้ต้องเก็บเอง
             self._send_json(200, {"api_key": issued,
                                   "note": "เก็บค่า key นี้ไว้เดี๋ยวนี้ — ระบบจะไม่โชว์อีก"})
