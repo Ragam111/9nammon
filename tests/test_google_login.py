@@ -10,12 +10,14 @@ import hashlib
 import http.client
 import io
 import json
+import os
 import sys
 import tempfile
 import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from unittest import mock
 from urllib.parse import parse_qs, urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -212,8 +214,8 @@ class GoogleLoginTest(unittest.TestCase):
     def test_missing_code_verifier_is_400(self):
         q, cookie, _ = self.start()
         with google_auth._pending_lock:   # simulate a lost verifier
-            _v, nxt, exp = google_auth._pending[q["state"]]
-            google_auth._pending[q["state"]] = ("", nxt, exp)
+            _v, nxt, exp, cl = google_auth._pending[q["state"]]
+            google_auth._pending[q["state"]] = ("", nxt, exp, cl)
         st, _, _ = self.get(f"/auth/google/callback?state={q['state']}&code=c", {"Cookie": cookie})
         self.assertEqual(st, 400)
         self.assertEqual(self.google_users(), [])
@@ -304,6 +306,34 @@ class GoogleLoginTest(unittest.TestCase):
         st, _, body = self.get("/auth/google/start")
         self.assertEqual(st, 503)
         self.assertIn("GOOGLE_REDIRECT_URI", json.loads(body)["error"])
+
+    # ---- pending-state flood (DoS) ----
+    def test_flood_from_one_client_does_not_evict_another_clients_pending(self):
+        victim_state, _ = google_auth.begin("/chat", client="10.1.1.1")
+        for _ in range(google_auth.MAX_PENDING + 5):
+            google_auth.begin("/chat", client="10.9.9.9")
+        self.assertIsNotNone(google_auth.take(victim_state, victim_state))
+        self.assertLessEqual(sum(1 for v in google_auth._pending.values() if v[3] == "10.9.9.9"),
+                             google_auth.MAX_PENDING_PER_CLIENT)
+
+    def test_http_start_flood_from_one_ip_does_not_break_another_ips_login(self):
+        victim = {"X-Forwarded-For": "10.1.1.1"}
+        with mock.patch.dict(os.environ, {"LCA_TRUST_PROXY": "1"}):
+            st, h, _ = self.get("/auth/google/start", victim)
+            self.assertEqual(st, 302)
+            q = {k: v[0] for k, v in parse_qs(urlsplit(h["location"]).query).items()}
+            cookie = h["set-cookie"].split(";")[0]
+            statuses = set()
+            for _ in range(261):   # unauthenticated flood from another IP
+                statuses.add(self.get("/auth/google/start", {"X-Forwarded-For": "10.9.9.9"})[0])
+            self.assertIn(429, statuses)   # per-IP limit on /auth/google/start
+            self.fake.codes["victim"] = {"challenge": q["code_challenge"],
+                                         "profile": {"sub": "v-1", "email": "vic@example.com",
+                                                     "email_verified": True, "name": "V"}}
+            st, h, _ = self.get(f"/auth/google/callback?state={q['state']}&code=victim",
+                                dict(victim, Cookie=cookie))
+        self.assertEqual(st, 302, h)
+        self.assertIn("#lca_login=", h["location"])
 
     def test_redirect_uri_rules(self):
         ok = google_auth.redirect_uri_allowed

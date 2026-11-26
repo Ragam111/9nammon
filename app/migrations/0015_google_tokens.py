@@ -1,4 +1,4 @@
-"""Migration 0014_google_tokens — Google account links + monthly token allowance"""
+"""Migration 0015_google_tokens — Google account links + monthly token allowance"""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ import sqlite3
 import time
 from pathlib import Path
 
-VERSION = 14
-NAME = "0014_google_tokens"
+VERSION = 15
+NAME = "0015_google_tokens"
 
 
 def _now_ms() -> int:

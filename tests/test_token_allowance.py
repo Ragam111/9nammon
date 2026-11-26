@@ -18,7 +18,8 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import server  # noqa: E402
-from app import model_backend, openai_gateway, org_store  # noqa: E402
+from app.agent import jobs as agent_jobs  # noqa: E402
+from app import bots, feature_flags, model_backend, openai_gateway, org_store  # noqa: E402
 
 MASTER = "master-secret-token"
 
@@ -64,6 +65,8 @@ class TokenAllowanceTest(unittest.TestCase):
         resp = conn.getresponse()
         raw = resp.read().decode("utf-8")
         conn.close()
+        if resp.getheader("Content-Type", "").startswith("text/event-stream"):
+            return resp.status, raw   # SSE body
         return resp.status, (json.loads(raw) if raw else {})
 
     def chat(self):
@@ -165,6 +168,68 @@ class TokenAllowanceTest(unittest.TestCase):
         self.assertEqual(st, 429)
         self.assertEqual(d["error"]["code"], "insufficient_quota")
         self.assertEqual(self.usage()["used"], 1200)
+
+    def test_bots_and_agent_routes_are_metered_and_429_when_allowance_used(self):
+        feature_flags.set_flag(self.root, "connections", True)
+        feature_flags.set_flag(self.root, "agent", True)
+
+        def fake_run(project_root, bot_id, user_input, model="", workspace="."):
+            model_backend.record_usage(self.TOKENS_PER_REPLY)
+            return {"output": "ok"}
+
+        def fake_stream(project_root, bot_id, user_input, model=""):
+            def gen():
+                model_backend.record_usage(self.TOKENS_PER_REPLY)
+                yield "ok"
+            return gen()
+
+        with mock.patch.object(bots, "run", fake_run),                 mock.patch.object(bots, "run_stream", fake_stream),                 mock.patch.object(agent_jobs, "enqueue", return_value={"id": "j1"}):
+            st, d = self.req("POST", "/api/bots/run", {"id": "b", "input": "hi"}, self.auth)
+            self.assertEqual(st, 200, d)
+            self.assertEqual(self.usage()["used"], 400)
+            st, _ = self.req("POST", "/api/bots/run/stream", {"id": "b", "input": "hi"}, self.auth)
+            self.assertEqual(st, 200)
+            self.assertEqual(self.usage()["used"], 800)
+            st, d = self.chat()   # 800 < 1000 -> admitted, now 1200
+            self.assertEqual(st, 200, d)
+            for path in ("/api/bots/run", "/api/bots/run/stream", "/api/agent/jobs"):
+                st, d = self.req("POST", path, {"id": "b", "input": "hi", "task": "t"}, self.auth)
+                self.assertEqual(st, 429, (path, d))
+        u = self.usage()
+        self.assertEqual((u["used"], u["reserved"]), (1200, 0))
+
+    def test_agent_job_charges_flat_reservation_for_free_session(self):
+        feature_flags.set_flag(self.root, "agent", True)
+        with mock.patch.object(agent_jobs, "enqueue", return_value={"id": "j1"}):
+            st, d = self.req("POST", "/api/agent/jobs", {"task": "t"}, self.auth)
+        self.assertEqual(st, 200, d)
+        u = self.usage()
+        self.assertEqual((u["used"], u["reserved"]), (server.AGENT_JOB_TOKEN_COST, 0))
+
+    def test_v1_stream_usage_chunk_only_forwarded_when_client_asked(self):
+        models = {"object": "list", "data": [{"id": "m", "object": "model"}]}
+        usage = {"prompt_tokens": 100, "completion_tokens": 200, "total_tokens": 300}
+
+        def fake_stream(payload):
+            self.assertTrue(payload["stream_options"]["include_usage"])   # always metered
+            yield b'data: {"choices": [{"index": 0, "delta": {"content": "ok"}}]}\n\n'
+            yield ("data: " + json.dumps({"choices": [], "usage": usage}) + "\n\n").encode()
+            yield b"data: [DONE]\n\n"
+
+        base = {"model": "m", "messages": [{"role": "user", "content": "hi"}],
+                "max_tokens": 50, "stream": True}
+        with mock.patch.object(openai_gateway, "list_models", return_value=models),                 mock.patch.object(openai_gateway, "stream", fake_stream):
+            st, naive = self.req("POST", "/v1/chat/completions", base, self.auth)
+            self.assertEqual(st, 200)
+            self.assertEqual(self.usage()["used"], 300)
+            st, asked = self.req("POST", "/v1/chat/completions",
+                                 dict(base, stream_options={"include_usage": True}), self.auth)
+            self.assertEqual(st, 200)
+        self.assertEqual(self.usage()["used"], 600)
+        self.assertNotIn('"usage"', naive)
+        self.assertIn('"content": "ok"', naive)
+        self.assertIn("[DONE]", naive)
+        self.assertIn('"usage"', asked)
 
     def test_machine_owner_not_limited(self):
         for _ in range(4):

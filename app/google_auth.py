@@ -35,6 +35,9 @@ CALLBACK_PATH = "/auth/google/callback"
 STATE_COOKIE = "lca_google_state"
 STATE_TTL_SECONDS = 600
 MAX_PENDING = 256
+MAX_PENDING_PER_CLIENT = 8
+START_RATE_MAX = 20          # /auth/google/start per client IP per window
+START_RATE_WINDOW_S = 60.0
 HTTP_TIMEOUT_S = 10
 _LOCAL_HTTP_HOSTS = frozenset({"localhost", "127.0.0.1"})
 
@@ -96,25 +99,41 @@ def pkce_pair() -> tuple[str, str]:
     return verifier, base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
 
 
-_pending: dict[str, tuple[str, str, float]] = {}   # state -> (verifier, next, expires)
+_pending: dict[str, tuple[str, str, float, str]] = {}   # state -> (verifier, next, expires, client)
 _pending_lock = threading.Lock()
 
 
-def _prune(now: float) -> None:
+def _drop_oldest(keys) -> None:
+    del _pending[min(keys, key=lambda k: _pending[k][2])]
+
+
+def _prune(now: float, client: str) -> None:
+    """Expire old entries, then make room. One client (IP) holds at most
+    MAX_PENDING_PER_CLIENT; when the whole table is full the client holding the most
+    loses its oldest — so a flood from one IP only evicts its own pending logins."""
     for key in [k for k, v in _pending.items() if v[2] <= now]:
         del _pending[key]
-    while len(_pending) >= MAX_PENDING:   # bounded memory: drop the oldest
-        del _pending[min(_pending, key=lambda k: _pending[k][2])]
+    own = [k for k, v in _pending.items() if v[3] == client]
+    while len(own) >= MAX_PENDING_PER_CLIENT:
+        _drop_oldest(own)
+        own = [k for k in own if k in _pending]
+    while len(_pending) >= MAX_PENDING:
+        counts: dict[str, int] = {}
+        for v in _pending.values():
+            counts[v[3]] = counts.get(v[3], 0) + 1
+        top = max(counts, key=counts.get)
+        _drop_oldest([k for k, v in _pending.items() if v[3] == top])
 
 
-def begin(next_path: str = "/chat", now: float | None = None) -> tuple[str, str]:
-    """Create a pending login. Returns (state, code_challenge)."""
+def begin(next_path: str = "/chat", now: float | None = None,
+          client: str = "") -> tuple[str, str]:
+    """Create a pending login for ``client`` (the caller's IP). Returns (state, challenge)."""
     now = time.time() if now is None else now
     state = secrets.token_urlsafe(32)
     verifier, challenge = pkce_pair()
     with _pending_lock:
-        _prune(now)
-        _pending[state] = (verifier, next_path, now + STATE_TTL_SECONDS)
+        _prune(now, client)
+        _pending[state] = (verifier, next_path, now + STATE_TTL_SECONDS, client)
     return state, challenge
 
 

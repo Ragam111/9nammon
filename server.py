@@ -195,6 +195,8 @@ QUOTA_MONTHLY_MSG = ("ใช้ token ฟรีของเดือนนี้
 # conservative token reservation before a generation (settled to the real count after)
 CHAT_OUTPUT_RESERVE = 2048
 DEFAULT_TOKEN_RESERVE = 4096
+# agent jobs run later in the background: a free caller is charged this flat amount
+AGENT_JOB_TOKEN_COST = 4096
 
 
 def estimate_tokens(messages) -> int:
@@ -422,6 +424,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
     # limiter เดียวใช้ร่วมทุก thread ของ server นี้ (in-memory ต่อ process)
     # ค่าเริ่มต้น 300 req/60s ต่อ IP — กันยิงถล่มโดยไม่รบกวนการใช้งานปกติ
     api_rate_limiter = RateLimiter(rate_limit_max, rate_limit_window)
+    # unauthenticated /auth/google/start: own per-IP limit (pending-state flood guard)
+    google_start_limiter = RateLimiter(google_auth.START_RATE_MAX, google_auth.START_RATE_WINDOW_S)
     # ยามคุม generation พร้อมกัน (admission control) — เดียวต่อ process ใช้ร่วมทุก thread
     # netbook default = 1 (กัน RAM thrash → HDD swap → ค้าง); ตั้งเพิ่มด้วย config
     gen_gate = admission.gate_from_config(project_root)
@@ -993,8 +997,12 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             if cfg is None:
                 self._google_reply(503, error=google_auth.config_problem(project_root))
                 return
+            client = self._client_ip()
+            if not google_start_limiter.allow(f"ip:{client}"):
+                self._google_reply(429, error="เริ่มเข้าสู่ระบบด้วย Google ถี่เกินไป — รอสักครู่แล้วลองใหม่")
+                return
             nxt = safe_next_path((parse_qs(parsed.query).get("next") or ["/chat"])[0])
-            state, challenge = google_auth.begin(nxt)
+            state, challenge = google_auth.begin(nxt, client=client)
             self._google_reply(302, location=google_auth.authorize_url(cfg, state, challenge),
                                cookies=[self._google_state_cookie(
                                    cfg, state, google_auth.STATE_TTL_SECONDS)])
@@ -1169,8 +1177,16 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             data = self._read_json_body()
             task = data.get("task", "")
             workspace = data.get("workspace", ".")
-            # enqueue โยน ValueError ถ้า task ว่าง -> 400 ใน do_POST
-            job = agent_jobs.enqueue(project_root, task, workspace, source=data.get("source", "api"))
+            if not self._route_reserve(ident, AGENT_JOB_TOKEN_COST):
+                return
+            try:
+                # enqueue โยน ValueError ถ้า task ว่าง -> 400 ใน do_POST
+                job = agent_jobs.enqueue(project_root, task, workspace,
+                                         source=data.get("source", "api"))
+            except BaseException:
+                self._chat_release(ident)
+                raise
+            self._route_settle(ident, AGENT_JOB_TOKEN_COST)   # flat charge (job runs later)
             self._send_json(200, {"job": job})
 
         def _handle_agent_jobs_get(self, parsed):
@@ -1331,10 +1347,28 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._send_json(403, {"error": "ฟีเจอร์ Connections ปิดอยู่ — เปิดที่ /dev (Server features) ก่อน"})
                 return
             data = self._read_json_body()
-            # run_stream validate (ไม่พบ/ปิด/agent/ไม่มี connection) แบบ eager → BotError → 400 ใน do_POST
-            gen = bots.run_stream(project_root, data.get("id", ""), data.get("input", ""),
-                                  model=data.get("model", ""))
-            self._sse_stream(gen)
+            text = data.get("input", "")
+            est = estimate_tokens([{"content": text}])
+            if not self._route_reserve(ident, est + CHAT_OUTPUT_RESERVE):
+                return
+            out: list = []
+            try:
+                # run_stream validate (ไม่พบ/ปิด/agent/ไม่มี connection) แบบ eager → BotError → 400 ใน do_POST
+                gen = bots.run_stream(project_root, data.get("id", ""), text,
+                                      model=data.get("model", ""))
+
+                def metered():
+                    for chunk in gen:
+                        out.append(chunk if isinstance(chunk, str) else "")
+                        yield chunk
+                self._sse_stream(metered())
+            except BaseException:
+                self._chat_release(ident)
+                raise
+            if out:
+                self._route_settle(ident, est + estimate_tokens([{"content": "".join(out)}]))
+            else:
+                self._chat_release(ident)   # nothing generated -> give the quota back
 
         # ---------- Cloud Tunnel: Cloudflare Quick Tunnel (ADMIN) ----------
         def _handle_tunnel_status(self):
@@ -1431,8 +1465,19 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._send_json(403, {"error": "ฟีเจอร์ Connections ปิดอยู่ — เปิดที่ /dev (Server features) ก่อน"})
                 return
             data = self._read_json_body()
-            res = bots.run(project_root, data.get("id", ""), data.get("input", ""),
-                           model=data.get("model", ""), workspace=data.get("workspace", "."))
+            text = data.get("input", "")
+            est = estimate_tokens([{"content": text}])
+            if not self._route_reserve(ident, est + CHAT_OUTPUT_RESERVE):
+                return
+            try:
+                res = bots.run(project_root, data.get("id", ""), text,
+                               model=data.get("model", ""), workspace=data.get("workspace", "."))
+            except BaseException:
+                self._chat_release(ident)
+                raise
+            output = res.get("output") if isinstance(res, dict) else ""
+            self._route_settle(ident, est + estimate_tokens(
+                [{"content": output if isinstance(output, str) else json.dumps(output, default=str)}]))
             self._send_json(200, {"result": res})
 
         def _handle_cluster_route(self, parsed):
@@ -1575,21 +1620,29 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 return
             delivered = {"any": False}
             seen = {"chunks": 0, "usage": None}
+            # we always ask the backend for usage (metering); the usage-only chunk
+            # (choices: []) reaches the client only when it asked for it itself
+            opts = body.get("stream_options") if isinstance(body, dict) else None
+            client_usage = isinstance(opts, dict) and opts.get("include_usage") is True
 
             def refund():
                 # the charge stays once any chunk reached the client
                 if not delivered["any"]:
                     self._chat_release(ident)
 
-            def note(chunk: bytes) -> None:
+            def note(chunk: bytes) -> bool:
+                """Record usage; True = forward this chunk to the client."""
                 seen["chunks"] += 1
-                if b'"usage"' in chunk:
-                    try:
-                        u = json.loads(chunk.decode("utf-8")[len("data:"):].strip()).get("usage")
-                        if isinstance(u, dict) and u.get("total_tokens"):
-                            seen["usage"] = int(u["total_tokens"])
-                    except (ValueError, TypeError, AttributeError):
-                        pass
+                if b'"usage"' not in chunk:
+                    return True
+                try:
+                    obj = json.loads(chunk.decode("utf-8")[len("data:"):].strip())
+                    u = obj.get("usage")
+                    if isinstance(u, dict) and u.get("total_tokens"):
+                        seen["usage"] = int(u["total_tokens"])
+                    return client_usage or obj.get("choices") != []
+                except (ValueError, TypeError, AttributeError):
+                    return True
 
             try:
                 with gen_gate.slot():
@@ -1609,13 +1662,13 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                     self.end_headers()
                     self._headers_sent = True
                     try:
-                        if first is not None:
-                            note(first)
+                        if first is not None and note(first):
                             self.wfile.write(first)
                             self.wfile.flush()
                             delivered["any"] = True
                         for chunk in chunks:
-                            note(chunk)
+                            if not note(chunk):
+                                continue
                             self.wfile.write(chunk)
                             self.wfile.flush()
                             delivered["any"] = True
@@ -2524,6 +2577,21 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             ident["_tokens_reserved"] = (month, int(estimate))
             model_backend.reset_usage()
             return True
+
+        def _route_reserve(self, ident, estimate: int) -> bool:
+            """Quota gate for model routes outside /api/chat (bots, agent jobs): same daily
+            request + monthly token buckets. False = 429 already sent."""
+            ident["_token_estimate"] = int(estimate)
+            if self._quota_reserve(ident):
+                return True
+            self._send_json(429, {"error": ident.pop("_quota_msg", QUOTA_DAILY_MSG)})
+            return False
+
+        def _route_settle(self, ident, fallback: int) -> None:
+            """Confirm the daily request and settle tokens (real count, else ``fallback``)."""
+            ident.pop("_quota_reserved", None)
+            if ident.get("_tokens_reserved"):
+                self._tokens_settle(ident, model_backend.take_usage() or fallback)
 
         def _tokens_apply(self, ident) -> bool:
             """Free-tier people (login session or free API key) have a monthly allowance."""

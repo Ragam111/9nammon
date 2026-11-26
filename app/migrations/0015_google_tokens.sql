@@ -1,4 +1,4 @@
--- Migration 0014: Google sign-in links and the free-tier monthly token allowance
+-- Migration 0015: Google sign-in links and the free-tier monthly token allowance
 CREATE TABLE IF NOT EXISTS org_google_accounts (
   sub           TEXT PRIMARY KEY,
   username      TEXT NOT NULL UNIQUE,
