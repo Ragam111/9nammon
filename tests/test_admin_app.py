@@ -1,6 +1,7 @@
 """WP-A: LCA-Admin edition gate (loopback / proxy / tunnel / CSRF / roles), /api/admin/nodes,
 lca_admin_app.build_server and lca_app first-run. Temp project root only, no real nodes."""
 import json
+import re
 import sys
 import tempfile
 import unittest
@@ -70,6 +71,18 @@ class AdminEditionTest(unittest.TestCase):
             status, _h, _b = call(self.port, "GET", "/api/admin/apikeys", headers)
             self.assertEqual(status, 403, headers)
         status, _h, _b = call(self.port, "GET", "/api/admin/apikeys", bearer(self.tok["ADMIN"]))
+        self.assertEqual(status, 200)
+
+    def test_embedded_auto_token_not_ceo_for_admin_api(self) -> None:
+        status, _h, body = call(self.port, "GET", "/chat")
+        self.assertEqual(status, 200)
+        m = re.search(rb'__LCA_SESSION_TOKEN="([^"]+)"', body)
+        self.assertIsNotNone(m, "auto session token should be embedded in /chat")
+        auto = m.group(1).decode()
+        for hdrs in (bearer(auto), {"Authorization": f"Bearer {auto}"}, page_cookie(auto)):
+            status, _h, _b = call(self.port, "GET", "/api/admin/apikeys", hdrs)
+            self.assertIn(status, (401, 403), hdrs)
+        status, _h, _b = call(self.port, "GET", "/api/admin/apikeys", bearer(self.tok["CEO"]))
         self.assertEqual(status, 200)
 
     # --- acceptance 3: loopback / proxy / tunnel ---

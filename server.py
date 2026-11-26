@@ -29,7 +29,7 @@ import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Optional
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, unquote
 
 sys.path.insert(0, str(Path(__file__).parent))
 from local_coder import get_system_prompt  # noqa: E402
@@ -577,7 +577,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
         def _identity_from(self, provided, raw_key) -> Optional[dict]:
             """แปลง (X-Auth-Token, X-API-Key) → identity. ลำดับ: master/session-of-launch,
             session หลัง login (session_store), API key (org_store)"""
-            if auth_token and provided and hmac.compare_digest(provided, auth_token):
+            if (auth_token and provided and hmac.compare_digest(provided, auth_token)
+                    and not self._auto_token_blocked()):
                 username = "__local__" if session_token_auto else "__master__"
                 return {"username": username, "role": "CEO", "tier": "paid", "key_id": None,
                         "source": "local" if session_token_auto else "master_token"}
@@ -591,6 +592,15 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                     rec.setdefault("source", "api_key")
                     return rec
             return None
+
+        def _auto_token_blocked(self) -> bool:
+            """Admin edition: the page-embedded auto session token never grants CEO on
+            admin routes; staff must log in (session) or use an ADMIN+ API key."""
+            if not session_token_auto or edition != edition_mod.ADMIN:
+                return False
+            route = urlparse(getattr(self, "path", "") or "").path
+            collapsed = re.sub(r"/{2,}", "/", unquote(route)).lower()
+            return edition_mod.is_admin_route(route) or edition_mod.is_admin_route(collapsed)
 
         def _page_identity(self) -> Optional[dict]:
             """ตัวตนสำหรับ "เสิร์ฟหน้าเว็บ" (GET shell เท่านั้น): header เหมือน API หรือ
