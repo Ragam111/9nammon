@@ -101,6 +101,7 @@ class Ui3ColTest(unittest.TestCase):
             (tag, a.get("id")) for tag, a, anc in self.tree.elements
             if tag in CONTROL_TAGS and _inside(anc, tag="header")
             and not _inside(anc, id_="more-menu") and "hidden" not in a
+            and "mobile-only" not in (a.get("class") or "").split()  # desktop view
         ]
         self.assertLessEqual(len(controls), 3, controls)
         ids = {i for _, i in controls}

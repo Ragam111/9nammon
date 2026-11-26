@@ -32,7 +32,7 @@
   // Disclosure menu: button[aria-expanded] controls box[hidden].
   function menu(btn, box) {
     const items = () => [...box.querySelectorAll("button, select, input:not([type=file])")]
-      .filter((el) => !el.hidden);
+      .filter((el) => !el.hidden && !(el.getClientRects && el.getClientRects().length === 0));
     const isOpen = () => !box.hidden;
     function open() {
       box.hidden = false;
@@ -124,15 +124,126 @@
     showFiles();
     showModel();
   }
+  // Mobile overlay (drawer / bottom sheet): box gets class "open", backdrop shows,
+  // body scroll locks, `background` nodes go inert, focus moves in and returns.
+  const FOCUSABLE = "button, select, input:not([type=file]), textarea, a[href]";
+  function overlay(opts) {
+    const { box, btn, backdrop, body, background = [], closers = [], ariaOnly = false } = opts;
+    let trigger = null;
+    const isOpen = () => box.classList.contains("open");
+    function setInert(on) {
+      background.forEach((el) => {
+        if (!el) return;
+        if ("inert" in el || on) el.inert = on;
+        if (on) el.setAttribute("aria-hidden", "true"); else if (el.removeAttribute) el.removeAttribute("aria-hidden");
+      });
+    }
+    function open(from) {
+      if (isOpen()) return;
+      trigger = from || btn;
+      box.classList.toggle("open", true);
+      box.setAttribute("aria-modal", "true");
+      if (btn) btn.setAttribute("aria-expanded", "true");
+      if (backdrop) backdrop.hidden = false;
+      if (body) body.classList.toggle("overlay-open", true);
+      setInert(true);
+      focusWhenVisible();
+    }
+    const items = () => [...box.querySelectorAll(FOCUSABLE)].filter((el) => !el.hidden && !el.disabled);
+    // Focus the first item only once the box is visibility:visible (a hidden
+    // element cannot take focus). Retry on the next frame, then on transitionend.
+    function focusWhenVisible() {
+      const w = typeof window !== "undefined" ? window : {};
+      const visible = () => !w.getComputedStyle || w.getComputedStyle(box).visibility === "visible";
+      let done = false;
+      const go = () => {
+        if (done || !isOpen() || !visible()) return;
+        done = true;
+        const first = items()[0];
+        if (first) first.focus();
+      };
+      go();
+      if (done) return;
+      if (w.requestAnimationFrame) w.requestAnimationFrame(go);
+      const onEnd = () => { box.removeEventListener && box.removeEventListener("transitionend", onEnd); go(); };
+      box.addEventListener("transitionend", onEnd);
+    }
+    function close(refocus = true) {
+      if (!isOpen()) return;
+      box.classList.toggle("open", false);
+      if (box.removeAttribute) box.removeAttribute("aria-modal");
+      if (btn) btn.setAttribute("aria-expanded", "false");
+      if (backdrop) backdrop.hidden = true;
+      if (body) body.classList.toggle("overlay-open", false);
+      setInert(false);
+      if (refocus && trigger) trigger.focus();
+      trigger = null;
+    }
+    function onKey(ev) {
+      if (isOpen() && ev.key === "Tab") { // focus trap inside the open overlay
+        const list = items();
+        if (!list.length) return;
+        const first = list[0], last = list[list.length - 1];
+        if (ev.shiftKey && ev.target === first) { ev.preventDefault(); last.focus(); }
+        else if (!ev.shiftKey && ev.target === last) { ev.preventDefault(); first.focus(); }
+        return;
+      }
+      if (isOpen() && ev.key === "Escape") {
+        ev.preventDefault();
+        ev.stopPropagation(); // Esc closes the overlay first, not the stream
+        close(true);
+      }
+    }
+    if (btn && !ariaOnly) btn.addEventListener("click", () => (isOpen() ? close(true) : open(btn)));
+    box.addEventListener("keydown", onKey);
+    if (backdrop) backdrop.addEventListener("click", () => close(true));
+    closers.forEach((c) => c && c.addEventListener("click", () => close(true)));
+    return { open, close, isOpen, onKey };
+  }
+  // Keep the composer above the on-screen keyboard: --lca-vvh follows visualViewport.
+  function trackViewport(win, docEl) {
+    const vv = win.visualViewport;
+    if (!vv || !docEl) return;
+    const set = () => docEl.style.setProperty("--lca-vvh", vv.height + "px");
+    vv.addEventListener("resize", set);
+    set();
+  }
+  function initMobile(doc, win) {
+    const $ = (id) => doc.getElementById(id);
+    const backdrop = $("backdrop");
+    const drawer = overlay({
+      box: $("sidebar"), btn: $("drawer-btn"), backdrop, body: doc.body,
+      background: [doc.querySelector(".main"), $("side-panel")], closers: [$("drawer-close")],
+    });
+    const sheet = overlay({
+      box: $("side-panel"), btn: $("sheet-btn"), ariaOnly: true, backdrop, body: doc.body,
+      background: [$("sidebar"), doc.querySelector(".main")], closers: [$("sheet-close")],
+    });
+    // Sheet is opened from the "⋯" menu, which closes itself: return focus to "⋯".
+    $("sheet-btn").addEventListener("click", () => sheet.open($("more-btn")));
+    doc.addEventListener("keydown", (ev) => { drawer.onKey(ev); sheet.onKey(ev); }, true);
+    // Picking a chat or link inside the drawer closes it.
+    $("sidebar").addEventListener("click", (ev) => {
+      const t = ev.target && ev.target.closest && ev.target.closest("#conv-list button, #search-hits button, #new-chat");
+      if (t && drawer.isOpen()) drawer.close(false);
+    });
+    const mq = win.matchMedia ? win.matchMedia("(min-width: 1024px)") : null;
+    if (mq && mq.addEventListener) {
+      mq.addEventListener("change", (e) => { if (e.matches) { drawer.close(false); sheet.close(false); } });
+    }
+    trackViewport(win, doc.documentElement);
+    return { drawer, sheet };
+  }
   function init(doc, win) {
     const m = menu(doc.getElementById("more-btn"), doc.getElementById("more-menu"));
     doc.addEventListener("click", (ev) => m.onOutside(ev.target));
     panel(doc.getElementById("hub"), doc.getElementById("panel-toggle"), getStore(win));
     mirrorPanel(doc, win.MutationObserver);
+    if (doc.getElementById("drawer-btn")) initMobile(doc, win);
     const input = doc.getElementById("input");
     if (input) input.focus(); // send the first message without a click
   }
-  root.LCALayout = { menu, panel, readCollapsed, writeCollapsed, pinnedFirst, init, PANEL_KEY };
+  root.LCALayout = { menu, panel, overlay, initMobile, readCollapsed, writeCollapsed, pinnedFirst, init, PANEL_KEY };
   if (typeof document !== "undefined" && document.getElementById("more-btn")) init(document, root);
 })(typeof window !== "undefined" ? window : this);
 /* layout:end */
