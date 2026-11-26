@@ -16,14 +16,18 @@ from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import parse_qs
 
-from app import db, db_manager
+from app import db, db_manager, org_store
 
 MAX_PAGE_SIZE = 100
 MAX_PAGE = 1_000_000
 MAX_EXPORT_ROWS = 50_000
 MAX_SEARCH_LEN = 200
 MASK = "••••"
-SENSITIVE_RE = re.compile(r"hash|secret|password|token|salt|key_hash|verifier|session", re.I)
+# Whole-word match on column names: token/token_hash/*_token/*_hash/password/secret/salt/
+# verifier/session id stay redacted; count columns such as tokens_in/tokens_out/tokens_est do not.
+SENSITIVE_RE = re.compile(
+    r"(^|_)(token|hash|password|passwd|secret|salt|verifier)(_|$)|^sid$|(^|_)session(_id)?$",
+    re.I)
 CSV_DANGER = ("=", "+", "-", "@", "\t", "\r")
 GET_PATHS = frozenset({"/api/admin/db/tables", "/api/admin/db/rows",
                        "/api/admin/db/summary", "/api/admin/db/export"})
@@ -103,6 +107,8 @@ def _order_clause(cols: list[dict], order_by: Optional[str]) -> str:
     name = order_by[1:] if desc else order_by
     if name not in {c["name"] for c in cols}:
         raise DbAdminError("unknown column")
+    if is_sensitive(name):
+        raise DbAdminError("cannot order by a sensitive column")
     return f" ORDER BY {_q(name)} {'DESC' if desc else 'ASC'}"
 
 
@@ -225,6 +231,20 @@ def _audit(project_root, ident: dict, action: str, detail: str = "") -> None:
                          source="db_admin", extra=detail[:200])
 
 
+def _require_ceo(h, path: str, project_root) -> Optional[dict]:
+    """h._require("CEO"), but a 401/403 is written to server_events before the reply."""
+    try:
+        who = h._identity()
+        if who is None or not org_store.role_at_least(who.get("role"), "CEO"):
+            status = 401 if who is None else 403
+            user = (who or {}).get("username") or "-"
+            db_manager.log_event(project_root, "db_admin_denied", f"{status} {user} {path}",
+                                 level="warn", source="db_admin")
+    except Exception:  # noqa: BLE001 - audit must not break the response
+        pass
+    return h._require("CEO")
+
+
 def _send_csv(h, table: str, text: str) -> None:
     body = ("﻿" + text).encode("utf-8")
     h.send_response(200)
@@ -251,7 +271,7 @@ def _dispatch_get(h, path: str, qs: dict, project_root) -> None:
 
 
 def handle_get(h, parsed, project_root) -> None:
-    ident = h._require("CEO")
+    ident = _require_ceo(h, parsed.path, project_root)
     if ident is None:
         return
     qs = parse_qs(parsed.query)
@@ -265,7 +285,7 @@ def handle_get(h, parsed, project_root) -> None:
 
 
 def handle_post(h, parsed, project_root) -> None:
-    ident = h._require("CEO")
+    ident = _require_ceo(h, parsed.path, project_root)
     if ident is None:
         return
     _audit(project_root, ident, parsed.path)

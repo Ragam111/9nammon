@@ -267,5 +267,38 @@ class PagesLinkManifestTest(unittest.TestCase):
         self.assertIn(".catch(", js)
 
 
+def _shell_assets(src: str) -> list:
+    m = re.search(r"SHELL_ASSETS\s*=\s*\[(.*?)\]", src, re.S)
+    return re.findall(r"['\"]([^'\"]+)['\"]", m.group(1))
+
+
+def shell_hash(src: str) -> str:
+    """sha256 over SHELL_ASSETS path + content (text normalised to LF), first 16 hex."""
+    import hashlib
+    h = hashlib.sha256()
+    for a in _shell_assets(src):
+        b = (APP / a.lstrip("/")).read_bytes()
+        if not a.endswith(".png"):
+            b = b.replace(b"\r\n", b"\n")
+        h.update(a.encode() + b"\0" + b + b"\0")
+    return h.hexdigest()[:16]
+
+
+class ShellCacheVersionTest(unittest.TestCase):
+    def test_shell_hash_recorded_next_to_cache_name(self):
+        src = (APP / "sw.js").read_text(encoding="utf-8")
+        m = re.search(r'SHELL_HASH\s*=\s*"([0-9a-f]+)";\s*\nvar CACHE_NAME', src)
+        self.assertIsNotNone(m, "SHELL_HASH must sit right above CACHE_NAME")
+        self.assertEqual(m.group(1), shell_hash(src),
+                         "shell assets changed: bump CACHE_NAME and update SHELL_HASH")
+
+    def test_shell_assets_in_schedule_allowlist(self):
+        sw = (APP / "sw.js").read_text(encoding="utf-8")
+        srv = (ROOT / "server.py").read_text(encoding="utf-8")
+        m = re.search(r"_SCHEDULE_ALLOWLIST\s*=\s*\((.*?)\)", srv, re.S)
+        allow = set(re.findall(r"['\"]([^'\"]+)['\"]", m.group(1)))
+        self.assertEqual(set(_shell_assets(sw)) - allow, set())
+
+
 if __name__ == "__main__":
     unittest.main()

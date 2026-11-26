@@ -237,7 +237,8 @@ h1, h2, h3 { line-height: 1.4; font-weight: 600; font-size: 1rem; margin: 0; }
 .num { font-variant-numeric: tabular-nums; }
 @media (max-width: 720px) {
   .hub { grid-template-columns: 1fr; }
-  .sidebar { max-height: 40vh; }
+  .sidebar { max-height: 40vh; min-width: 0; }
+  .sidebar select { width: 100%; max-width: 100%; } /* long folder names must not widen 375px */
   .head .title { flex: 1 1 100%; } /* ชื่อแชทขึ้นบรรทัดของตัวเอง ปุ่มควบคุมตัดลงบรรทัดถัดไป */
   .head select { flex: 1 1 auto; }
   .composer { min-width: 0; }

@@ -59,6 +59,14 @@ class _Base(unittest.TestCase):
         return next(k for k in org_store.list_api_keys(self.root) if k["key_id"] == key_id)["daily_limit"]
 
 
+class FormatAmountTest(unittest.TestCase):
+    def test_rejects_nan_and_inf(self) -> None:
+        for bad in (float("nan"), float("inf"), float("-inf"), "NaN", "sNaN", "Infinity"):
+            with self.assertRaises(ValueError, msg=repr(bad)):
+                promptpay.format_amount(bad)
+        self.assertEqual(promptpay.format_amount(299), "299.00")
+
+
 class PlansTest(_Base):
     def test_default_plans_present_and_ordered(self):
         plans = payments.load_plans(self.root)

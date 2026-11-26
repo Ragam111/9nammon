@@ -119,6 +119,25 @@ test("arrow keys move between menu buttons; file input is skipped", () => {
   assert.equal(focused, exp);
 });
 
+test("arrow keys also leave checkbox and select; Alt+Arrow on select is left alone", () => {
+  const { btn, box, compare, persona, exp } = makeMenu();
+  const check = new El("input", { type: "checkbox" });
+  box.append(check);
+  btn.dispatch("click");
+  persona.dispatch("keydown", { key: "ArrowDown" });
+  assert.equal(focused, exp);
+  persona.dispatch("keydown", { key: "ArrowUp" });
+  assert.equal(focused, compare);
+  exp.dispatch("keydown", { key: "ArrowDown" });
+  assert.equal(focused, check);
+  check.dispatch("keydown", { key: "ArrowDown" });
+  assert.equal(focused, compare);
+  focused = persona;
+  const ev = persona.dispatch("keydown", { key: "ArrowDown", altKey: true });
+  assert.equal(focused, persona);
+  assert.notEqual(ev.defaultPrevented, true);
+});
+
 test("clicking an action button closes the menu; select does not", () => {
   const { btn, box, compare, persona } = makeMenu();
   btn.dispatch("click");

@@ -89,6 +89,8 @@ def format_amount(amount) -> str:
         value = Decimal(str(amount)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     except (InvalidOperation, ValueError) as e:
         raise ValueError(f"amount ต้องเป็นตัวเลข: {amount!r}") from e
+    if not value.is_finite():
+        raise ValueError(f"amount ต้องเป็นตัวเลขจำกัด: {amount!r}")
     if value <= 0 or value > MAX_AMOUNT:
         raise ValueError(f"amount ต้องอยู่ระหว่าง 0.01 ถึง {MAX_AMOUNT}")
     return f"{value:.2f}"

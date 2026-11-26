@@ -52,7 +52,10 @@
         ev.preventDefault();
         ev.stopPropagation(); // first Esc closes the menu, not the stream
         close(true);
-      } else if ((ev.key === "ArrowDown" || ev.key === "ArrowUp") && ev.target.tagName === "BUTTON") {
+      } else if ((ev.key === "ArrowDown" || ev.key === "ArrowUp")
+          && items().includes(ev.target) && !(ev.target.tagName === "SELECT" && ev.altKey)) {
+        // Arrows walk every item (button, checkbox, select); Alt+Arrow on a select keeps
+        // the native value change / open behaviour.
         const list = items();
         if (!list.length) return;
         ev.preventDefault();
