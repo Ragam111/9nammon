@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LCA Admin</title>
+<link rel="stylesheet" href="/app.css">
+<style>
+  /* LCA-Admin accent: LCA warn token, so staff never confuse it with the customer app */
+  :root{--adm-accent:var(--lca-warn);--adm-accent-weak:color-mix(in srgb,var(--lca-warn) 14%,transparent)}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--lca-bg);color:var(--lca-fg);font-family:var(--lca-sans);font-size:14px;line-height:1.5}
+  a{color:var(--adm-accent);text-decoration:none}
+  .bar{height:4px;background:var(--adm-accent)}
+  .app{display:flex;min-height:calc(100vh - 4px)}
+  .side{width:220px;flex-shrink:0;border-right:1px solid var(--lca-line);background:var(--lca-surface);padding:18px 12px}
+  .brand{font-weight:700;padding:4px 10px 16px}
+  .brand small{color:var(--adm-accent);font-weight:600;margin-left:6px}
+  .nav{display:flex;flex-direction:column;gap:2px}
+  .nav a{display:block;padding:8px 10px;border-radius:8px;color:var(--lca-fg)}
+  .nav a:hover{background:var(--lca-surface-2)}
+  .nav a[aria-current="page"]{background:var(--adm-accent-weak);color:var(--adm-accent);font-weight:600}
+  main{flex:1;min-width:0;padding:24px var(--lca-gutter,16px) 48px;max-width:1100px}
+  h1{font-size:22px;margin:0 0 4px}
+  .sub{color:var(--lca-muted);margin:0 0 16px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}
+  .card{background:var(--lca-surface);border:1px solid var(--lca-line);border-radius:var(--lca-r-lg,12px);padding:14px}
+  .card b{display:block;font-size:20px;font-variant-numeric:tabular-nums}
+  .card span{color:var(--lca-muted)}
+  table{width:100%;border-collapse:collapse}
+  th,td{text-align:left;padding:8px;border-bottom:1px solid var(--lca-line)}
+  th{color:var(--lca-muted);font-weight:600}
+  .btn{font:inherit;border:1px solid var(--lca-line);background:var(--lca-surface);color:var(--lca-fg);border-radius:8px;padding:7px 14px;cursor:pointer;min-height:36px}
+  .btn:hover{background:var(--lca-surface-2)}
+  .row{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+  pre{background:var(--lca-surface-2);border-radius:8px;padding:12px;overflow:auto;max-height:360px;font-family:var(--lca-mono)}
+  .err{color:var(--lca-bad)}
+  section[hidden]{display:none}
+  @media (max-width:640px){
+    .app{flex-direction:column}
+    .side{width:auto;border-right:0;border-bottom:1px solid var(--lca-line)}
+    .nav{flex-direction:row;flex-wrap:wrap}
+  }
+</style>
+</head>
+<body>
+<div class="bar" aria-hidden="true"></div>
+<div class="app">
+  <aside class="side">
+    <div class="brand">LCA<small>Admin</small></div>
+    <nav class="nav" aria-label="Admin">
+      <a href="#overview" data-sec="overview">Overview</a>
+      <a href="#users" data-sec="users">Users</a>
+      <a href="/console/keys">API keys</a>
+      <a href="#orders" data-sec="orders">Plans &amp; Orders</a>
+      <a href="#refunds" data-sec="refunds">Refunds</a>
+      <a href="/models">Models</a>
+      <a href="/admin/db">Database</a>
+      <a href="#nodes" data-sec="nodes">Nodes</a>
+    </nav>
+  </aside>
+  <main>
+    <p id="err" class="err" role="alert" hidden></p>
+    <section id="sec-overview">
+      <h1>Overview</h1>
+      <p class="sub">สถานะระบบและ watchdog (เครื่องนี้เท่านั้น)</p>
+      <div id="stats" class="grid"></div>
+      <h2>Watchdog</h2>
+      <pre id="watchdog">กำลังโหลด…</pre>
+    </section>
+    <section id="sec-users" hidden>
+      <h1>Users</h1>
+      <table><thead><tr><th>username</th><th>role</th><th>tier</th></tr></thead><tbody id="users"></tbody></table>
+    </section>
+    <section id="sec-orders" hidden>
+      <h1>Plans &amp; Orders</h1>
+      <pre id="orders">กำลังโหลด…</pre>
+    </section>
+    <section id="sec-refunds" hidden>
+      <h1>Refunds</h1>
+      <p class="sub">คำขอคืนเงินอยู่ในบัญชี finance (status = refund)</p>
+      <pre id="refunds">กำลังโหลด…</pre>
+    </section>
+    <section id="sec-nodes" hidden>
+      <h1>Nodes</h1>
+      <p class="sub">สั่งเครื่องในคลัสเตอร์ผ่าน node_ctl (allowlist: status/start/stop/restart/logs)</p>
+      <div class="row">
+        <button class="btn" type="button" data-node="status">Status</button>
+        <button class="btn" type="button" data-node="start">Start</button>
+        <button class="btn" type="button" data-node="stop">Stop</button>
+        <button class="btn" type="button" data-node="restart">Restart</button>
+        <button class="btn" type="button" data-node="logs">Logs</button>
+      </div>
+      <pre id="nodes">—</pre>
+    </section>
+  </main>
+</div>
+<script src="/app.js"></script>
+<script src="/admin.js"></script>
+</body>
+</html>
