@@ -130,7 +130,24 @@ STATIC_ROUTES = {
     "/fonts/IBMPlexSansThai-SemiBold.sub.woff2": ("fonts/IBMPlexSansThai-SemiBold.sub.woff2", "font/woff2", True),
     "/fonts/IBMPlexMono-Regular.sub.woff2": ("fonts/IBMPlexMono-Regular.sub.woff2", "font/woff2", True),
     "/fonts/OFL.txt": ("fonts/OFL.txt", "text/plain; charset=utf-8", True),
+    # PWA — public static files (no user data, never get the session token injected)
+    "/manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json", False),
+    "/sw.js":   ("sw.js",        "application/javascript; charset=utf-8", False),
+    "/offline.html": ("offline.html", "text/html; charset=utf-8",         False),
+    "/icons/icon-192.png": ("icons/icon-192.png", "image/png", True),
+    "/icons/icon-512.png": ("icons/icon-512.png", "image/png", True),
+    "/icons/icon-maskable-512.png": ("icons/icon-maskable-512.png", "image/png", True),
+    "/icons/apple-touch-icon.png": ("icons/apple-touch-icon.png", "image/png", True),
 }
+
+# headers เพิ่มเฉพาะ route (PWA): sw.js ต้องอัปเดตทันที + ขอบเขตทั้งเว็บ
+STATIC_EXTRA_HEADERS = {
+    "/sw.js": {"Service-Worker-Allowed": "/", "Cache-Control": "no-cache"},
+    "/manifest.webmanifest": {"Cache-Control": "no-cache"},
+    "/offline.html": {"Cache-Control": "no-cache"},
+}
+# route ที่ห้ามฝัง session token เด็ดขาด — service worker เก็บลง cache ได้
+NO_TOKEN_INJECT = frozenset({"/offline.html", "/sw.js", "/manifest.webmanifest"})
 
 # ชื่อที่ถือว่าเป็นเครื่องตัวเอง — DNS rebinding ใช้ชื่ออื่นที่ชี้มาที่ 127.0.0.1
 _LOOPBACK_NAMES = frozenset({"127.0.0.1", "localhost", "::1"})
@@ -654,6 +671,9 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             "/fonts/IBMPlexSansThai-SemiBold.sub.woff2",
             "/fonts/IBMPlexMono-Regular.sub.woff2",
             "/fonts/OFL.txt",
+            "/manifest.webmanifest", "/sw.js", "/offline.html",
+            "/icons/icon-192.png", "/icons/icon-512.png",
+            "/icons/icon-maskable-512.png", "/icons/apple-touch-icon.png",
         )
 
         @staticmethod
@@ -1719,10 +1739,13 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             except OSError as e:
                 self._send_json(500, {"error": f"อ่าน {filename} ไม่ได้: {e}"})
                 return
-            body = self._inject_session_token(body, content_type)
+            if route not in NO_TOKEN_INJECT:
+                body = self._inject_session_token(body, content_type)
             self.send_response(200)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
+            for hk, hv in STATIC_EXTRA_HEADERS.get(route, {}).items():
+                self.send_header(hk, hv)
             if "text/html" in content_type:
                 # หน้าที่มี session token ห้ามถูกฝังใน iframe ของเว็บอื่น (clickjacking)
                 self.send_header("X-Frame-Options", "DENY")

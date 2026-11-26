@@ -92,4 +92,20 @@
       } catch (e) { return null; }
     }
   };
+
+  // PWA: register the service worker only on secure contexts (https / localhost / 127.0.0.1).
+  // Any failure is swallowed so the page keeps working without offline support.
+  function registerServiceWorker() {
+    try {
+      var loc = w.location || {};
+      var host = loc.hostname || "";
+      var secure = loc.protocol === "https:" || host === "localhost" || host === "127.0.0.1";
+      if (!secure || w.isSecureContext === false) return;
+      if (!w.navigator || !("serviceWorker" in w.navigator)) return;
+      w.navigator.serviceWorker.register("/sw.js", { scope: "/" })
+        .catch(function () { /* no offline support — page still works */ });
+    } catch (e) { /* ignore */ }
+  }
+  if (w.document && w.document.readyState === "complete") registerServiceWorker();
+  else if (w.addEventListener) w.addEventListener("load", registerServiceWorker);
 })(window);
