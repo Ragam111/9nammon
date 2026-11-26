@@ -277,3 +277,4 @@ Interface มี input/output และ error behavior ระบุครบ ง
 - หน้าแอดมินฐานข้อมูล /admin/db (CEO, อ่านอย่างเดียว, ปิดค่าลับ) QA PASS รวมแล้ว minor: ห้ามเรียงตามคอลัมน์ลับ, audit คำขอที่ถูกปฏิเสธ, tokens_in/out ถูกปิดเกิน
 - Google login (PKCE + รหัสใช้ครั้งเดียว + cookie ผูก กัน login CSRF) + โควตาฟรี 1M token/เดือน QA PASS รวมแล้ว (migration 0015) nit: NFKC อีเมล, rate limit /finish
 - เรื่องเล็ก 6 ข้อ (SW cache hash, schedule allowlist, db_admin order/audit/redact, เมนู ⋯, 375px, NaN) QA PASS รวมแล้ว minor: dedupe db_admin_denied events
+- Stripe Checkout (บัตร+PromptPay, webhook ตรวจลายเซ็น, migration 0016) QA PASS รวมแล้ว minor: success_url จาก Host เมื่อไม่ตั้ง PUBLIC_BASE_URL, plans.html แสดง QR ให้ order Stripe ที่ pending
