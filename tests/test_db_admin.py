@@ -257,3 +257,43 @@ class DbAdminHttpTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PageAuthHeaderTest(unittest.TestCase):
+    """Pages without app.js must send the saved login key (lca_key), not only the launch token."""
+
+    PAGES = ("db-admin.html", "console.html", "dev.html")
+    setUp = DbAdminHttpTest.setUp
+    tearDown = DbAdminHttpTest.tearDown
+    _raw = DbAdminHttpTest._raw
+    _req = DbAdminHttpTest._req
+    _login = DbAdminHttpTest._login
+
+    def test_pages_read_lca_key(self) -> None:
+        for name in self.PAGES:
+            src = (ROOT / "app" / name).read_text(encoding="utf-8")
+            self.assertIn('getItem("lca_key")', src, name)
+            self.assertIn("__LCA_SESSION_TOKEN", src, name)
+
+    def _page_header(self, stored: str) -> dict:
+        import re
+        import shutil
+        import subprocess
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node not installed")
+        src = (ROOT / "app" / "db-admin.html").read_text(encoding="utf-8")
+        m = re.search(r"function storedKey\(\) \{.*?\r?\n  \}\r?\n  function hdrs\(\) \{[^\n]*\}", src, re.S)
+        self.assertIsNotNone(m, "storedKey/hdrs not found")
+        js = ("var window={__LCA_SESSION_TOKEN:''};var localStorage={getItem:function(k){"
+              "return k==='lca_key'?%s:null;}};%s;process.stdout.write(JSON.stringify(hdrs()));"
+              % (json.dumps(stored), m.group(0)))
+        out = subprocess.run([node, "-e", js], capture_output=True, text=True, timeout=20)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        return json.loads(out.stdout)
+
+    def test_password_login_key_reaches_db_api(self) -> None:
+        h = self._page_header(self.tok["boss"])
+        self.assertEqual(self._raw("GET", "/api/admin/db/tables", headers=h)[0], 200)
+        h = self._page_header(self.tok["ops"])
+        self.assertEqual(self._raw("GET", "/api/admin/db/tables", headers=h)[0], 403)

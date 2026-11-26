@@ -158,6 +158,7 @@
     try { $('token').value = sessionStorage.getItem('lca_dev_token') || ''; } catch (e) {}
 
     function launchedSessionToken() {
+      try { const k = localStorage.getItem("lca_key"); if (k) return k; } catch (e) { /* storage blocked */ }
       // session ที่เซิร์ฟเวอร์ฝังในหน้า หรือ #lca_token= — ไม่เขียนลงช่อง password
       if (window.__LCA_SESSION_TOKEN) return String(window.__LCA_SESSION_TOKEN);
       try {

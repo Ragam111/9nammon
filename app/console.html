@@ -328,6 +328,7 @@
     return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
   function tok(){ return $("token").value.trim(); }
   function launchedSessionToken(){
+    try { var k = localStorage.getItem("lca_key"); if (k) return k; } catch (e) { /* storage blocked */ }
     if (window.__LCA_SESSION_TOKEN) return String(window.__LCA_SESSION_TOKEN);
     try {
       var m = (location.hash || "").match(/(?:^#|&)lca_token=([^&]+)/);
