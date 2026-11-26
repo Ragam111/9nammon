@@ -280,3 +280,4 @@ Interface มี input/output และ error behavior ระบุครบ ง
 - Stripe Checkout (บัตร+PromptPay, webhook ตรวจลายเซ็น, migration 0016) QA PASS รวมแล้ว minor: success_url จาก Host เมื่อไม่ตั้ง PUBLIC_BASE_URL, plans.html แสดง QR ให้ order Stripe ที่ pending
 - หน้าแชตมือถือ (drawer + sheet, focus trap, UI งาน 3) QA PASS รวมแล้ว ยังไม่ได้ทดสอบกับ server.py จริง: ชื่อยาว/XSS/highlight/shortcut บนเบราว์เซอร์
 - แถบนำทาง+ชิปสถานะร่วมทุกหน้า (UI งาน 4) QA PASS รวมแล้ว ทดสอบกับ server จริง + E2E /chat ผ่าน minor: /models code ล้นที่ 375, console.html primary 6 ปุ่ม
+- Stripe minor (PUBLIC_BASE_URL บังคับ, สถานะรอ Stripe ใน /plans, dedupe audit, ledger pending) QA PASS รวมแล้ว
