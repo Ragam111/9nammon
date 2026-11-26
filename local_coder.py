@@ -43,6 +43,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import urllib.request
 from datetime import datetime
 from pathlib import Path
@@ -234,6 +235,26 @@ def get_tuning_options(num_ctx: int) -> dict:
     return {"num_ctx": num_ctx, "num_thread": threads, "keep_alive": "5m"}
 
 
+# Token count of the last call_ollama on this thread (prompt_eval_count + eval_count),
+# read by app.model_backend.take_usage() for the free-tier monthly allowance.
+_last_usage = threading.local()
+
+
+def _note_usage(data: dict) -> None:
+    try:
+        n = int(data.get("prompt_eval_count") or 0) + int(data.get("eval_count") or 0)
+    except (TypeError, ValueError, AttributeError):
+        return
+    if n > 0:
+        _last_usage.tokens = n
+
+
+def take_last_usage() -> Optional[int]:
+    """Pop the token count recorded by the last call_ollama on this thread."""
+    n = getattr(_last_usage, "tokens", None)
+    _last_usage.tokens = None
+    return n
+
 def call_ollama(model: str, messages: list, num_ctx: int = 8192,
                 options: Optional[dict] = None) -> str:
     opts = get_tuning_options(num_ctx)
@@ -260,7 +281,9 @@ def call_ollama(model: str, messages: list, num_ctx: int = 8192,
 
     try:
         data = json.loads(raw)
-        return data["message"]["content"]
+        content = data["message"]["content"]
+        _note_usage(data)
+        return content
     except (json.JSONDecodeError, KeyError) as e:
         print(f"[error] ตอบกลับจาก Ollama ผิดรูปแบบ: {e}")
         print(f"[debug] raw response (ตัดให้สั้น): {raw[:200]}")

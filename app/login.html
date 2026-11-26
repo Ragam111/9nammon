@@ -32,6 +32,11 @@
         </form>
         <p id="err" class="err" role="alert" style="display:none; margin-top:8px"></p>
 
+        <!-- ซ่อนไว้จนกว่า server บอกว่าตั้งค่า Google แล้ว (GET /api/auth/providers) -->
+        <div id="google-box" hidden style="margin-top:10px">
+          <a id="google-btn" class="button" href="/auth/google/start" style="display:block; text-align:center">เข้าสู่ระบบด้วย Google</a>
+        </div>
+
         <details style="margin-top:12px">
           <summary class="muted">หรือวาง API key / token</summary>
           <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px">
@@ -85,6 +90,18 @@
       qs("signed").style.display = "";
     }
 
+    async function showProviders() {
+      try {
+        var res = await fetch("/api/auth/providers");
+        var data = await res.json().catch(function () { return {}; });
+        if (res.ok && data.google) {
+          var n = nextTarget();
+          qs("google-btn").href = "/auth/google/start?next=" + encodeURIComponent(n === "/" ? "/chat" : n);
+          qs("google-box").hidden = false;
+        }
+      } catch (e) { /* ไม่มีปุ่ม Google ก็ล็อกอินแบบอื่นได้ */ }
+    }
+
     async function refresh() {
       var me = await window.lca.whoami();
       if (me) showSigned(me); else showForm();
@@ -122,6 +139,7 @@
       qs("to-dev").addEventListener("click", function () { location.href = "/dev"; });
       qs("logout").addEventListener("click", async function () { await window.lca.logout(); refresh(); });
       refresh();
+      showProviders();
     });
   </script>
 </body>

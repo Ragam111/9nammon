@@ -16,6 +16,22 @@
     } catch (e) { return ""; }
   }
 
+  // Google sign-in: the callback puts a one-time login code (not a session) in the
+  // fragment #lca_login_code=. Read it, strip it from the URL right away, and never
+  // store it as a key: the session comes only from POST /api/auth/google/finish,
+  // which also requires the HttpOnly lca_google_finish cookie set for this browser.
+  function takeLoginCode() {
+    try {
+      var h = (w.location && w.location.hash) || "";
+      var m = h.match(/(?:^#|&)lca_login_code=([^&]+)/);
+      if (!m) return "";
+      if (w.history && w.history.replaceState) {
+        w.history.replaceState(null, "", w.location.pathname + w.location.search);
+      }
+      return decodeURIComponent(m[1]);
+    } catch (e) { return ""; }
+  }
+
   w.lca = {
     getKey: function () {
       try {
@@ -92,6 +108,32 @@
       } catch (e) { return null; }
     }
   };
+  // finish Google sign-in only through the cookie-bound POST (an attacker's code
+  // fails here without the attacker's cookie, so it cannot replace this browser's key)
+  async function finishGoogleLogin(code) {
+    try {
+      var res = await fetch("/api/auth/google/finish", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: code })
+      });
+      var data = await res.json().catch(function () { return {}; });
+      if (!res.ok || !data.token) {
+        w.lca.lastError = data.error || ("HTTP " + res.status);
+        return null;
+      }
+      var before = w.lca.getKey();
+      w.lca.setKey(data.token);
+      if (before !== data.token && w.location && w.location.reload) w.location.reload();
+      return data;
+    } catch (e) {
+      w.lca.lastError = "ต่อเซิร์ฟเวอร์ไม่ได้ — ตรวจว่า LCA เปิดอยู่";
+      return null;
+    }
+  }
+  var loginCode = takeLoginCode();
+  w.lca.googleLoginDone = loginCode ? finishGoogleLogin(loginCode) : Promise.resolve(null);
 
   // PWA: register the service worker only on secure contexts (https / localhost / 127.0.0.1).
   // Any failure is swallowed so the page keeps working without offline support.
