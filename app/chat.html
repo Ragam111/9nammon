@@ -12,34 +12,49 @@
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
 </head>
 <body class="page-hub">
-<div class="hub">
-  <aside class="sidebar">
+<div id="hub" class="hub">
+  <aside class="sidebar" aria-label="บทสนทนา">
     <div class="row">
       <button id="new-chat" type="button" class="grow">+ แชทใหม่</button>
     </div>
-    <input id="search" type="search" placeholder="ค้นหา… (Ctrl+K)" autocomplete="off">
+    <input id="search" type="search" placeholder="ค้นหา… (Ctrl+K)" autocomplete="off" aria-label="ค้นหาแชท">
     <div id="search-hits" class="list" hidden></div>
     <div class="row">
       <select id="folder" class="grow" aria-label="โปรเจกต์"></select>
-      <button id="add-folder" type="button" title="สร้างโปรเจกต์">+</button>
+      <button id="add-folder" type="button" title="สร้างโปรเจกต์" aria-label="สร้างโปรเจกต์">+</button>
     </div>
-    <div id="conv-list" class="list" aria-label="ล่าสุด"></div>
-    <label class="meta"><input id="ephemeral" type="checkbox"> ชั่วคราว (ไม่บันทึก)</label>
+    <div id="conv-list" class="list" aria-label="ล่าสุด (ปักหมุดอยู่บนสุด)"></div>
+    <nav class="side-nav" aria-label="หน้าอื่น">
+      <a href="/models">โมเดล</a>
+      <a href="/console/keys">API keys</a>
+      <a href="/plans">แพ็กเกจ</a>
+      <a href="/spaces">Spaces</a>
+      <a href="/support">ช่วยเหลือ</a>
+      <a href="/">หน้าเดิม</a>
+    </nav>
     <div class="side-foot">
-      <a href="/">หน้าเดิม</a> · <a href="/console">คีย์</a> · <a href="/models">โมเดล</a><br>
-      <span id="net-dot">local</span>
+      <span id="net-dot" class="chip">local</span>
     </div>
   </aside>
   <section class="main">
     <header class="head">
       <span id="title" class="title">แชทใหม่</span>
-      <select id="model" aria-label="โมเดล"></select>
-      <input id="custom-model" placeholder="ชื่อโมเดล" hidden>
-      <button id="compare-btn" type="button">เทียบ</button>
-      <select id="persona" aria-label="persona"><option value="">persona</option></select>
-      <button id="export-btn" type="button">ส่งออก</button>
-      <button id="import-btn" type="button">นำเข้า</button>
-      <input id="import-file" type="file" accept="application/json" hidden>
+      <select id="model" aria-label="โมเดล (Ctrl+Shift+M)"></select>
+      <input id="custom-model" placeholder="ชื่อโมเดล" aria-label="ชื่อโมเดล custom" hidden>
+      <div class="more">
+        <button id="more-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="more-menu" aria-label="ตัวเลือกเพิ่มเติม" title="ตัวเลือกเพิ่มเติม">⋯</button>
+        <div id="more-menu" class="more-menu" role="group" aria-label="ตัวเลือกเพิ่มเติม" hidden>
+          <button id="compare-btn" type="button">เทียบหลายโมเดล</button>
+          <label class="menu-row">Persona
+            <select id="persona" aria-label="persona"><option value="">persona</option></select>
+          </label>
+          <button id="export-btn" type="button">ส่งออก JSON</button>
+          <button id="import-btn" type="button">นำเข้า JSON</button>
+          <input id="import-file" type="file" accept="application/json" hidden>
+          <label class="menu-row"><input id="ephemeral" type="checkbox"> ชั่วคราว (ไม่บันทึก)</label>
+        </div>
+      </div>
+      <button id="panel-toggle" type="button" class="panel-toggle" aria-expanded="true" aria-controls="side-panel" aria-label="แผงรายละเอียด" title="แผงรายละเอียด">ⓘ</button>
     </header>
     <div id="offline" class="banner" hidden>ไม่มีอินเทอร์เน็ต — ใช้ได้เฉพาะโมเดล local</div>
     <div id="notice" class="banner warn" hidden></div>
@@ -48,7 +63,7 @@
     <form id="composer" class="composer">
       <button id="attach-btn" type="button" class="attach-btn" title="แนบไฟล์ข้อความ/โค้ด (ลากวางได้)" aria-label="แนบไฟล์">&#128206;</button>
       <input id="attach-file" type="file" multiple accept=".py,.js,.ts,.json,.md,.txt,.csv,.html,.css,.sh" hidden>
-      <textarea id="input" rows="2" placeholder="พิมพ์ข้อความ… (Enter ส่ง, Shift+Enter ขึ้นบรรทัด)"></textarea>
+      <textarea id="input" rows="2" placeholder="พิมพ์ข้อความ… (Enter ส่ง, Shift+Enter ขึ้นบรรทัด)" aria-label="ข้อความ" autofocus></textarea>
       <button id="send" type="submit">ส่ง</button>
     </form>
     <div id="compare-box" class="banner" hidden>
@@ -58,6 +73,20 @@
       <button id="compare-go" type="button">เทียบตอนนี้</button>
     </div>
   </section>
+  <aside id="side-panel" class="panel" aria-label="รายละเอียด">
+    <section class="card">
+      <h2>โมเดล</h2>
+      <p id="panel-model" class="meta">—</p>
+    </section>
+    <section class="card">
+      <h2>ไฟล์แนบ</h2>
+      <ul id="attachments" class="files"></ul>
+    </section>
+    <section class="card">
+      <h2>โควตาวันนี้</h2>
+      <p id="panel-quota" class="meta"><a href="/plans">ดูโควตาและแพ็กเกจ</a></p>
+    </section>
+  </aside>
 </div>
 <script src="/app.js"></script>
 <script src="/highlight.js"></script>

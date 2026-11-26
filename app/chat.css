@@ -69,6 +69,16 @@ button { cursor: pointer; }
 }
 .list button[aria-current="true"] { background: var(--lca-accent-weak); }
 .side-foot { font-size: 13px; line-height: 1.5; color: var(--lca-muted); }
+.side-nav { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: 14px; line-height: 1.6; }
+.side-nav a { color: var(--lca-fg); text-decoration: none; padding: 2px 0; }
+.side-nav a:hover, .side-nav a:focus-visible { color: var(--lca-accent); text-decoration: underline; }
+.chip {
+  display: inline-block;
+  border: 1px solid var(--lca-line);
+  border-radius: 999px;
+  padding: 0 8px;
+  background: var(--lca-surface-2);
+}
 .main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .head {
   display: flex;
@@ -85,7 +95,58 @@ button { cursor: pointer; }
   border-radius: 8px;
   padding: 6px 8px;
 }
-.head .title { font-weight: 600; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.head .title { flex: 1 1 auto; min-width: 0; font-weight: 600; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.head select { max-width: 100%; min-width: 0; }
+/* "⋯" menu: compare / persona / export / import / temporary */
+.more { position: relative; }
+.more-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 220px;
+  max-width: calc(100vw - 24px);
+  padding: 8px;
+  border: 1px solid var(--lca-line);
+  border-radius: var(--lca-r);
+  background: var(--lca-surface);
+}
+.more-menu[hidden] { display: none; }
+.more-menu > button { text-align: left; }
+.more-menu .menu-row { display: flex; align-items: center; gap: 8px; font-size: 14px; line-height: 1.5; }
+.more-menu .menu-row select { flex: 1; min-width: 0; }
+.head button:focus-visible, .head select:focus-visible, .more-menu :focus-visible {
+  outline: 2px solid var(--lca-accent);
+  outline-offset: 1px;
+}
+/* Right panel (desktop only in this task; mobile sheet is task 3) */
+.panel { display: none; }
+.panel-toggle { display: none; }
+.panel .card { border-bottom: 1px solid var(--lca-line); padding: 0 0 10px; margin: 0 0 10px; }
+.panel .card:last-child { border-bottom: 0; }
+.panel .files { list-style: none; margin: 6px 0 0; padding: 0; font-family: var(--lca-mono); font-size: 13px; line-height: 1.5; }
+.panel .files li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.panel .files li.meta { font-family: var(--lca-sans); }
+@media (min-width: 1024px) {
+  .hub { grid-template-columns: 260px 1fr 320px; }
+  .hub.panel-collapsed { grid-template-columns: 260px 1fr; }
+  .panel {
+    display: block;
+    overflow: auto;
+    min-height: 0;
+    padding: 12px;
+    border-left: 1px solid var(--lca-line);
+    background: var(--lca-surface);
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  .hub.panel-collapsed .panel { display: none; }
+  .panel-toggle { display: inline-block; }
+  .head .panel-toggle[aria-expanded="true"] { background: var(--lca-accent-weak); }
+}
 .banner {
   padding: 8px 12px;
   background: var(--lca-accent-weak);
@@ -178,6 +239,9 @@ h1, h2, h3 { line-height: 1.4; font-weight: 600; font-size: 1rem; margin: 0; }
   .hub { grid-template-columns: 1fr; }
   .sidebar { max-height: 40vh; }
   .head .title { flex: 1 1 100%; } /* ชื่อแชทขึ้นบรรทัดของตัวเอง ปุ่มควบคุมตัดลงบรรทัดถัดไป */
+  .head select { flex: 1 1 auto; }
+  .composer { min-width: 0; }
+  .composer textarea { min-width: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
