@@ -19,6 +19,22 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # B8-2: the installer downloads PINNED_COMMIT and checks ZIP_SHA256 - fail the
+      # release if the pin is not in this tag's history or the hash no longer matches
+      - name: Verify installer pin (PINNED_COMMIT / ZIP_SHA256)
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          set -euo pipefail
+          COMMIT=$(python scripts/installer_pin.py commit)
+          WANT=$(python scripts/installer_pin.py sha256)
+          git merge-base --is-ancestor "$COMMIT" HEAD
+          curl -fsSL -o pin.zip "https://github.com/${GITHUB_REPOSITORY}/archive/${COMMIT}.zip"
+          GOT=$(sha256sum pin.zip | cut -d' ' -f1)
+          test "$GOT" = "$WANT" || { echo "ZIP_SHA256 mismatch: got $GOT"; exit 1; }
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -70,7 +86,7 @@ jobs:
           TAG="${GITHUB_REF_NAME}"
           NOTES=$'**LCA-Desktop.exe** — แอปก้อนเดียว ดับเบิลคลิกเปิดหน้าต่างแชตได้เลย (ฝัง Python+server มาด้วย)\n- โหมด cloud: ตั้ง connection (OpenAI-compatible + key) ที่ /console แล้วแชตได้เหมือน ChatGPT (ไม่ต้องลง Ollama)\n- โหมด local/ส่วนตัว: ลง Ollama → ข้อมูลไม่ออกเครื่องเลย (bind 127.0.0.1)\n\n**TokenLCAlimit.exe** — ตัวติดตั้งแบบ GUI (วางซอร์ส+launcher; ต้องมี Python+Ollama)\n\n⚠️ การรองรับ CPU/GPU เป็นเรื่องของ Ollama (โหมด local); โหมด cloud ไม่สนฮาร์ดแวร์'
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/LCA-Desktop.exe dist/TokenLCAlimit.exe --clobber
+            gh release upload "$TAG" dist/LCA-Desktop.exe dist/TokenLCAlimit.exe dist/lcalocalai.exe --clobber
           else
-            gh release create "$TAG" dist/LCA-Desktop.exe dist/TokenLCAlimit.exe --title "LCA $TAG" --notes "$NOTES"
+            gh release create "$TAG" dist/LCA-Desktop.exe dist/TokenLCAlimit.exe dist/lcalocalai.exe --title "LCA $TAG" --notes "$NOTES"
           fi

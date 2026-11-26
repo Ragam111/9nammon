@@ -28,12 +28,23 @@ param(
     [switch]$ApplyNetwork,
     [switch]$AllowDefaultRouteAdapter,
     [string]$RepoPath = 'C:\lca\repo',
-    [string]$DataDir = $env:USERPROFILE,
+    [string]$DataDir = '',
     [string]$PythonExe = 'python',
     [int]$Port = 8420
 )
 
 $ErrorActionPreference = 'Stop'
+# B8-3: default data dir = profile of -User (the account the task runs as), not the
+# admin running this script. Resolve via Win32_UserProfile, fall back to C:\Users\<User>.
+function Get-UserProfileDir([string]$Name) {
+    try {
+        $sid = (New-Object Security.Principal.NTAccount($Name)).Translate([Security.Principal.SecurityIdentifier]).Value
+        $p = (Get-CimInstance Win32_UserProfile -Filter "SID='$sid'" -ErrorAction Stop).LocalPath
+        if ($p) { return $p }
+    } catch { }
+    return (Join-Path 'C:\Users' $Name)
+}
+if (-not $DataDir) { $DataDir = Get-UserProfileDir $User }
 $LcaRoot = 'C:\lca'
 $SshdConfig = Join-Path $env:ProgramData 'ssh\sshd_config'
 $TaskName = 'LCA Server'

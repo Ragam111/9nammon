@@ -25,3 +25,40 @@ class ServerWiringTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GuestQuotaAtomicTest(unittest.TestCase):
+    """BF1-1: guest quota is reserved atomically at check time and refundable."""
+
+    def setUp(self):
+        import server as srv
+        self.srv = srv
+        srv._guest_quota_reset()
+
+    def tearDown(self):
+        self.srv._guest_quota_reset()
+
+    def test_concurrent_checks_never_exceed_limit(self):
+        import threading
+        ok = []
+        def hit():
+            ok.append(self.srv._guest_quota_ok("1.2.3.4"))
+        ts = [threading.Thread(target=hit) for _ in range(self.srv.GUEST_DAILY_LIMIT + 15)]
+        for t in ts:
+            t.start()
+        for t in ts:
+            t.join()
+        self.assertEqual(sum(ok), self.srv.GUEST_DAILY_LIMIT)
+
+    def test_refund_returns_unit(self):
+        for _ in range(self.srv.GUEST_DAILY_LIMIT):
+            self.assertTrue(self.srv._guest_quota_ok("9.9.9.9"))
+        self.assertFalse(self.srv._guest_quota_ok("9.9.9.9"))
+        self.srv._guest_quota_refund("9.9.9.9")
+        self.assertTrue(self.srv._guest_quota_ok("9.9.9.9"))
+
+
+class SessionTierLiveTest(unittest.TestCase):
+    def test_bf4_2_identity_recomputes_session_tier(self) -> None:
+        body = _method("_identity")
+        self.assertIn('org_store.user_tier(project_root, sess["username"])', body)

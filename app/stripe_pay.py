@@ -194,6 +194,27 @@ def create_checkout(root: Path, username: str, plan_id, base_url: str, now=None)
     return {"url": url, "order_id": oid}
 
 
+def cancel_order(root: Path, order_id: str, actor: str, actor_role, owner=None,
+                 now=None) -> dict:
+    """Cancel a pending Stripe order: expire the Checkout session first (so it can no
+    longer be paid), then cancel pay_orders and mark stripe_orders cancelled."""
+    root = Path(root)
+    now = float(now) if now is not None else time.time()
+    order = payments.get_order(root, order_id)
+    srow = org_store.run_read(root, "SELECT session_id, state FROM stripe_orders"
+                                    " WHERE order_id=?", (order_id,), one=True)
+    if order is not None and srow is not None and order["status"] == "pending"             and srow["session_id"]:
+        if owner is not None and order.get("username") != owner:
+            raise PaymentError(403, "forbidden", "ยกเลิกได้เฉพาะคำสั่งซื้อของตัวเอง")
+        key = _require_ready(root)
+        _call(key, f"/checkout/sessions/{srow['session_id']}/expire", {},
+              idem="expire_" + order_id)
+    res = payments.cancel_order(root, order_id, actor, actor_role, owner=owner, now=now)
+    if srow is not None and res.get("order", {}).get("status") == "cancelled":
+        _set_state(root, order_id, "cancelled", now)
+    return res
+
+
 def _set_state(root, oid, state, now, note=None, **extra) -> None:
     cols = {"state": state, "updated_at": now, **extra}
     if note is not None:

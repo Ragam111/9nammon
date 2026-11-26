@@ -180,7 +180,8 @@ def handle_post(handler, parsed, project_root) -> None:
         return
     order_id, action = _USER_ACTION.match(path).groups()
     if action == "cancel":
-        _call(handler, payments.cancel_order, project_root, order_id, user, ident.get("role"),
+        fn = stripe_pay.cancel_order if stripe_pay.is_stripe(project_root, order_id)             else payments.cancel_order
+        _call(handler, fn, project_root, order_id, user, ident.get("role"),
               owner=user)
     else:
         _call(handler, payments.request_refund, project_root, order_id, user, data.get("reason"))
