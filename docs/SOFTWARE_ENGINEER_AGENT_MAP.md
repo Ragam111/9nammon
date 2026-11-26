@@ -274,3 +274,4 @@ Interface มี input/output และ error behavior ระบุครบ ง
 - PWA QA PASS รวมแล้ว (manifest, sw.js ไม่ cache /api /v1 /auth, offline.html) minor: เปลี่ยน CACHE_NAME ตามเวอร์ชัน, เพิ่ม app.js/qr.js ใน _SCHEDULE_ALLOWLIST
 - หน้าแชต 3 คอลัมน์ (UI งาน 2) QA PASS รวมแล้ว minor: ลูกศรในเมนู ⋯ ติดที่ persona, ชื่อโฟลเดอร์ยาวดัน 375px (งาน 3)
 - รีโมทเครื่อง 2 ผ่านสาย LAN (OpenSSH key-only, node_ctl.py) QA PASS รวมแล้ว ดู docs/REMOTE_NODE.md รอเจ้าของรันสคริปต์บนเครื่อง B ครั้งเดียว
+- หน้าแอดมินฐานข้อมูล /admin/db (CEO, อ่านอย่างเดียว, ปิดค่าลับ) QA PASS รวมแล้ว minor: ห้ามเรียงตามคอลัมน์ลับ, audit คำขอที่ถูกปฏิเสธ, tokens_in/out ถูกปิดเกิน
