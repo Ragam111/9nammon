@@ -33,6 +33,7 @@ from urllib.parse import urlparse, parse_qs
 sys.path.insert(0, str(Path(__file__).parent))
 from local_coder import get_system_prompt  # noqa: E402
 from app.todo_store import load_todos, add_todo, toggle_todo, delete_todo, TodoSaveError, TodoReadError  # noqa: E402
+from app import db_admin  # noqa: E402  (read-only DB admin, CEO)
 from app import org_store  # noqa: E402  (ระบบองค์กร: user/role/api key/quota)
 from sysmanager.sysinfo import get_system_info  # noqa: E402  (spec เครื่องสำหรับ dev view)
 from app import job_queue  # noqa: E402  (คิวงาน server เก็บด้วย SQLite)
@@ -114,6 +115,7 @@ STATIC_ROUTES = {
     "/install": ("install.html", "text/html; charset=utf-8",              False),
     "/console": ("console.html", "text/html; charset=utf-8",              False),
     "/console/keys": ("console-keys.html", "text/html; charset=utf-8",    False),
+    "/admin/db": ("db-admin.html", "text/html; charset=utf-8",          False),
     "/console-keys.js": ("console-keys.js", "application/javascript; charset=utf-8", False),
     "/app.css": ("app.css",      "text/css; charset=utf-8",               True),
     "/app.js":  ("app.js",       "application/javascript; charset=utf-8",  True),
@@ -183,7 +185,8 @@ def resolve_client_ip(peer: str, headers, trust: Optional[bool] = None) -> str:
 
 # หน้าที่ต้องมีสิทธิ์ก่อนถึงจะได้ shell — USER/GUEST ไม่เห็นแม้แต่โครงหน้า (กันข้อมูล
 # dev/observability รั่ว). ไม่มีตัวตน → redirect /login, มีแต่สิทธิ์ไม่ถึง → 403
-PROTECTED_PAGES = {"/dev": "ADMIN", "/console": "ADMIN", "/console/keys": "ADMIN"}
+PROTECTED_PAGES = {"/dev": "ADMIN", "/console": "ADMIN", "/console/keys": "ADMIN",
+                   "/admin/db": "CEO"}
 PAGE_COOKIE = "lca_key"
 
 # GUEST (เปิดด้วย feature flag guest_chat): แชทได้เฉพาะโมเดล local, ไม่บันทึก, โควตาต่อ IP ต่อวัน
@@ -823,6 +826,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._handle_bots_list()
             elif parsed.path == "/api/connections/usage":
                 self._handle_connections_usage()
+            elif db_admin.wants_get(parsed.path):
+                db_admin.handle_get(self, parsed, project_root)
             elif parsed.path == "/api/admin/db/status":
                 self._handle_db_status()
             elif parsed.path == "/api/metrics/hw":
@@ -1850,6 +1855,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                     self._handle_auth_logout()
                 elif chat_hub.wants_post(parsed.path):
                     chat_hub.handle_post(self, parsed, project_root, gen_gate)
+                elif db_admin.wants_post(parsed.path):
+                    db_admin.handle_post(self, parsed, project_root)
                 elif payments_api.wants_post(parsed.path):
                     payments_api.handle_post(self, parsed, project_root)
                 elif parsed.path == "/api/todos":

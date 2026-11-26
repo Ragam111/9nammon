@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ฐานข้อมูล · LCA Console</title>
+<link rel="stylesheet" href="/app.css">
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--lca-bg);color:var(--lca-fg);font-family:var(--lca-sans);font-size:14px;line-height:1.5}
+  a{color:var(--lca-accent);text-decoration:none}
+  header{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:14px 16px;border-bottom:1px solid var(--lca-line);background:var(--lca-surface)}
+  header h1{font-size:18px;margin:0}
+  .note{color:var(--lca-muted);font-size:13px}
+  .wrap{display:flex;gap:16px;padding:16px;flex-wrap:wrap}
+  .side{width:240px;flex-shrink:0}
+  .side button{display:flex;justify-content:space-between;width:100%;text-align:left;font:inherit;border:0;background:none;color:var(--lca-fg);padding:6px 10px;border-radius:8px;cursor:pointer}
+  .side button[aria-current="true"]{background:var(--lca-accent-weak);color:var(--lca-accent);font-weight:600}
+  main{flex:1;min-width:0}
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-bottom:14px}
+  .card{border:1px solid var(--lca-line);border-radius:10px;padding:10px;background:var(--lca-surface)}
+  .card h3{margin:0 0 4px;font-size:13px;color:var(--lca-muted)}
+  .bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+  .btn,input{font:inherit;border:1px solid var(--lca-line);background:var(--lca-surface);color:var(--lca-fg);border-radius:8px;padding:6px 12px;min-height:34px}
+  .btn{cursor:pointer}
+  .grid{overflow:auto;border:1px solid var(--lca-line);border-radius:10px}
+  table{border-collapse:collapse;width:100%;font-family:var(--lca-mono);font-size:12px}
+  th,td{padding:5px 8px;border-bottom:1px solid var(--lca-line);white-space:nowrap;max-width:320px;overflow:hidden;text-overflow:ellipsis;text-align:left}
+  th{cursor:pointer;background:var(--lca-surface-2);position:sticky;top:0}
+  .err{color:#c0392b}
+  @media (max-width:700px){.side{width:100%}}
+</style>
+</head>
+<body class="page-db-admin">
+<header>
+  <h1>LCA — ฐานข้อมูล</h1>
+  <a href="/console">Console</a><a href="/dev">Dev</a>
+  <span class="note">อ่านอย่างเดียว · สำหรับ CEO · ไม่มีการเขียน/ลบ/รัน SQL เองในเวอร์ชันนี้ · คอลัมน์ลับถูกปิดเป็น ••••</span>
+</header>
+<div class="wrap">
+  <aside class="side"><div class="note" id="ver"></div><nav id="tables"></nav></aside>
+  <main>
+    <div class="cards" id="cards"></div>
+    <div class="bar">
+      <input id="q" type="search" placeholder="ค้นหาในตาราง">
+      <button class="btn" id="go">ค้นหา</button>
+      <button class="btn" id="prev">‹ ก่อนหน้า</button>
+      <span class="note" id="pageinfo"></span>
+      <button class="btn" id="next">ถัดไป ›</button>
+      <button class="btn" id="csv">ส่งออก CSV</button>
+      <button class="btn" id="check">ตรวจความสมบูรณ์ (quick_check)</button>
+      <span class="note" id="msg"></span>
+    </div>
+    <div class="grid"><table><thead id="th"></thead><tbody id="tb"></tbody></table></div>
+  </main>
+</div>
+<script>
+(function () {
+  "use strict";
+  var S = { table: null, page: 1, total: 0, size: 50, order: "", q: "" };
+  function $(id) { return document.getElementById(id); }
+  function el(tag, text) { var n = document.createElement(tag); if (text != null) n.textContent = String(text); return n; }
+  function hdrs() { var t = window.__LCA_SESSION_TOKEN; return t ? { "X-Auth-Token": t } : {}; }
+  function say(t, bad) { $("msg").textContent = t || ""; $("msg").className = bad ? "note err" : "note"; }
+  async function api(path, opt) {
+    var r = await fetch(path, Object.assign({ headers: hdrs() }, opt || {}));
+    var d = await r.json().catch(function () { return {}; });
+    if (!r.ok) throw new Error(d.error || ("HTTP " + r.status));
+    return d;
+  }
+  function card(title, obj) {
+    var c = el("div"); c.className = "card"; c.appendChild(el("h3", title));
+    Object.keys(obj).forEach(function (k) { c.appendChild(el("div", k + ": " + obj[k])); });
+    $("cards").appendChild(c);
+  }
+  async function loadSummary() {
+    var s = await api("/api/admin/db/summary");
+    $("cards").replaceChildren();
+    card("ผู้ใช้ตาม role", s.users_by_role);
+    card("คีย์ที่ใช้งาน (" + s.active_keys + ")", s.keys_by_tier);
+    card("ออเดอร์ตามสถานะ", s.orders_by_status);
+    card("ไฟล์", { "DB (KB)": Math.round(s.db_bytes / 1024), "WAL (KB)": Math.round(s.wal_bytes / 1024), "schema": s.schema_version });
+  }
+  async function loadTables() {
+    var d = await api("/api/admin/db/tables");
+    $("ver").textContent = "schema v" + d.schema_version;
+    var nav = $("tables"); nav.replaceChildren();
+    d.tables.forEach(function (t) {
+      var b = el("button"); b.appendChild(el("span", t.name)); b.appendChild(el("span", t.rows));
+      b.addEventListener("click", function () { S.table = t.name; S.page = 1; S.order = ""; mark(); loadRows(); });
+      b.dataset.t = t.name; nav.appendChild(b);
+    });
+  }
+  function mark() { document.querySelectorAll("#tables button").forEach(function (b) { b.setAttribute("aria-current", b.dataset.t === S.table ? "true" : "false"); }); }
+  async function loadRows() {
+    if (!S.table) return;
+    var p = new URLSearchParams({ table: S.table, page: S.page, page_size: S.size });
+    if (S.q) p.set("q", S.q);
+    if (S.order) p.set("order", S.order);
+    try {
+      var d = await api("/api/admin/db/rows?" + p.toString());
+      S.total = d.total; render(d); say("");
+    } catch (e) { say(e.message, true); }
+  }
+  function render(d) {
+    var tr = el("tr");
+    d.columns.forEach(function (c) {
+      var arrow = S.order === c.name ? " ▲" : S.order === "-" + c.name ? " ▼" : "";
+      var th = el("th", c.name + arrow);
+      th.addEventListener("click", function () { S.order = S.order === c.name ? "-" + c.name : c.name; loadRows(); });
+      tr.appendChild(th);
+    });
+    $("th").replaceChildren(tr);
+    var tb = $("tb"); tb.replaceChildren();
+    d.rows.forEach(function (r) {
+      var row = el("tr");
+      r.forEach(function (v) { var td = el("td", v === null ? "NULL" : v); td.title = td.textContent; row.appendChild(td); });
+      tb.appendChild(row);
+    });
+    var pages = Math.max(1, Math.ceil(d.total / d.page_size));
+    $("pageinfo").textContent = "หน้า " + d.page + "/" + pages + " · " + d.total + " แถว";
+  }
+  $("go").addEventListener("click", function () { S.q = $("q").value.trim(); S.page = 1; loadRows(); });
+  $("q").addEventListener("keydown", function (e) { if (e.key === "Enter") $("go").click(); });
+  $("prev").addEventListener("click", function () { if (S.page > 1) { S.page--; loadRows(); } });
+  $("next").addEventListener("click", function () { if (S.page * S.size < S.total) { S.page++; loadRows(); } });
+  $("csv").addEventListener("click", async function () {
+    if (!S.table) return say("เลือกตารางก่อน", true);
+    var r = await fetch("/api/admin/db/export?table=" + encodeURIComponent(S.table), { headers: hdrs() });
+    if (!r.ok) return say("ส่งออกไม่สำเร็จ (" + r.status + ")", true);
+    var a = el("a"); a.href = URL.createObjectURL(await r.blob()); a.download = S.table + ".csv"; a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+  });
+  $("check").addEventListener("click", async function () {
+    say("กำลังตรวจ…");
+    try { var d = await api("/api/admin/db/check", { method: "POST" }); say(d.ok ? "ผ่าน: ok" : "พบปัญหา: " + d.result.join("; "), !d.ok); }
+    catch (e) { say(e.message, true); }
+  });
+  Promise.all([loadTables(), loadSummary()]).catch(function (e) { say(e.message, true); });
+})();
+</script>
+</body>
+</html>
