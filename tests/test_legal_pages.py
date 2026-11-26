@@ -117,6 +117,35 @@ class FooterLinksTest(unittest.TestCase):
             self.assertNotIn(path, getattr(server, "PROTECTED_PAGES", {}))
 
 
+class CloudDisclosureTest(unittest.TestCase):
+    """Legal text must not claim local-only processing (chat_hub supports cloud providers)."""
+
+    def _src(self, name):
+        return (ROOT / "app" / name).read_text(encoding="utf-8")
+
+    def test_privacy_discloses_cloud_providers(self):
+        src = self._src("privacy.html")
+        self.assertNotIn("ไม่ได้ส่งข้อความของคุณไปยังผู้ให้บริการ AI ภายนอก", src)
+        self.assertIn("โดยค่าเริ่มต้น", src)
+        sec2 = src.split("<h2>2.")[1].split("<h2>3.")[0]
+        sec4 = src.split("<h2>4.")[1].split("<h2>5.")[0]
+        for sec in (sec2, sec4):
+            for vendor in ("Anthropic", "Gemini", "OpenAI", "host อื่น"):
+                self.assertIn(vendor, sec)
+        self.assertIn("ถูกส่งไปยังผู้ให้บริการ AI ภายนอก", sec2)
+
+    def test_terms_discloses_cloud_providers(self):
+        sec1 = self._src("terms.html").split("<h2>1.")[1].split("<h2>2.")[0]
+        self.assertIn("โดยค่าเริ่มต้น", sec1)
+        for vendor in ("Ollama", "Anthropic", "Gemini", "OpenAI", "ถูกส่งไปยังผู้ให้บริการ"):
+            self.assertIn(vendor, sec1)
+
+    def test_privacy_google_fields(self):
+        sec1 = self._src("privacy.html").split("<h2>1.")[1].split("<h2>2.")[0]
+        for field in ("sub", "อีเมล", "ชื่อ"):
+            self.assertIn(field, sec1)
+
+
 class RenderLegalUnitTest(unittest.TestCase):
     def test_lookup_error_falls_back(self):
         def boom(_k):
