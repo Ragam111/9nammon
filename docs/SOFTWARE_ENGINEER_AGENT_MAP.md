@@ -285,3 +285,6 @@ Interface มี input/output และ error behavior ระบุครบ ง
 - เตรียมเปิดตัว (/terms /privacy /refund ฉบับร่าง, UI minors) QA PASS รวมแล้ว full suite 1831 fail 1 (test_secret_store มีอยู่ก่อน) เจ้าของต้องตรวจข้อความกฎหมายเอง
 - คิวถัดไป (หลัง w3kn6xscl): โครง console แบบรูป Claude Console ทั้งหลังบ้าน LCA-Admin (Dashboard/API keys/Models/Customers/Spending&usage/Database/Nodes/Settings) และหน้าบ้านลูกค้า (Chat/Models/API keys ของตัวเอง/Plans/Usage/Settings) แบรนด์ LCA ไม่ใช้สี/โลโก้ Anthropic
   - ขอบเขต: ทั้งแอป (exe/PWA) และเว็บ ใช้หน้าเดียวกัน; หน้า API keys แบบรูปต้องมีทั้งฝั่งแอดมิน (ทุกคีย์) และฝั่งลูกค้า (คีย์ของตัวเอง สร้าง/ยกเลิกเองได้ตามสิทธิ์ tier)
+- แยก LCA-Admin.exe (edition admin, loopback, พอร์ต 8430; customer ตอบ 404 กับ admin) QA PASS รวมแล้ว breaking: /api/admin/* 403 เมื่อเปิด tunnel
+- Console keys v2 (feat/console-keys-v2 a14d3d4) QA BLOCKED ตรวจไม่ครบ ยังไม่รวม: ต้องทดสอบในเบราว์เซอร์ + ตัดสินสิทธิ์ ADMIN revoke key ของ CEO
+- Bug sweep: ยืนยัน 30 บั๊ก (major 15) รอแก้ใน fix/bug-sweep
