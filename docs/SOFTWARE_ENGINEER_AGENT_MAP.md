@@ -288,3 +288,4 @@ Interface มี input/output และ error behavior ระบุครบ ง
 - แยก LCA-Admin.exe (edition admin, loopback, พอร์ต 8430; customer ตอบ 404 กับ admin) QA PASS รวมแล้ว breaking: /api/admin/* 403 เมื่อเปิด tunnel
 - Console keys v2 (feat/console-keys-v2 a14d3d4) QA BLOCKED ตรวจไม่ครบ ยังไม่รวม: ต้องทดสอบในเบราว์เซอร์ + ตัดสินสิทธิ์ ADMIN revoke key ของ CEO
 - Bug sweep: ยืนยัน 30 บั๊ก (major 15) รอแก้ใน fix/bug-sweep
+- Bug sweep รวมแล้ว (QA ยืนยันแก้บั๊ก ผ่าน 46 test ใหม่; ติดแค่ sw.js conflict ซึ่งแก้ตอน merge) full suite 1892 fail 1 (test_secret_store มีอยู่ก่อน) ค้าง: B8-2 pin ตัวติดตั้งยังเก่า, minors BF1-2/3 PAY-4/5 CHAT-5 B6-2..5 BF7-1/2 B8-4/5
