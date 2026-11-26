@@ -23,9 +23,6 @@ class ServerWiringTest(unittest.TestCase):
         self.assertIn("403", body)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class GuestQuotaAtomicTest(unittest.TestCase):
     """BF1-1: guest quota is reserved atomically at check time and refundable."""
@@ -60,5 +57,9 @@ class GuestQuotaAtomicTest(unittest.TestCase):
 
 class SessionTierLiveTest(unittest.TestCase):
     def test_bf4_2_identity_recomputes_session_tier(self) -> None:
-        body = _method("_identity")
+        body = _method("_identity_from")
         self.assertIn('org_store.user_tier(project_root, sess["username"])', body)
+
+
+if __name__ == "__main__":
+    unittest.main()
