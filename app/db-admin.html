@@ -60,7 +60,13 @@
   var S = { table: null, page: 1, total: 0, size: 50, order: "", q: "" };
   function $(id) { return document.getElementById(id); }
   function el(tag, text) { var n = document.createElement(tag); if (text != null) n.textContent = String(text); return n; }
-  function hdrs() { var t = window.__LCA_SESSION_TOKEN; return t ? { "X-Auth-Token": t } : {}; }
+  function storedKey() {
+    // Same order as app.js lca.getKey(): saved login key first, then launch session.
+    if (window.lca && typeof window.lca.getKey === "function") return window.lca.getKey() || "";
+    try { var k = localStorage.getItem("lca_key"); if (k) return k; } catch (e) { /* storage blocked */ }
+    return window.__LCA_SESSION_TOKEN ? String(window.__LCA_SESSION_TOKEN) : "";
+  }
+  function hdrs() { var t = storedKey(); return t ? { "X-Auth-Token": t } : {}; }
   function say(t, bad) { $("msg").textContent = t || ""; $("msg").className = bad ? "note err" : "note"; }
   async function api(path, opt) {
     var r = await fetch(path, Object.assign({ headers: hdrs() }, opt || {}));
