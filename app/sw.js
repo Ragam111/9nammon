@@ -9,8 +9,8 @@
 
 // SHELL_HASH is checked by tests/test_pwa.py; when shell assets change, bump CACHE_NAME
 // and record the new hash (the test prints the expected value).
-var SHELL_HASH = "84b83e1863b02395";
-var CACHE_NAME = "lca-shell-v5";
+var SHELL_HASH = "44669cf5dcc9ca7c";
+var CACHE_NAME = "lca-shell-v6";
 var OFFLINE_URL = "/offline.html";
 var SHELL_ASSETS = [
   "/app.css",
