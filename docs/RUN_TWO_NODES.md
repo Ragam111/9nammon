@@ -39,6 +39,9 @@ curl.exe -H "X-Auth-Token: $env:LCA_TOKEN" "http://127.0.0.1:8420/api/nodes/sync
 
 ข้อสำคัญก่อนเปิดผ่านอินเทอร์เน็ต: ต้องทำงานกะ 2 ข้อ 1–3 ให้เสร็จก่อน (IP จริงหลัง tunnel, rate limit ต่อผู้ใช้, บัญชีใน SQLite, Google login) ดู `docs/SOFTWARE_ENGINEER_AGENT_MAP.md`
 
+## ควบคุมเครื่องที่ 2 จากเครื่องนี้ผ่านสาย LAN
+ใช้ ssh + scheduled task แทนการเปิดหน้าต่าง shell ค้างไว้และ `git pull` (deploy ได้โดยไม่ใช้เน็ต, start/stop/restart, health, logs, pull model) ดู [`docs/REMOTE_NODE.md`](REMOTE_NODE.md)
+
 ## 5. อัปเดตโค้ด (ทำทีละเครื่อง ลูกค้าใช้อีกเครื่องระหว่างนั้น)
 ```powershell
 cd 9nammon
