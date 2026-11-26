@@ -36,7 +36,7 @@ SSH_TIMEOUT = 30
 SCP_TIMEOUT = 600
 PULL_TIMEOUT = 3600
 
-_HOST_RE = re.compile(r"^(?:[A-Za-z0-9._-]+@)?[A-Za-z0-9][A-Za-z0-9.-]{0,252}$")
+_HOST_RE = re.compile(r"^(?:[A-Za-z0-9][A-Za-z0-9._-]*@)?[A-Za-z0-9][A-Za-z0-9.-]{0,252}$")
 _PATH_RE = re.compile(r"^[A-Za-z]:/[A-Za-z0-9_./-]*$")
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 _REDACT = [
@@ -187,7 +187,7 @@ def cmd_deploy(host: str, repo: str, repo_dir: Path) -> dict[str, Any]:
         if res.returncode != 0:
             raise NodeCtlError("สร้าง git bundle ไม่สำเร็จ")
         target = f"{REMOTE_INBOX}/{bundle.name}"
-        res = run(["scp", "-q", "-o", "BatchMode=yes", str(bundle),
+        res = run(["scp", "-q", "-o", "BatchMode=yes", "--", str(bundle),
                    f"{validate_host(host)}:{target}"], SCP_TIMEOUT)
         if res.returncode != 0:
             raise NodeCtlError("ส่งไฟล์ bundle ไปเครื่องที่ 2 ไม่สำเร็จ (scp)")

@@ -28,7 +28,7 @@ class ValidationTests(unittest.TestCase):
 
     def test_host_injection_rejected(self):
         bad = ["a;b", "a b", "-oProxyCommand=calc", "a|b", "a&b", "$(x)", "a`b",
-               "", "a\nb", "@host", "user@", "a/b", "a\\b", "x" * 300]
+               "", "a\nb", "@host", "user@", "-Sfoo@h", "-oX@h", ".u@h", "a/b", "a\\b", "x" * 300]
         for h in bad:
             with self.assertRaises(node_ctl.NodeCtlError, msg=h):
                 node_ctl.validate_host(h)
@@ -225,6 +225,43 @@ class PowerShellStaticTests(unittest.TestCase):
         self.assertIn("Register-ScheduledTask", self.server)
         self.assertIn("token.txt", self.server)
         self.assertNotRegex(self.server, r"--token")
+
+    def test_sshd_stopped_until_configured(self):
+        main = self.server[self.server.find("# ---------- main"):]
+        self.assertNotIn("Start-Service sshd", self.server[:self.server.find("# ---------- main")])
+        self.assertNotIn("Restart-Service sshd", self.server)
+        start = main.find("Start-Service sshd")
+        for step in ("Install-Sshd", "Set-SshdConfig", "Install-PublicKey", "Set-LcaFirewall"):
+            self.assertLess(main.find(step), start, step)
+        self.assertIn("finally", main)
+        self.assertGreater(main.find("Stop-Service sshd", main.find("finally")), 0)
+        inst = self.server[self.server.find("function Install-Sshd"):self.server.find("function Get-NewSshdConfig")]
+        self.assertIn("Stop-Service sshd", inst)
+
+    def test_adapter_guard_before_ip_change(self):
+        for src in (self.server, self.client):
+            self.assertIn("[switch]$AllowDefaultRouteAdapter", src)
+            self.assertIn("-DestinationPrefix '0.0.0.0/0' -InterfaceAlias $Adapter", src)
+            self.assertIn(r"802\.11", src)
+            fn = src[src.find("function Set-CableIp"):]
+            self.assertLess(fn.find("Assert-CableAdapter"), fn.find("Set-NetIPInterface"))
+
+    def test_listen_address_and_firewall_interface(self):
+        self.assertRegex(self.server, r"\[Parameter\(Mandatory[^\]]*\)\]\s*\[string\]\$Adapter")
+        self.assertIn("ListenAddress $ListenIp", self.server)
+        self.assertIn("Get-NewSshdConfig $old (Get-ListenIp)", self.server)
+        ssh_rule = [r for r in re.findall(r"New-NetFirewallRule[^\n]*", self.server) if "LCA-SSH" in r][0]
+        self.assertIn("-InterfaceAlias $Adapter", ssh_rule)
+
+    def test_match_first_line_and_key_replace(self):
+        self.assertIn("if ($idx -eq 1) { return @($block) + @($out) }", self.server)
+        fn = self.server[self.server.find("function Install-PublicKey"):self.server.find("function Set-LcaFirewall")]
+        self.assertIn("from=`\"$ClientIp`\",*", fn)
+        self.assertLess(fn.find("Copy-Item"), fn.find("Set-Content"))
+
+    def test_scp_has_double_dash(self):
+        src = (ROOT / "scripts" / "node_ctl.py").read_text(encoding="utf-8")
+        self.assertIn('"scp", "-q", "-o", "BatchMode=yes", "--",', src)
 
     def test_client_writes_host_entry_and_key(self):
         self.assertIn("lca_node_ed25519", self.client)

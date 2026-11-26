@@ -20,7 +20,8 @@ param(
     [string]$Adapter = '',
     [string]$StaticIp = '10.42.0.1',
     [int]$PrefixLength = 24,
-    [switch]$ApplyNetwork
+    [switch]$ApplyNetwork,
+    [switch]$AllowDefaultRouteAdapter
 )
 
 $ErrorActionPreference = 'Stop'
@@ -49,12 +50,29 @@ function New-NodeKey {
     }
 }
 
+function Assert-CableAdapter {
+    # Refuse adapters that carry the internet route or are Wi-Fi, so a typo cannot cut the internet.
+    $na = Get-NetAdapter -Name $Adapter -ErrorAction SilentlyContinue
+    if (-not $na) { throw "ไม่พบ adapter ชื่อ '$Adapter' (ดูชื่อด้วย Get-NetAdapter)" }
+    Write-Plan "route เดิมบน ${Adapter}:"
+    Get-NetRoute -InterfaceAlias $Adapter -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+        Format-Table DestinationPrefix, NextHop, RouteMetric -AutoSize | Out-String | Write-Host
+    if ($AllowDefaultRouteAdapter) { Write-Warning "-AllowDefaultRouteAdapter: ข้ามการตรวจ default route/Wi-Fi บน $Adapter"; return }
+    if ($na.PhysicalMediaType -match '802\.11' -or "$($na.NdisPhysicalMedium)" -match '^(9|Native802_11)$') {
+        throw "$Adapter เป็น Wi-Fi ห้ามตั้ง static IP (ใส่ -AllowDefaultRouteAdapter ถ้าตั้งใจจริง)"
+    }
+    if (Get-NetRoute -DestinationPrefix '0.0.0.0/0' -InterfaceAlias $Adapter -ErrorAction SilentlyContinue) {
+        throw "$Adapter ถือ default route (ทางออกเน็ต) ห้ามแก้ (ใส่ -AllowDefaultRouteAdapter ถ้าตั้งใจจริง)"
+    }
+}
+
 function Set-CableIp {
     if (-not $Adapter) { Write-Host 'ไม่ได้ระบุ -Adapter ข้ามการตั้ง IP (เจ้าของตั้งเองได้ตาม docs/REMOTE_NODE.md)'; return }
     $cur = Get-NetIPAddress -InterfaceAlias $Adapter -AddressFamily IPv4 -ErrorAction SilentlyContinue
     if ($cur | Where-Object { $_.IPAddress -eq $StaticIp }) { Write-Host "$Adapter มี $StaticIp แล้ว"; return }
     Write-Plan "ตั้ง $Adapter = $StaticIp/$PrefixLength ไม่มี gateway ไม่มี DNS (Wi-Fi ยังเป็นทางออกเน็ต)"
     Write-Plan "IP เดิมบน ${Adapter}: $(($cur | ForEach-Object IPAddress) -join ', ') จะหายไป"
+    Assert-CableAdapter
     if (-not $ApplyNetwork) { Write-Host 'dry-run: ไม่ได้แก้ IP (เพิ่ม -ApplyNetwork ใน admin shell เพื่อทำจริง)' -ForegroundColor Yellow; return }
     if ($PSCmdlet.ShouldProcess($Adapter, "New-NetIPAddress $StaticIp")) {
         Set-NetIPInterface -InterfaceAlias $Adapter -Dhcp Disabled

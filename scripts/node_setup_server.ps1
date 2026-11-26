@@ -13,7 +13,7 @@
   Idempotent: safe to run again. Use -WhatIf to preview every change.
 
 .EXAMPLE
-  .\node_setup_server.ps1 -PublicKey (Get-Content .\lca_node_ed25519.pub -Raw) -User lcaops
+  .\node_setup_server.ps1 -PublicKey (Get-Content .\lca_node_ed25519.pub -Raw) -User lcaops -Adapter Ethernet
   .\node_setup_server.ps1 -PublicKey "ssh-ed25519 AAAA... lca-agent" -Adapter Ethernet -StaticIp 10.42.0.2 -ApplyNetwork
 #>
 [CmdletBinding(SupportsShouldProcess = $true)]
@@ -22,10 +22,11 @@ param(
     [string]$User = $env:USERNAME,
     [string]$AllowFrom = '10.42.0.0/24',
     [string]$ClientIp = '10.42.0.1',
-    [string]$Adapter = '',
+    [Parameter(Mandatory = $true)] [string]$Adapter,
     [string]$StaticIp = '',
     [int]$PrefixLength = 24,
     [switch]$ApplyNetwork,
+    [switch]$AllowDefaultRouteAdapter,
     [string]$RepoPath = 'C:\lca\repo',
     [string]$DataDir = $env:USERPROFILE,
     [string]$PythonExe = 'python',
@@ -58,11 +59,12 @@ function Install-Sshd {
     if ($cap.State -ne 'Installed' -and $PSCmdlet.ShouldProcess($cap.Name, 'Add-WindowsCapability')) {
         Add-WindowsCapability -Online -Name $cap.Name | Out-Null
     }
-    if ($PSCmdlet.ShouldProcess('sshd', 'Set startup Automatic (Delayed) + start')) {
+    if ($PSCmdlet.ShouldProcess('sshd', 'Set startup Automatic (Delayed), keep STOPPED until config is key-only')) {
         Set-Service -Name sshd -StartupType Automatic
         sc.exe config sshd start= delayed-auto | Out-Null
         sc.exe failure sshd reset= 86400 actions= restart/60000/restart/60000/restart/60000 | Out-Null
-        Start-Service sshd
+        # Never let sshd run with default config (PasswordAuthentication yes) while we work.
+        Stop-Service sshd -ErrorAction SilentlyContinue
     }
     $shellKey = 'HKLM:\SOFTWARE\OpenSSH'
     if ($PSCmdlet.ShouldProcess($shellKey, 'DefaultShell = Windows PowerShell')) {
@@ -72,7 +74,7 @@ function Install-Sshd {
     }
 }
 
-function Get-NewSshdConfig([string[]]$Lines) {
+function Get-NewSshdConfig([string[]]$Lines, [string]$ListenIp) {
     # Drop our previous block and any auth lines we own, keep everything else.
     $owned = '^\s*#?\s*(PubkeyAuthentication|PasswordAuthentication|KbdInteractiveAuthentication|ChallengeResponseAuthentication|PermitEmptyPasswords|AllowUsers|MaxAuthTries|LoginGraceTime|ListenAddress)\b'
     $out = New-Object System.Collections.Generic.List[string]
@@ -91,17 +93,27 @@ function Get-NewSshdConfig([string[]]$Lines) {
         "AllowUsers $User",
         'MaxAuthTries 3',
         'LoginGraceTime 30')
-    if ($StaticIp) { $block += "ListenAddress $StaticIp" }
+    if ($ListenIp) { $block += "ListenAddress $ListenIp" }
     $block += '# END LCA'
     # Our block must come before any 'Match' block to apply globally.
     $idx = ($out | Select-String -Pattern '^\s*Match\s' | Select-Object -First 1).LineNumber
+    if ($idx -eq 1) { return @($block) + @($out) }
     if ($idx) { return @($out[0..($idx - 2)]) + $block + @($out[($idx - 1)..($out.Count - 1)]) }
     return @($out) + $block
 }
 
+function Get-ListenIp {
+    if ($StaticIp) { return $StaticIp }
+    $ip = Get-NetIPAddress -InterfaceAlias $Adapter -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+        Where-Object { $_.IPAddress -notlike '169.254.*' } | Select-Object -First 1 -ExpandProperty IPAddress
+    if ($ip) { return $ip }
+    Write-Warning "!!! ไม่พบ IPv4 บน $Adapter และไม่ได้ส่ง -StaticIp: sshd จะฟังทุก interface รวม Wi-Fi เหลือแค่ firewall กั้น !!!"
+    return ''
+}
+
 function Set-SshdConfig {
     $old = if (Test-Path -LiteralPath $SshdConfig) { Get-Content -LiteralPath $SshdConfig } else { @() }
-    $new = Get-NewSshdConfig $old
+    $new = Get-NewSshdConfig $old (Get-ListenIp)
     if (($old -join "`n") -eq ($new -join "`n")) { Write-Host 'sshd_config ตรงแล้ว ไม่ต้องแก้'; return }
     $backup = "$SshdConfig.bak-$(Get-Date -Format yyyyMMdd-HHmmss)"
     Write-Plan "สำรอง sshd_config -> $backup แล้วเขียนบล็อก LCA (key-only)"
@@ -110,7 +122,6 @@ function Set-SshdConfig {
         Set-Content -LiteralPath $SshdConfig -Value $new -Encoding ascii
         $sshdExe = Join-Path $env:SystemRoot 'System32\OpenSSH\sshd.exe'
         if (Test-Path $sshdExe) { & $sshdExe -t; if ($LASTEXITCODE) { Copy-Item -LiteralPath $backup -Destination $SshdConfig -Force; throw 'sshd_config ใหม่ไม่ผ่าน sshd -t คืนไฟล์เดิมแล้ว' } }
-        Restart-Service sshd
     }
 }
 
@@ -128,11 +139,18 @@ function Install-PublicKey {
     }
     $existing = if (Test-Path -LiteralPath $file) { Get-Content -LiteralPath $file } else { @() }
     $keyBody = ($PublicKey.Trim() -split ' ')[1]
-    if ($existing | Where-Object { $_ -like "*$keyBody*" }) { Write-Host "มี key นี้ใน $file แล้ว"; return }
-    Write-Plan "เพิ่ม public key ลง $file (จำกัด from=$ClientIp)"
-    if ($PSCmdlet.ShouldProcess($file, 'append public key + fix ACL')) {
+    $hits = @($existing | Where-Object { $_ -like "*$keyBody*" })
+    if ($hits.Count -and -not ($hits | Where-Object { $_ -notlike "from=`"$ClientIp`",*" })) { Write-Host "มี key นี้ใน $file แล้ว (from=$ClientIp)"; return }
+    Write-Plan "เขียน public key ลง $file (จำกัด from=$ClientIp แทนที่บรรทัดเดิมของ key นี้ถ้ามี)"
+    if ($PSCmdlet.ShouldProcess($file, 'backup + write public key + fix ACL')) {
         New-Item -ItemType Directory -Force -Path (Split-Path $file) | Out-Null
-        Add-Content -LiteralPath $file -Value $line -Encoding ascii
+        if ($hits.Count) {
+            Copy-Item -LiteralPath $file -Destination "$file.bak-$(Get-Date -Format yyyyMMdd-HHmmss)"
+            $kept = @($existing | Where-Object { $_ -notlike "*$keyBody*" })
+            Set-Content -LiteralPath $file -Value (@($kept) + $line) -Encoding ascii
+        } else {
+            Add-Content -LiteralPath $file -Value $line -Encoding ascii
+        }
         if ($file -like '*administrators_authorized_keys') {
             icacls.exe $file /inheritance:r /grant 'Administrators:F' /grant 'SYSTEM:F' | Out-Null
         } else {
@@ -146,18 +164,33 @@ function Set-LcaFirewall {
     if (-not $PSCmdlet.ShouldProcess('Windows Firewall', 'LCA rules')) { return }
     Get-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -ErrorAction SilentlyContinue | Disable-NetFirewallRule
     foreach ($n in 'LCA-SSH', 'LCA-HTTP') { Remove-NetFirewallRule -Name $n -ErrorAction SilentlyContinue }
-    $ifArgs = @{}
-    if ($Adapter) { $ifArgs['InterfaceAlias'] = $Adapter }
-    New-NetFirewallRule -Name 'LCA-SSH' -DisplayName 'LCA SSH (cable)' -Direction Inbound -Protocol TCP -LocalPort 22 -RemoteAddress $AllowFrom -Profile Any -Action Allow @ifArgs | Out-Null
+    New-NetFirewallRule -Name 'LCA-SSH' -DisplayName 'LCA SSH (cable)' -Direction Inbound -Protocol TCP -LocalPort 22 -RemoteAddress $AllowFrom -InterfaceAlias $Adapter -Profile Any -Action Allow | Out-Null
     New-NetFirewallRule -Name 'LCA-HTTP' -DisplayName 'LCA server' -Direction Inbound -Protocol TCP -LocalPort $Port -RemoteAddress $AllowFrom -Profile Any -Action Allow | Out-Null
 }
 
+function Assert-CableAdapter {
+    # Refuse adapters that carry the internet route or are Wi-Fi, so a typo cannot cut the internet.
+    $na = Get-NetAdapter -Name $Adapter -ErrorAction SilentlyContinue
+    if (-not $na) { throw "ไม่พบ adapter ชื่อ '$Adapter' (ดูชื่อด้วย Get-NetAdapter)" }
+    Write-Plan "route เดิมบน ${Adapter}:"
+    Get-NetRoute -InterfaceAlias $Adapter -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+        Format-Table DestinationPrefix, NextHop, RouteMetric -AutoSize | Out-String | Write-Host
+    if ($AllowDefaultRouteAdapter) { Write-Warning "-AllowDefaultRouteAdapter: ข้ามการตรวจ default route/Wi-Fi บน $Adapter"; return }
+    if ($na.PhysicalMediaType -match '802\.11' -or "$($na.NdisPhysicalMedium)" -match '^(9|Native802_11)$') {
+        throw "$Adapter เป็น Wi-Fi ห้ามตั้ง static IP (ใส่ -AllowDefaultRouteAdapter ถ้าตั้งใจจริง)"
+    }
+    if (Get-NetRoute -DestinationPrefix '0.0.0.0/0' -InterfaceAlias $Adapter -ErrorAction SilentlyContinue) {
+        throw "$Adapter ถือ default route (ทางออกเน็ต) ห้ามแก้ (ใส่ -AllowDefaultRouteAdapter ถ้าตั้งใจจริง)"
+    }
+}
+
 function Set-CableIp {
-    if (-not $Adapter -or -not $StaticIp) { Write-Host 'ไม่ได้ระบุ -Adapter/-StaticIp ข้ามการตั้ง IP'; return }
+    if (-not $StaticIp) { Write-Host 'ไม่ได้ระบุ -StaticIp ข้ามการตั้ง IP'; return }
     $cur = Get-NetIPAddress -InterfaceAlias $Adapter -AddressFamily IPv4 -ErrorAction SilentlyContinue
     if ($cur | Where-Object { $_.IPAddress -eq $StaticIp }) { Write-Host "$Adapter มี $StaticIp แล้ว"; return }
     Write-Plan "ตั้ง $Adapter = $StaticIp/$PrefixLength ไม่มี gateway ไม่มี DNS, InterfaceMetric 50"
     Write-Plan "IP เดิมบน ${Adapter}: $(($cur | ForEach-Object IPAddress) -join ', ')"
+    Assert-CableAdapter
     if (-not $ApplyNetwork) { Write-Host 'dry-run: ไม่ได้แก้ IP (เพิ่ม -ApplyNetwork เพื่อทำจริง)' -ForegroundColor Yellow; return }
     if ($PSCmdlet.ShouldProcess($Adapter, "New-NetIPAddress $StaticIp")) {
         Set-NetIPInterface -InterfaceAlias $Adapter -Dhcp Disabled
@@ -210,10 +243,21 @@ Assert-Admin
 Assert-PublicKey
 Write-Plan "เครื่องนี้: $env:COMPUTERNAME ผู้ใช้ ssh: $User รับจาก: $AllowFrom"
 Set-CableIp
-Install-Sshd
-Set-SshdConfig
-Install-PublicKey
-Set-LcaFirewall
+$sshdReady = $false
+try {
+    # sshd stays stopped until key-only config + firewall are in place.
+    Install-Sshd
+    Set-SshdConfig
+    Install-PublicKey
+    Set-LcaFirewall
+    if ($PSCmdlet.ShouldProcess('sshd', 'Start-Service (config passed sshd -t)')) { Start-Service sshd }
+    $sshdReady = $true
+} finally {
+    if (-not $sshdReady -and -not $WhatIfPreference) {
+        Write-Warning 'setup ล้มเหลวกลางทาง: หยุด sshd เพื่อไม่ให้รับรหัสผ่านค้างอยู่'
+        Stop-Service sshd -ErrorAction SilentlyContinue
+    }
+}
 New-LcaDirs
 Register-LcaTask
 
