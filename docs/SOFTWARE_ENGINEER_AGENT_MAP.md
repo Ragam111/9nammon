@@ -275,3 +275,4 @@ Interface มี input/output และ error behavior ระบุครบ ง
 - หน้าแชต 3 คอลัมน์ (UI งาน 2) QA PASS รวมแล้ว minor: ลูกศรในเมนู ⋯ ติดที่ persona, ชื่อโฟลเดอร์ยาวดัน 375px (งาน 3)
 - รีโมทเครื่อง 2 ผ่านสาย LAN (OpenSSH key-only, node_ctl.py) QA PASS รวมแล้ว ดู docs/REMOTE_NODE.md รอเจ้าของรันสคริปต์บนเครื่อง B ครั้งเดียว
 - หน้าแอดมินฐานข้อมูล /admin/db (CEO, อ่านอย่างเดียว, ปิดค่าลับ) QA PASS รวมแล้ว minor: ห้ามเรียงตามคอลัมน์ลับ, audit คำขอที่ถูกปฏิเสธ, tokens_in/out ถูกปิดเกิน
+- Google login (PKCE + รหัสใช้ครั้งเดียว + cookie ผูก กัน login CSRF) + โควตาฟรี 1M token/เดือน QA PASS รวมแล้ว (migration 0015) nit: NFKC อีเมล, rate limit /finish

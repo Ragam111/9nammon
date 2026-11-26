@@ -28,10 +28,9 @@ python server.py "$env:USERPROFILE" --host 0.0.0.0 --port 8420
 1. เข้า https://console.cloud.google.com/ แล้วสร้าง Project ใหม่ (เช่น `lca`)
 2. เมนู **APIs & Services → OAuth consent screen**: เลือก External, ใส่ชื่อแอปและอีเมล, เพิ่ม scope `openid`, `email`, `profile`
 3. เมนู **APIs & Services → Credentials → Create Credentials → OAuth client ID**: ชนิด **Web application**
-4. **Authorized redirect URIs**: ตอนทดสอบในเครื่องใส่ `http://localhost:8421/auth/google` และ `http://127.0.0.1:8421/auth/google` (ค่าที่โค้ดตั้งไว้ใน `lca_core/constants.py`)
+4. **Authorized redirect URIs**: ใส่ `http://localhost:<พอร์ตเซิร์ฟเวอร์>/auth/google/callback` แล้วใส่ใน `config.json`: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` (ค่าเดียวกับ redirect URI)
 5. กด Create แล้วคัดลอก **Client ID** และ **Client secret**
 ข้อจำกัด: Google ไม่รับ IP ใน LAN (เช่น `192.168.2.44`) เป็น redirect URI ถ้าจะให้ลูกค้าคนอื่น login ด้วย Google ต้องมีโดเมนจริงพร้อม HTTPS (ข้อ 3)
-ตอนนี้ route Google login ใน `server.py` ยังไม่เสร็จ (งานกะ 2 ข้อ 3)
 
 ## 3. Cloudflare Tunnel (เปิดผ่านอินเทอร์เน็ต ฟรี ต้องมีโดเมน)
 1. มีโดเมนที่ย้าย DNS มาไว้ที่ Cloudflare แล้ว (สมัครที่ https://dash.cloudflare.com/)
