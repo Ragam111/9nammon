@@ -270,4 +270,5 @@ Interface มี input/output และ error behavior ระบุครบ ง
 - Console API keys QA PASS รวมแล้ว (`9edbd83`)
 - ระบบรับเงิน PromptPay QA PASS รวมแล้ว (`3af4365`), migration เลื่อนเป็น 0014 เพราะชนกับ 0013_api_key_meta, เทสต์ 162 ผ่าน
 - ข้อสังเกตไม่บล็อก: `format_amount` รับ NaN, `confirm_paid` แยก 2 transaction
-- Google login: workflow กำลังรัน
+- Google login: โค้ดเสร็จ (`6bf5eb7`) รอ QA (ต้องเลื่อน migration เป็น 0015 ตอนรวม)
+- PWA QA PASS รวมแล้ว (manifest, sw.js ไม่ cache /api /v1 /auth, offline.html) minor: เปลี่ยน CACHE_NAME ตามเวอร์ชัน, เพิ่ม app.js/qr.js ใน _SCHEDULE_ALLOWLIST
