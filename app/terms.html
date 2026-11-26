@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ข้อตกลงการใช้งาน — LCA</title>
+<link rel="stylesheet" href="/app.css">
+<style>
+  main.legal { max-width: 760px; margin: 0 auto; padding: 16px; line-height: 1.7; }
+  main.legal h1 { margin-top: 8px; }
+  .draft-note { border: 1px dashed currentColor; padding: 8px 12px; border-radius: 8px; opacity: .85; }
+  footer.lca-legal { max-width: 760px; margin: 24px auto; padding: 16px; font-size: .9em; opacity: .8; }
+</style>
+</head>
+<body>
+<div id="lca-shell"></div>
+<main class="legal">
+  <p class="draft-note" id="draft-note" hidden>ฉบับร่าง — เจ้าของระบบต้องตรวจทานและปรับให้ตรงกับธุรกิจจริงก่อนเปิดให้ลูกค้าใช้ (ข้อความนี้เห็นเฉพาะ CEO)</p>
+  <h1>ข้อตกลงการใช้งาน</h1>
+  <p>ข้อตกลงนี้ใช้กับบริการ LCA (Local Coding Assistant) ที่ให้บริการโดย {{BUSINESS_NAME}} การสมัครหรือใช้งานบริการถือว่าคุณยอมรับข้อตกลงนี้</p>
+  <h2>1. บริการ</h2>
+  <p>LCA เป็นผู้ช่วยเขียนโค้ดและแชท โดยค่าเริ่มต้นประมวลผลด้วยโมเดลภาษาที่รันบนเครื่องของผู้ให้บริการ (ผ่าน Ollama) หากผู้ให้บริการเปิดใช้และคุณเลือกโมเดล cloud (Anthropic, Google Gemini หรือบริการที่เข้ากันได้กับ OpenAI บน host อื่น) ข้อความในแชทนั้นจะถูกส่งไปยังผู้ให้บริการดังกล่าว คำตอบจากโมเดลอาจไม่ถูกต้องครบถ้วน โปรดตรวจสอบก่อนนำไปใช้งานจริง</p>
+  <h2>2. บัญชีและ API key</h2>
+  <p>คุณต้องดูแลรหัสผ่านและ API key ของตนเองไม่ให้ผู้อื่นใช้ หากสงสัยว่า key รั่ว ให้เพิกถอนและสร้างใหม่ได้ที่หน้า API keys</p>
+  <h2>3. การใช้งานที่ไม่อนุญาต</h2>
+  <ul>
+    <li>ใช้บริการเพื่อกระทำผิดกฎหมาย หรือละเมิดสิทธิของผู้อื่น</li>
+    <li>พยายามเจาะระบบ ข้ามโควตา หรือรบกวนการให้บริการแก่ผู้ใช้อื่น</li>
+    <li>ส่งต่อหรือขายสิทธิ์การใช้งานโดยไม่ได้รับอนุญาต</li>
+  </ul>
+  <h2>4. แพ็กเกจ โควตา และการชำระเงิน</h2>
+  <p>แพ็กเกจและจำนวน token ต่อเดือนเป็นไปตามที่แสดงในหน้า <a href="/plans">Plans</a> ณ เวลาที่ซื้อ เงื่อนไขการยกเลิกและคืนเงินดูที่ <a href="/refund">นโยบายการยกเลิกและคืนเงิน</a></p>
+  <h2>5. ข้อมูลส่วนบุคคล</h2>
+  <p>การเก็บและใช้ข้อมูลเป็นไปตาม <a href="/privacy">นโยบายความเป็นส่วนตัว</a></p>
+  <h2>6. การระงับบริการ</h2>
+  <p>ผู้ให้บริการอาจระงับบัญชีที่ฝ่าฝืนข้อตกลงนี้ และอาจหยุดให้บริการชั่วคราวเพื่อบำรุงรักษาเครื่อง</p>
+  <h2>7. การเปลี่ยนแปลงข้อตกลง</h2>
+  <p>หากมีการแก้ไขข้อตกลง จะแจ้งบนหน้านี้ การใช้งานต่อหลังการแก้ไขถือว่ายอมรับข้อตกลงฉบับใหม่</p>
+  <h2>8. ติดต่อ</h2>
+  <p>สอบถามได้ที่ {{CONTACT_EMAIL}}</p>
+</main>
+<footer class="lca-legal"><a href="/terms">ข้อตกลงการใช้งาน</a> · <a href="/privacy">นโยบายความเป็นส่วนตัว</a> · <a href="/refund">ยกเลิก/คืนเงิน</a></footer>
+<script src="/app.js"></script>
+<script>
+  (async function () {
+    var me = window.lca && (await window.lca.me());
+    if (me && me.role === "CEO") document.getElementById("draft-note").hidden = false;
+  })();
+</script>
+</body>
+</html>

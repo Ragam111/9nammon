@@ -13,6 +13,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 APP = ROOT / "app"
 NAV = ["/chat", "/models", "/console/keys", "/plans", "/spaces", "/support"]
+LEGAL = ["/terms", "/privacy", "/refund"]
 
 
 def static_html_pages() -> list:
@@ -73,13 +74,13 @@ class NodeShell(unittest.TestCase):
 
     def test_ceo_sees_admin(self) -> None:
         r = self.run_role("CEO")
-        self.assertEqual(r["links"], NAV + ["/admin/db"])
+        self.assertEqual(r["links"], NAV + ["/admin/db"] + LEGAL)
         self.assertIn("Ollama up", r["chip"])
         self.assertIn("5/100", r["chip"])
 
     def test_user_no_admin(self) -> None:
         r = self.run_role("USER")
-        self.assertEqual(r["links"], NAV)
+        self.assertEqual(r["links"], NAV + LEGAL)
         self.assertEqual(r["interval"], 30000)
 
     def test_menu_esc_and_read_only_calls(self) -> None:
@@ -87,6 +88,28 @@ class NodeShell(unittest.TestCase):
         self.assertEqual((r["opened"], r["closed"]), ("true", "false"))
         self.assertTrue(all(c["method"] == "GET" for c in r["calls"]))
         self.assertEqual({c["url"] for c in r["calls"]}, {"/api/health", "/api/me"})
+
+
+class LaunchReadyMinors(unittest.TestCase):
+    def test_escape_bound_once(self) -> None:
+        js = (APP / "app.js").read_text(encoding="utf-8")
+        self.assertEqual(js.count('addEventListener("keydown"'), 1)
+        self.assertIn("if (!escBound)", js)
+
+    def test_me_promise_shared(self) -> None:
+        js = (APP / "app.js").read_text(encoding="utf-8")
+        self.assertIn("whoami: function () { return this.me(); }", js)
+        self.assertIn("await w.lca.me()", js)
+
+    def test_console_one_primary_per_tab(self) -> None:
+        html = (APP / "console.html").read_text(encoding="utf-8")
+        for sec in re.findall(r'<section class="panel[^"]*" id="(p-[\w-]+)">(.*?)</section>', html, re.S):
+            self.assertLessEqual(primary_count(sec[1]), 1, sec[0])
+
+    def test_models_code_wraps(self) -> None:
+        html = (APP / "models.html").read_text(encoding="utf-8")
+        self.assertRegex(html, r"pre, code \{[^}]*white-space: pre-wrap")
+        self.assertRegex(html, r"pre \{ overflow-x: hidden")
 
 
 class MeIsReadOnly(unittest.TestCase):

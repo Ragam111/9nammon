@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>การยกเลิกและคืนเงิน — LCA</title>
+<link rel="stylesheet" href="/app.css">
+<style>
+  main.legal { max-width: 760px; margin: 0 auto; padding: 16px; line-height: 1.7; }
+  main.legal h1 { margin-top: 8px; }
+  .draft-note { border: 1px dashed currentColor; padding: 8px 12px; border-radius: 8px; opacity: .85; }
+  footer.lca-legal { max-width: 760px; margin: 24px auto; padding: 16px; font-size: .9em; opacity: .8; }
+</style>
+</head>
+<body>
+<div id="lca-shell"></div>
+<main class="legal">
+  <p class="draft-note" id="draft-note" hidden>ฉบับร่าง — เจ้าของระบบต้องกำหนดเงื่อนไขคืนเงินจริงและตรวจทานก่อนเผยแพร่ (ข้อความนี้เห็นเฉพาะ CEO)</p>
+  <h1>การยกเลิกและคืนเงิน</h1>
+  <p>นโยบายนี้ใช้กับแพ็กเกจของบริการ LCA ที่ให้บริการโดย {{BUSINESS_NAME}}</p>
+  <h2>1. แพ็กเกจและการต่ออายุ</h2>
+  <p>แพ็กเกจมีอายุ 30 วันนับจากวันที่เริ่มใช้งาน และ<b>ไม่ต่ออายุอัตโนมัติ</b> เมื่อครบกำหนด บัญชีจะกลับเป็นแพ็กเกจฟรี การยกเลิกจึงทำได้โดยไม่ซื้อแพ็กเกจรอบถัดไป</p>
+  <h2>2. ช่องทางชำระเงิน</h2>
+  <ul>
+    <li><b>พร้อมเพย์ QR</b> — คุณโอนเงินเองตาม QR คำสั่งซื้อจะรอจนผู้ดูแลตรวจยอดเงินเข้าและกดยืนยัน แพ็กเกจจึงเริ่มใช้งาน</li>
+    <li><b>Stripe</b> (บัตรเครดิต/เดบิต หรือ PromptPay ผ่าน Stripe) — แพ็กเกจเปิดใช้ทันทีเมื่อ Stripe แจ้งว่าชำระสำเร็จ</li>
+  </ul>
+  <h2>3. การขอคืนเงิน</h2>
+  <p>กดปุ่ม "ขอคืนเงิน" ที่คำสั่งซื้อของคุณในหน้า <a href="/plans">Plans</a> พร้อมระบุเหตุผล หรือติดต่อ {{CONTACT_EMAIL}} ผู้ดูแลจะพิจารณาแต่ละคำขอ และแจ้งผลผ่านสถานะคำสั่งซื้อ ("คืนเงินแล้ว" หรือ "ปฏิเสธคืนเงิน")</p>
+  <h2>4. วิธีคืนเงิน</h2>
+  <ul>
+    <li><b>ชำระผ่านพร้อมเพย์ QR</b> — ผู้ดูแลโอนเงินคืนเข้าบัญชีพร้อมเพย์ที่คุณแจ้ง</li>
+    <li><b>ชำระผ่าน Stripe</b> — คืนเงินผ่าน Stripe กลับไปยังช่องทางเดิมที่ใช้ชำระ ระยะเวลาที่เงินเข้าขึ้นกับธนาคารหรือผู้ออกบัตร</li>
+  </ul>
+  <h2>5. ติดต่อ</h2>
+  <p>สอบถามเรื่องการชำระเงินหรือคืนเงินได้ที่ {{CONTACT_EMAIL}}</p>
+</main>
+<footer class="lca-legal"><a href="/terms">ข้อตกลงการใช้งาน</a> · <a href="/privacy">นโยบายความเป็นส่วนตัว</a> · <a href="/refund">ยกเลิก/คืนเงิน</a></footer>
+<script src="/app.js"></script>
+<script>
+  (async function () {
+    var me = window.lca && (await window.lca.me());
+    if (me && me.role === "CEO") document.getElementById("draft-note").hidden = false;
+  })();
+</script>
+</body>
+</html>
