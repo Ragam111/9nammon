@@ -89,7 +89,12 @@ def complete(payload: dict, timeout: float = 180.0,
     """ไม่ stream: คืน JSON รูปแบบ OpenAI จาก Ollama"""
     with _open(dict(payload, stream=False), timeout, opener) as resp:
         try:
-            return json.loads(resp.read().decode("utf-8"))
+            raw = resp.read()
+        except OSError as e:  # includes TimeoutError / socket.timeout mid-read
+            raise GatewayError(504 if isinstance(e, TimeoutError) else 502,
+                               "Ollama ตอบช้าเกินไปหรือการเชื่อมต่อหลุด", "upstream_error") from e
+        try:
+            return json.loads(raw.decode("utf-8"))
         except ValueError as e:
             raise GatewayError(502, "Ollama ตอบรูปแบบไม่ถูกต้อง", "upstream_error") from e
 

@@ -82,6 +82,8 @@ class StripeCheckoutTest(unittest.TestCase):
                     "url": "https://checkout.stripe.com/c/pay/cs_test_x"}
         if url.endswith("/refunds"):
             return {"id": "re_test_1", "status": "succeeded"}
+        if url.endswith("/expire"):
+            return {"id": url.split("/")[-2], "status": "expired"}
         raise AssertionError(url)
 
     def _req(self, method, path, body=None, headers=None, raw=None):
@@ -190,6 +192,24 @@ class StripeCheckoutTest(unittest.TestCase):
         self.assertNotIn("session_id", o)
         st, r = self._req("GET", "/api/admin/orders", headers=self.adm)
         self.assertNotIn("checkout_url", [x for x in r["orders"] if x["order_id"] == d["order_id"]][0])
+
+    def test_pay1_cancel_expires_session_and_updates_stripe_orders(self):
+        d = self._checkout()
+        oid = d["order_id"]
+        st, r = self._req("POST", f"/api/orders/{oid}/cancel", {}, headers=self.alice)
+        self.assertEqual(st, 200, r)
+        self.assertEqual(self._status(oid), "cancelled")
+        self.assertTrue(any(c["url"].endswith(f"/checkout/sessions/cs_test_{oid}/expire")
+                            for c in self.calls))
+        row = org_store.run_read(self.root, "SELECT state FROM stripe_orders WHERE order_id=?",
+                                 (oid,), one=True)
+        self.assertEqual(row["state"], "cancelled")
+
+    def test_pay2_promptpay_create_does_not_return_stripe_pending(self):
+        d = self._checkout()
+        st, r = self._req("POST", "/api/orders", {"plan": "plus"}, headers=self.alice)
+        self.assertEqual(st, 409, r)
+        self.assertEqual(payments.get_order(self.root, d["order_id"])["status"], "pending")
 
     def test_stripe_pending_writes_ledger_like_promptpay(self):
         from app import finance_ledger

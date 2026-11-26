@@ -260,24 +260,35 @@ def _guest_today() -> str:
 
 
 def _guest_quota_ok(client_ip: str) -> bool:
-    today = _guest_today()
-    with _guest_lock:
-        rec = _guest_usage.get(client_ip)
-        if rec is None or rec[0] != today:
-            return True
-        return rec[1] < GUEST_DAILY_LIMIT
-
-
-def _guest_quota_consume(client_ip: str) -> int:
-    """หัก 1 หน่วยหลังตอบสำเร็จ — คืนจำนวนที่ใช้ไปวันนี้"""
+    """Atomically check and reserve 1 guest unit (check+consume under one lock).
+    Caller must refund via _guest_quota_refund if the chat does not succeed."""
     today = _guest_today()
     with _guest_lock:
         rec = _guest_usage.get(client_ip)
         if rec is None or rec[0] != today:
             rec = [today, 0]
             _guest_usage[client_ip] = rec
+        if rec[1] >= GUEST_DAILY_LIMIT:
+            return False
         rec[1] += 1
-        return rec[1]
+        return True
+
+
+def _guest_quota_consume(client_ip: str) -> int:
+    """Return units used today (reservation in _guest_quota_ok already counted)."""
+    today = _guest_today()
+    with _guest_lock:
+        rec = _guest_usage.get(client_ip)
+        return rec[1] if rec is not None and rec[0] == today else 0
+
+
+def _guest_quota_refund(client_ip: str) -> None:
+    """Give back a reservation made by _guest_quota_ok (failed chat)."""
+    today = _guest_today()
+    with _guest_lock:
+        rec = _guest_usage.get(client_ip)
+        if rec is not None and rec[0] == today and rec[1] > 0:
+            rec[1] -= 1
 
 
 def _guest_quota_reset() -> None:
@@ -585,6 +596,10 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             if provided:
                 sess = session_store.verify(provided)
                 if sess:
+                    # BF4-2: tier is re-derived every request (a revoked paid key must
+                    # stop granting paid quota to sessions created before the revoke)
+                    sess = dict(sess)
+                    sess["tier"] = org_store.user_tier(project_root, sess["username"])
                     return sess
             if raw_key:
                 rec = org_store.verify_api_key(project_root, raw_key)
@@ -659,7 +674,7 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                                                "— ล็อกอินเพื่อใช้ต่อ"})
                 return None
             return {"username": None, "role": "GUEST", "tier": "guest", "key_id": None,
-                    "source": "guest", "client": client}
+                    "source": "guest", "client": client, "_quota_reserved": "guest"}
 
         def send_response(self, code, message=None):
             # จำว่าส่ง header ไปแล้วหรือยัง — handler ชั้นนอกจะได้รู้ว่ายังตอบ 500 JSON ได้ไหม
@@ -2460,6 +2475,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._send_json(400, {"error": "ต้องระบุ username"})
                 return
             ok = org_store.set_user_active(project_root, username, active, actor_role=ident["role"])
+            if ok and not active:
+                session_store.revoke_user(username)  # BF4-1: disabled user loses live sessions
             self._send_json(200 if ok else 404, {"success": ok})
 
         def _handle_apikeys_create(self):
@@ -2495,7 +2512,11 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             if not key_id:
                 self._send_json(400, {"error": "ต้องระบุ key_id"})
                 return
-            ok = org_store.revoke_api_key(project_root, key_id, actor_role=ident["role"])
+            try:
+                ok = org_store.revoke_api_key(project_root, key_id, actor_role=ident["role"])
+            except PermissionError as e:
+                self._send_json(403, {"error": str(e)})
+                return
             self._send_json(200 if ok else 404, {"success": ok})
 
         # ---------- Controller: Dataset routes (ADMIN) — เก็บไว้ fine-tune ทีหลัง ----------
@@ -2864,6 +2885,9 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             kind = ident.pop("_quota_reserved", None)
             if not kind:
                 return
+            if kind == "guest":
+                _guest_quota_refund(ident.get("client") or "unknown")
+                return
             try:
                 if kind == "user":
                     result = org_store.refund_user_quota(project_root, ident["username"])
@@ -2930,6 +2954,7 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 return
             prepared = self._chat_prepare(ident)
             if prepared is None:
+                self._chat_release(ident)  # rejected before model call -> refund reservation
                 return
             try:
                 self._handle_chat_prepared(ident, prepared)
@@ -2985,6 +3010,7 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 return
             prepared = self._chat_prepare(ident)
             if prepared is None:
+                self._chat_release(ident)  # rejected before model call -> refund reservation
                 return
             try:
                 self._handle_chat_stream_prepared(ident, prepared)

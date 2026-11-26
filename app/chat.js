@@ -738,6 +738,7 @@
       S.messages.push(draft);
       renderThread({ streaming: true });
       const node = thread.querySelector("article:last-child .body");
+      let acc = "";
       try {
         const history = S.ephemeralLog.map((m) => ({ role: m.role, content: m.content }));
         const resp = await fetch("/api/chat/stream", {
@@ -750,7 +751,6 @@
           const err = await resp.json().catch(() => ({}));
           throw new Error(err.error || "ส่งไม่สำเร็จ");
         }
-        let acc = "";
         await readSSE(resp, (ev) => {
           if (ev.delta) {
             acc += ev.delta;
@@ -769,6 +769,9 @@
       } catch (err) {
         if (err.name !== "AbortError") setNotice(err.message);
         draft.status = ctrl.signal.aborted ? "stopped" : "error";
+        // Keep the partial reply and keep the log alternating user/assistant.
+        draft.content = acc;
+        S.ephemeralLog.push({ role: "assistant", content: acc, provider: picked.provider, model: picked.model });
       }
       S.streaming = false;
       sendBtn.textContent = "ส่ง";
@@ -835,11 +838,21 @@
       if (S.abort) S.abort.abort();
       return;
     }
-    const text = withAttachments(input.value.trim());
+    const rawInput = input.value;
+    const savedAttachments = attachments.slice();
+    const text = withAttachments(rawInput.trim());
     if (!text) return;
     input.value = "";
     clearAttachments();
     const picked = choice();
+    // Send failed -> give the user back their text and files.
+    const restoreDraft = () => {
+      if (!input.value) input.value = rawInput;
+      if (!attachments.length && savedAttachments.length) {
+        attachments = savedAttachments;
+        renderAttachments();
+      }
+    };
     try {
       if (S.editId && S.conv) {
         const data = await api("/api/chat/edit", {
@@ -871,6 +884,7 @@
       }
       await sendStream(text);
     } catch (err) {
+      restoreDraft();
       setNotice(err.message);
     }
   }

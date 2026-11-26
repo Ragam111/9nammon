@@ -306,7 +306,9 @@ def create_order(project_root: Path, username: str, plan_id, now=None) -> dict:
             actions.append(act)
             if row["status"] != "pending":
                 continue
-            if row["plan"] == plan["id"]:
+            is_stripe = conn.execute("SELECT 1 FROM stripe_orders WHERE order_id=?",
+                                     (row["order_id"],)).fetchone() is not None
+            if row["plan"] == plan["id"] and not is_stripe:
                 return {"order": _to_order(row), "changed": False}
             raise PaymentError(409, "pending_exists",
                                "มีคำสั่งซื้อที่รอชำระอยู่แล้ว — ยกเลิกรายการเดิมก่อนเลือกแพ็กเกจอื่น")
