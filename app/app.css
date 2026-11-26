@@ -251,3 +251,17 @@ body.page-chat .msg.system-note.thinking { animation: lca-pulse 1.1s ease-in-out
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
 }
+
+/* Shared shell (app.js renderShell) */
+.lca-shell-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 16px;border-bottom:1px solid var(--lca-border, #ddd)}
+.lca-shell-nav{display:flex;gap:12px;flex-wrap:wrap;flex:1}
+.lca-shell-nav a{text-decoration:none;color:inherit;padding:6px 4px}
+.lca-shell-nav a[aria-current="page"]{font-weight:600;text-decoration:underline}
+.lca-shell-menu{display:none;min-width:44px;min-height:44px}
+.lca-shell-chip[data-ollama="down"]{opacity:.75}
+@media (max-width:720px){
+  .lca-shell-menu{display:inline-block}
+  .lca-shell-nav{display:none;flex-direction:column;flex-basis:100%;order:3}
+  .lca-shell-nav.open{display:flex}
+  .lca-shell-nav a{min-height:44px;display:flex;align-items:center}
+}

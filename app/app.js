@@ -135,6 +135,109 @@
   var loginCode = takeLoginCode();
   w.lca.googleLoginDone = loginCode ? finishGoogleLogin(loginCode) : Promise.resolve(null);
 
+  // ---------- Shared shell: nav + status chip (LCA_UI_SPEC task 4) ----------
+  // Rendered into #lca-shell (full nav + chip) or #lca-status-chip (chip only, /chat).
+  // textContent only. Quota comes from GET /api/me, which is read-only (no reserve).
+  var SHELL_LINKS = [
+    { href: "/chat", label: "Chat" },
+    { href: "/models", label: "Models" },
+    { href: "/console/keys", label: "API keys" },
+    { href: "/plans", label: "Plans" },
+    { href: "/spaces", label: "Spaces" },
+    { href: "/support", label: "Support" }
+  ];
+  var ADMIN_LINK = { href: "/admin/db", label: "Admin DB" };
+  var SHELL_POLL_MS = 30000;
+
+  function el(tag, cls, text) {
+    var e = w.document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = String(text);
+    return e;
+  }
+
+  function chipText(health, me) {
+    var parts = ["Ollama " + (health && health.ollama === "up" ? "up" : "down")];
+    var t = me && me.tokens;
+    if (t && t.limit != null) parts.push("tokens " + (t.used || 0) + "/" + t.limit);
+    return parts.join(" · ");
+  }
+
+  async function getJson(url, headers) {
+    try {
+      var res = await w.fetch(url, { headers: headers || {} });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch (e) { return null; }
+  }
+
+  async function refreshChip(chip) {
+    var health = await getJson("/api/health");
+    var me = w.lca.getKey() ? await getJson("/api/me", w.lca.authHeaders()) : null;
+    chip.textContent = chipText(health, me);
+    chip.setAttribute("data-ollama", health && health.ollama === "up" ? "up" : "down");
+    return me;
+  }
+
+  function buildNav(mount, isCeo) {
+    var bar = el("div", "lca-shell-bar");
+    var btn = el("button", "lca-shell-menu", "☰");
+    btn.type = "button";
+    btn.setAttribute("aria-expanded", "false");
+    btn.setAttribute("aria-controls", "lca-shell-nav");
+    btn.setAttribute("aria-label", "เมนู");
+    var nav = el("nav", "lca-shell-nav");
+    nav.id = "lca-shell-nav";
+    nav.setAttribute("aria-label", "เมนูหลัก");
+    var links = SHELL_LINKS.slice();
+    if (isCeo) links.push(ADMIN_LINK);
+    var here = (w.location && w.location.pathname) || "";
+    links.forEach(function (l) {
+      var a = el("a", null, l.label);
+      a.href = l.href;
+      if (l.href === here) a.setAttribute("aria-current", "page");
+      nav.appendChild(a);
+    });
+    function setOpen(open) {
+      btn.setAttribute("aria-expanded", open ? "true" : "false");
+      nav.classList.toggle("open", open);
+    }
+    btn.addEventListener("click", function () { setOpen(btn.getAttribute("aria-expanded") !== "true"); });
+    w.document.addEventListener("keydown", function (ev) {
+      if (ev.key === "Escape" && btn.getAttribute("aria-expanded") === "true") { setOpen(false); btn.focus(); }
+    });
+    var chip = el("span", "chip lca-shell-chip", "Ollama …");
+    chip.setAttribute("role", "status");
+    bar.appendChild(btn); bar.appendChild(nav); bar.appendChild(chip);
+    while (mount.firstChild) mount.removeChild(mount.firstChild);
+    mount.appendChild(bar);
+    return { nav: nav, chip: chip, btn: btn };
+  }
+
+  async function renderShell() {
+    var d = w.document;
+    var mount = d.getElementById("lca-shell");
+    var chip = d.getElementById("lca-status-chip");
+    if (!mount && !chip) return null;
+    var parts = null;
+    if (mount) { parts = buildNav(mount, false); chip = parts.chip; }
+    var me = await refreshChip(chip);
+    if (parts && me && me.role === "CEO") {
+      var text = chip.textContent, state = chip.getAttribute("data-ollama");
+      parts = buildNav(mount, true);
+      chip = parts.chip;
+      chip.textContent = text;
+      chip.setAttribute("data-ollama", state);
+    }
+    w.setInterval(function () { refreshChip(chip); }, SHELL_POLL_MS);
+    return parts || { chip: chip };
+  }
+  w.lca.renderShell = renderShell;
+  w.lca.SHELL_LINKS = SHELL_LINKS;
+  w.lca.SHELL_POLL_MS = SHELL_POLL_MS;
+  if (w.document && w.document.readyState !== "loading") renderShell();
+  else if (w.document && w.document.addEventListener) w.document.addEventListener("DOMContentLoaded", renderShell);
+
   // PWA: register the service worker only on secure contexts (https / localhost / 127.0.0.1).
   // Any failure is swallowed so the page keeps working without offline support.
   function registerServiceWorker() {
