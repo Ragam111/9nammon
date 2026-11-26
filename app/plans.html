@@ -65,6 +65,14 @@
       </div>
     </div>
 
+    <div class="card" id="stripe-pending" style="margin-top:14px;display:none">
+      <h2>รอยืนยันจาก Stripe</h2>
+      <div class="kv"><span>คำสั่งซื้อ</span><span id="sp-order"></span></div>
+      <div class="kv"><span>ยอดชำระ</span><span id="sp-amount"></span></div>
+      <p class="note">ยังไม่ได้รับการยืนยันการชำระจาก Stripe — ถ้ายังไม่ได้ชำระ กดเพื่อกลับไปหน้าชำระเงินเดิม</p>
+      <a id="sp-resume" href="#" rel="noopener noreferrer" style="display:none">กลับไปชำระเงินที่ Stripe</a>
+    </div>
+
     <div class="card" id="qr-box" style="margin-top:14px">
       <h2>สแกนเพื่อชำระ</h2>
       <div id="qr" aria-live="polite"></div>
@@ -160,6 +168,8 @@
     }
 
     function showQr(o) {
+      qs("stripe-pending").style.display = "none";
+      if (o && o.status === "pending" && o.provider === "stripe") { showStripePending(o); return; }
       if (!o || o.status !== "pending" || !o.payload) { qs("qr-box").style.display = "none"; return; }
       try {
         qs("qr").innerHTML = window.LcaQR.toSvg(window.LcaQR.encodeText(o.payload));  // svg built from booleans only
@@ -244,7 +254,22 @@
       } else { loadMine(); }
     }
 
+    function showStripePending(o) {
+      qs("qr-box").style.display = "none";
+      qs("sp-order").textContent = o.order_id;
+      qs("sp-amount").textContent = baht(o.amount_thb);
+      var a = qs("sp-resume");
+      var url = typeof o.checkout_url === "string" ? o.checkout_url : "";
+      if (/^https:\/\//.test(url)) { a.href = url; a.style.display = "inline-block"; }
+      else { a.removeAttribute("href"); a.style.display = "none"; }
+      qs("stripe-pending").style.display = "block";
+    }
+
     function myActions(o) {
+      if (o.status === "pending" && o.provider === "stripe") {
+        return '<div class="row-actions"><button data-show="' + esc(o.order_id) + '">รอยืนยันจาก Stripe</button>' +
+               '<button data-cancel="' + esc(o.order_id) + '">ยกเลิก</button></div>';
+      }
       if (o.status === "pending") {
         return '<div class="row-actions"><button data-show="' + esc(o.order_id) + '">QR</button>' +
                '<button data-cancel="' + esc(o.order_id) + '">ยกเลิก</button></div>';
@@ -275,7 +300,7 @@
           myActions(o) + "</td></tr>";
       }).join("") : '<tr><td colspan="5" class="muted">ยังไม่มีคำสั่งซื้อ</td></tr>';
       var pending = MINE.filter(function (o) { return o.status === "pending"; })[0];
-      if (pending) showQr(pending); else qs("qr-box").style.display = "none";
+      if (pending) showQr(pending); else { qs("qr-box").style.display = "none"; qs("stripe-pending").style.display = "none"; }
     }
 
     async function act(url, body, after) {

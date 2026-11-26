@@ -132,6 +132,7 @@ class DbAdminUnitTest(unittest.TestCase):
 class DbAdminHttpTest(unittest.TestCase):
     def setUp(self) -> None:
         session_store.clear()
+        db_admin._DENIED_SEEN.clear()
         self._tmp = tempfile.TemporaryDirectory()
         self.root = Path(self._tmp.name)
         handler = server.make_handler(self.root, MASTER)
@@ -200,6 +201,23 @@ class DbAdminHttpTest(unittest.TestCase):
         self.assertIn("403 ops /api/admin/db/tables", msgs)
         self.assertIn("401 - /api/admin/db/summary", msgs)
         self.assertIn("403 alice /api/admin/db/check", msgs)
+
+    def test_denied_audit_deduped_per_ip_path(self) -> None:
+        for _ in range(5):
+            self.assertEqual(self._raw("GET", "/api/admin/db/tables", headers=self._h("ops"))[0], 403)
+        self.assertEqual(self._raw("GET", "/api/admin/db/summary")[0], 401)
+        with closing(sqlite3.connect(db.db_path(self.root))) as c:
+            msgs = [r[0] for r in c.execute(
+                "SELECT message FROM server_events WHERE kind='db_admin_denied'")]
+        self.assertEqual(msgs.count("403 ops /api/admin/db/tables"), 1)
+        self.assertEqual(msgs.count("401 - /api/admin/db/summary"), 1)
+
+    def test_denied_window_unit(self) -> None:
+        self.assertTrue(db_admin._denied_allowed("1.2.3.4", "/p", now=1000.0))
+        self.assertFalse(db_admin._denied_allowed("1.2.3.4", "/p", now=1059.0))
+        self.assertTrue(db_admin._denied_allowed("5.6.7.8", "/p", now=1059.0))
+        self.assertTrue(db_admin._denied_allowed("1.2.3.4", "/q", now=1059.0))
+        self.assertTrue(db_admin._denied_allowed("1.2.3.4", "/p", now=1061.0))
 
     def test_http_order_by_sensitive_400(self) -> None:
         st = self._raw("GET", "/api/admin/db/rows?table=org_users&order=password",
