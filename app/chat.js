@@ -147,8 +147,26 @@
       if (backdrop) backdrop.hidden = false;
       if (body) body.classList.toggle("overlay-open", true);
       setInert(true);
-      const first = [...box.querySelectorAll(FOCUSABLE)].filter((el) => !el.hidden)[0];
-      if (first) first.focus();
+      focusWhenVisible();
+    }
+    const items = () => [...box.querySelectorAll(FOCUSABLE)].filter((el) => !el.hidden && !el.disabled);
+    // Focus the first item only once the box is visibility:visible (a hidden
+    // element cannot take focus). Retry on the next frame, then on transitionend.
+    function focusWhenVisible() {
+      const w = typeof window !== "undefined" ? window : {};
+      const visible = () => !w.getComputedStyle || w.getComputedStyle(box).visibility === "visible";
+      let done = false;
+      const go = () => {
+        if (done || !isOpen() || !visible()) return;
+        done = true;
+        const first = items()[0];
+        if (first) first.focus();
+      };
+      go();
+      if (done) return;
+      if (w.requestAnimationFrame) w.requestAnimationFrame(go);
+      const onEnd = () => { box.removeEventListener && box.removeEventListener("transitionend", onEnd); go(); };
+      box.addEventListener("transitionend", onEnd);
     }
     function close(refocus = true) {
       if (!isOpen()) return;
@@ -162,6 +180,14 @@
       trigger = null;
     }
     function onKey(ev) {
+      if (isOpen() && ev.key === "Tab") { // focus trap inside the open overlay
+        const list = items();
+        if (!list.length) return;
+        const first = list[0], last = list[list.length - 1];
+        if (ev.shiftKey && ev.target === first) { ev.preventDefault(); last.focus(); }
+        else if (!ev.shiftKey && ev.target === last) { ev.preventDefault(); first.focus(); }
+        return;
+      }
       if (isOpen() && ev.key === "Escape") {
         ev.preventDefault();
         ev.stopPropagation(); // Esc closes the overlay first, not the stream

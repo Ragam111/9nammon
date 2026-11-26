@@ -275,3 +275,44 @@ test("sheet opened from the more menu returns focus to the given trigger", () =>
   assert.equal(box.classList.contains("open"), false);
   assert.equal(focused, more);
 });
+
+test("Tab / Shift+Tab are trapped inside the open overlay", () => {
+  const { btn, first, closeBtn } = makeOverlay();
+  btn.dispatch("click");
+  let ev = closeBtn.dispatch("keydown", { key: "Tab" });
+  assert.equal(ev.defaultPrevented, true);
+  assert.equal(focused, first);
+  ev = first.dispatch("keydown", { key: "Tab", shiftKey: true });
+  assert.equal(ev.defaultPrevented, true);
+  assert.equal(focused, closeBtn);
+  ev = first.dispatch("keydown", { key: "Tab" }); // middle move: browser default
+  assert.notEqual(ev.defaultPrevented, true);
+});
+
+test("open() waits until the box is visibility:visible before focusing", () => {
+  let vis = "hidden";
+  const frames = [];
+  sandbox.window.getComputedStyle = () => ({ visibility: vis });
+  sandbox.window.requestAnimationFrame = (f) => frames.push(f);
+  try {
+    const { btn, box, first } = makeOverlay();
+    focused = null;
+    btn.dispatch("click");
+    assert.equal(focused, null); // still hidden: no focus yet
+    vis = "visible";
+    frames.shift()();
+    assert.equal(focused, first);
+    // transitionend fallback when the frame fires too early
+    const o2 = makeOverlay();
+    vis = "hidden"; focused = null;
+    o2.btn.dispatch("click");
+    frames.shift()();
+    assert.equal(focused, null);
+    vis = "visible";
+    o2.box.dispatch("transitionend");
+    assert.equal(focused, o2.first);
+  } finally {
+    delete sandbox.window.getComputedStyle;
+    delete sandbox.window.requestAnimationFrame;
+  }
+});

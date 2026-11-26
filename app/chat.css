@@ -252,7 +252,7 @@ h1, h2, h3 { line-height: 1.4; font-weight: 600; font-size: 1rem; margin: 0; }
     overflow-y: auto; transform: translateX(-100%); visibility: hidden;
     transition: transform .2s ease, visibility .2s;
   }
-  .sidebar.open { transform: none; visibility: visible; }
+  .sidebar.open { transform: none; visibility: visible; transition: transform .2s ease, visibility 0s; }
   /* Beat app.css #sidebar rules (ID specificity, incl. its max-width:720px 45vh block) */
   body.page-hub #sidebar.sidebar {
     width: min(85vw, 320px); max-height: none; height: auto; inset: 0 auto 0 0;
@@ -269,7 +269,7 @@ h1, h2, h3 { line-height: 1.4; font-weight: 600; font-size: 1rem; margin: 0; }
     transform: translateY(100%); visibility: hidden;
     transition: transform .2s ease, visibility .2s;
   }
-  .panel.open { transform: none; visibility: visible; }
+  .panel.open { transform: none; visibility: visible; transition: transform .2s ease, visibility 0s; }
   .sheet-head.mobile-only { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
   .backdrop { position: fixed; inset: 0; z-index: 20; background: rgba(0, 0, 0, .45); }
   .overlay-close { border: 1px solid var(--lca-line); background: var(--lca-surface); border-radius: 8px; }

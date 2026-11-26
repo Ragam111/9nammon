@@ -70,6 +70,18 @@ class UiMobileTest(unittest.TestCase):
         self.assertRegex(b, r"body\.overlay-open \{[^}]*overflow: hidden")
         self.assertRegex(b, r"\.desktop-only \{ display: none")
 
+    def test_open_state_has_no_visibility_delay(self) -> None:
+        for sel in (".sidebar.open", ".panel.open"):
+            m = re.search(re.escape(sel) + r" \{([^}]*)\}", self.block)
+            self.assertIsNotNone(m, sel)
+            self.assertRegex(m.group(1), r"transition:[^;]*visibility 0s", sel)
+
+    def test_open_focuses_after_visibility(self) -> None:
+        self.assertIn('getComputedStyle(box).visibility === "visible"', self.js)
+        self.assertIn("requestAnimationFrame", self.js)
+        self.assertIn('"transitionend"', self.js)
+        self.assertIn('ev.key === "Tab"', self.js)
+
     def test_no_horizontal_scroll_rules(self) -> None:
         self.assertIn("overflow-x: hidden", self.block)
         self.assertIn("minmax(0, 1fr)", self.block)
