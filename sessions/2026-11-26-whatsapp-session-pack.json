@@ -1,0 +1,38 @@
+{
+  "skill": "rapid-iteration-ecosystem",
+  "version": "0.1.0",
+  "company": "Token LCA",
+  "token": "T-LCA",
+  "repo": "Ragam111/9nammon",
+  "recorded": "2026-11-26",
+  "surface": "grok-app-builder",
+  "sourceSession": "https://claude.ai/code/session_01X1LMwytuyeYQi9PcUiWNek",
+  "brief": "อยากได้แอปแชทแบบ WhatsApp ก่อนมันจะเป็นแอปหรือเว็บ อัดเซสชันเป็นไฟล์ เดินทีละไฟล์ว่าหน้าบ้าน หลังบ้าน และคอรรับอะไรแล้วส่งต่ออะไร",
+  "rooms": ["โถง", "เทป", "แชต", "สภา", "คลัง"],
+  "rules": {
+    "guest": "คำตอบอยู่แค่หน้า ไม่เขียนเซิร์ฟเวอร์ และไม่ถูกยกเข้าบัญชีภายหลัง",
+    "account": "ถัง private กับ company ของบัญชีที่ล็อกอิน ไม่ใช่คลังร่วมทั้งบริษัท",
+    "opening": 8000,
+    "deduct": "เก็บม้วนสตูดิโอหักเท่ามือที่เดินถึง เก็บแชตหรือมติหัก 1",
+    "free": "เดินโถง ดาวน์โหลดม้วน และคำตอบบนหน้า",
+    "brain": "แผนที่ไฟล์บนเว็บ ไม่ใช่ Ollama สมองจริงอยู่ที่ connections.py บนเดสก์ท็อป",
+    "video": "จังหวะ 9arm บนหน้า ไม่ใช่คลิป",
+    "people": ["สถาปัตย์", "ช่างแชท", "ผู้ดูแลข้อมูล", "ช่างติดตั้ง"],
+    "notConnected": ["กุญแจของ Ollama", "รหัสไททันของแอดมิน", "โทเคนเข้าเครื่อง"]
+  },
+  "loop": ["Read", "Re-check", "Fix", "Report"],
+  "steps": [
+    { "n": 1, "title": "รับโจทย์จากคน", "layer": "บริบท", "files": ["docs/APP_WALKTHROUGH.md", "docs/9ARM_PRINCIPLES.md"] },
+    { "n": 2, "title": "เปิดม้วนเทป", "layer": "พื้นฐาน", "files": ["sessions/tape.json", "sessions/public-hall-tape.json", "docs/TOKEN_LCA_STUDIO.md", "SKILL.md"] },
+    { "n": 3, "title": "เขียนหน้าที่คนเห็น", "layer": "ฟรอนต์เอนด์", "files": ["app/index.html", "app/login.html", "app/chat.js", "app/app.css", "lca_app.py"] },
+    { "n": 4, "title": "ต่อสายตอบทีละคำ", "layer": "แบ็กเอนด์", "files": ["server.py", "app/auth_backend.py", "app/admission.py", "app/context_manager.py", "app/model_backend.py", "local_coder.py", "connections.py"] },
+    { "n": 5, "title": "แช่แข็งสกิล", "layer": "คอร", "files": ["skills/rapid-iteration-ecosystem/SKILL.md", "skills/rapid-iteration-ecosystem/TAPE.md", "lca_core/"] },
+    { "n": 6, "title": "แยกพื้นที่", "layer": "บัญชี", "files": ["org_store.py", "app/auth_backend.py", "app/space_store.py"] },
+    { "n": 7, "title": "หักเหรียญ", "layer": "เหรียญ", "files": ["app/usage_store.py", "app/history_store.py"] },
+    { "n": 8, "title": "แพ็กเปิดตัว", "layer": "ติดตั้ง", "files": ["install/pack.json", "installer_gui.py", "install.ps1", "start-lca.bat", "Dockerfile"] }
+  ],
+  "charged": false,
+  "reached": 8,
+  "hands": 8,
+  "note": "ม้วนสาธารณะไม่หัก T-LCA หักเมื่อบัญชีกดเก็บ สมองบนเว็บเป็นแผนที่ไฟล์ ตัวติดตั้ง Windows ยังอยู่ที่รีโป"
+}
