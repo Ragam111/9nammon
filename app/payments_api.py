@@ -8,6 +8,8 @@ payments_api.py — HTTP routes ของแพ็กเกจ/คำสั่�
     POST /api/orders/<id>/refund-request {"reason"}  USER+  ของตัวเองที่ paid/active
     GET  /api/admin/orders?status=                   ADMIN+
     POST /api/admin/orders/<id>/confirm-paid|refund|reject-refund   ADMIN+
+    POST /api/pay/stripe/checkout {"plan"}           USER+  Stripe hosted Checkout → {"url"}
+    POST /api/pay/stripe/webhook                     no auth; Stripe-Signature on raw body
 """
 
 from __future__ import annotations
@@ -16,12 +18,15 @@ import json
 import re
 from urllib.parse import parse_qs
 
-from app import payments
+from app import config_manager, payments, stripe_pay
 
 _USER_ACTION = re.compile(r"^/api/orders/(ord_[0-9a-f]{16})/(cancel|refund-request)$")
 _ADMIN_ACTION = re.compile(r"^/api/admin/orders/([^/]+)/(confirm-paid|refund|reject-refund)$")
 _ADMIN_FUNCS = {"confirm-paid": payments.confirm_paid, "refund": payments.refund,
                 "reject-refund": payments.reject_refund}
+STRIPE_CHECKOUT = "/api/pay/stripe/checkout"
+STRIPE_WEBHOOK = "/api/pay/stripe/webhook"
+MAX_WEBHOOK_BYTES = 256 * 1024
 GET_PATHS = {"/api/plans", "/api/orders", "/api/admin/orders"}
 
 
@@ -35,6 +40,8 @@ def wants_get(path: str) -> bool:
 
 
 def wants_post(path: str) -> bool:
+    if path.startswith("/api/pay/stripe/"):
+        return True
     return path == "/api/orders" or bool(_USER_ACTION.match(path) or _ADMIN_ACTION.match(path))
 
 
@@ -60,6 +67,7 @@ def handle_get(handler, parsed, project_root) -> None:
     if parsed.path == "/api/plans":
         handler._send_json(200, {"plans": payments.load_plans(project_root),
                                  "promptpay_ready": payments.promptpay_ready(project_root),
+                                 "stripe_ready": stripe_pay.ready(project_root),
                                  "pay_window_min": payments.PAY_WINDOW_S // 60,
                                  "plan_days": payments.PLAN_DAYS})
         return
@@ -68,8 +76,8 @@ def handle_get(handler, parsed, project_root) -> None:
         if ident is None:
             return
         payments.sweep(project_root)  # สถานะที่ลูกค้าเห็นต้องสด (pending หมดเวลา)
-        handler._send_json(200, {"orders": payments.list_orders(project_root,
-                                                                username=ident.get("username"))})
+        orders = payments.list_orders(project_root, username=ident.get("username"))
+        handler._send_json(200, {"orders": stripe_pay.annotate(project_root, orders)})
         return
     ident = handler._require("ADMIN")
     if ident is None:
@@ -81,12 +89,55 @@ def handle_get(handler, parsed, project_root) -> None:
     except payments.PaymentError as e:
         handler._send_json(e.status, e.body())
         return
-    handler._send_json(200, {"orders": orders})
+    handler._send_json(200, {"orders": stripe_pay.annotate(project_root, orders)})
+
+
+def _base_url(handler, project_root) -> str:
+    """success/cancel URL ต้องอยู่บน origin ของเรา: PUBLIC_BASE_URL (ถ้าตั้ง) หรือ Host ที่ผ่าน guard แล้ว"""
+    base = config_manager.get_key(project_root, "PUBLIC_BASE_URL")
+    if isinstance(base, str) and base.strip().startswith(("https://", "http://")):
+        return base.strip().rstrip("/")
+    host = handler.headers.get("Host") or "127.0.0.1"
+    return "http://" + host
+
+
+def _handle_stripe(handler, path, project_root) -> None:
+    if path == STRIPE_WEBHOOK:
+        try:
+            length = int(handler.headers.get("Content-Length", 0) or 0)
+        except ValueError:
+            length = -1
+        if length <= 0 or length > MAX_WEBHOOK_BYTES:
+            handler._send_json(400, {"error": "body ไม่ถูกต้อง", "code": "bad_body"})
+            return
+        raw = handler.rfile.read(length)
+        status, body = stripe_pay.handle_webhook(project_root, raw,
+                                                 handler.headers.get("Stripe-Signature"))
+        handler._send_json(status, body)
+        return
+    if path != STRIPE_CHECKOUT:
+        handler._send_json(404, {"error": "ไม่พบ endpoint"})
+        return
+    if not stripe_pay.ready(project_root):
+        handler._send_json(503, {"error": stripe_pay.NOT_READY_MSG, "code": "stripe_not_configured"})
+        return
+    ident = handler._require("USER")
+    if ident is None:
+        return
+    data = _body(handler)
+    if data is None:
+        return
+    # ราคาไม่รับจาก client: ใช้เฉพาะ plan id
+    _call(handler, stripe_pay.create_checkout, project_root, ident.get("username"),
+          data.get("plan"), _base_url(handler, project_root))
 
 
 def handle_post(handler, parsed, project_root) -> None:
     payments.maybe_sweep(project_root)
     path = parsed.path
+    if path.startswith("/api/pay/stripe/"):
+        _handle_stripe(handler, path, project_root)
+        return
     m_admin = _ADMIN_ACTION.match(path)
     ident = handler._require("ADMIN" if m_admin else "USER")
     if ident is None:
@@ -100,6 +151,9 @@ def handle_post(handler, parsed, project_root) -> None:
         return
     if m_admin:
         order_id, action = m_admin.groups()
+        if action == "refund" and stripe_pay.is_stripe(project_root, order_id):
+            _call(handler, stripe_pay.refund, project_root, order_id, user, ident.get("role"))
+            return
         _call(handler, _ADMIN_FUNCS[action], project_root, order_id, user, ident.get("role"))
         return
     order_id, action = _USER_ACTION.match(path).groups()
