@@ -273,3 +273,4 @@ Interface มี input/output และ error behavior ระบุครบ ง
 - Google login: โค้ดเสร็จ (`6bf5eb7`) รอ QA (ต้องเลื่อน migration เป็น 0015 ตอนรวม)
 - PWA QA PASS รวมแล้ว (manifest, sw.js ไม่ cache /api /v1 /auth, offline.html) minor: เปลี่ยน CACHE_NAME ตามเวอร์ชัน, เพิ่ม app.js/qr.js ใน _SCHEDULE_ALLOWLIST
 - หน้าแชต 3 คอลัมน์ (UI งาน 2) QA PASS รวมแล้ว minor: ลูกศรในเมนู ⋯ ติดที่ persona, ชื่อโฟลเดอร์ยาวดัน 375px (งาน 3)
+- รีโมทเครื่อง 2 ผ่านสาย LAN (OpenSSH key-only, node_ctl.py) QA PASS รวมแล้ว ดู docs/REMOTE_NODE.md รอเจ้าของรันสคริปต์บนเครื่อง B ครั้งเดียว
