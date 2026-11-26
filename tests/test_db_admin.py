@@ -48,9 +48,9 @@ class DbAdminUnitTest(unittest.TestCase):
         with closing(db_admin.connect_ro(self.root)) as conn:
             for t in db_admin._tables(conn):
                 for c in db_admin._columns(conn, t):
-                    n = c["name"].lower()
-                    if any(w in n for w in ("hash", "secret", "password", "token", "salt",
-                                            "verifier", "session")):
+                    parts = c["name"].lower().split("_")
+                    if any(w in parts for w in ("hash", "secret", "password", "token", "salt",
+                                                "verifier", "session")):
                         self.assertTrue(db_admin.is_sensitive(c["name"]), (t, c["name"]))
         for table, secret in (("org_users", "secretvalue"), ("org_api_keys", "deadbeefhash"),
                               ("auth_sessions", "tokhash123")):
@@ -81,6 +81,30 @@ class DbAdminUnitTest(unittest.TestCase):
     def test_order(self) -> None:
         d = db_admin.browse(self.root, "org_users", order_by="-username")
         self.assertEqual(d["total"], 1)
+
+    def test_order_by_sensitive_column_rejected(self) -> None:
+        for t, col in (("org_users", "password"), ("org_api_keys", "-key_hash"),
+                       ("auth_sessions", "token_hash")):
+            with self.assertRaises(db_admin.DbAdminError):
+                db_admin.browse(self.root, t, order_by=col)
+
+    def test_sensitive_re_is_narrow(self) -> None:
+        for c in ("tokens_in", "tokens_out", "tokens_est", "prefix", "sha256", "key_id",
+                  "username", "connection_id", "session_count"):
+            self.assertFalse(db_admin.is_sensitive(c), c)
+        for c in ("token_hash", "token", "refresh_token", "password", "secret", "client_secret",
+                  "salt", "verifier", "key_hash", "session", "session_id", "sid"):
+            self.assertTrue(db_admin.is_sensitive(c), c)
+        with closing(db_admin.connect_ro(self.root)) as conn:
+            cols = {(t, c["name"]) for t in db_admin._tables(conn)
+                    for c in db_admin._columns(conn, t)}
+        for name in ("tokens_in", "tokens_out", "tokens_est"):
+            self.assertIn(("messages", name), cols)
+            self.assertFalse(db_admin.is_sensitive(name))
+        for t, name in (("auth_sessions", "token_hash"), ("org_api_keys", "key_hash"),
+                        ("org_users", "password")):
+            self.assertIn((t, name), cols)
+            self.assertTrue(db_admin.is_sensitive(name))
 
     def test_read_only_connection_refuses_writes(self) -> None:
         with closing(db_admin.connect_ro(self.root)) as conn:
@@ -165,6 +189,22 @@ class DbAdminHttpTest(unittest.TestCase):
         self.assertEqual(self._req("POST", "/api/admin/db/check", {}, self._h("boss"))[0], 200)
         self.assertEqual(self._req("POST", "/api/admin/db/check", {}, self._h("ops"))[0], 403)
         self.assertEqual(self._req("POST", "/api/admin/db/check", {})[0], 401)
+
+    def test_denied_calls_are_audited(self) -> None:
+        self.assertEqual(self._raw("GET", "/api/admin/db/tables", headers=self._h("ops"))[0], 403)
+        self.assertEqual(self._raw("GET", "/api/admin/db/summary")[0], 401)
+        self.assertEqual(self._req("POST", "/api/admin/db/check", {}, self._h("alice"))[0], 403)
+        with closing(sqlite3.connect(db.db_path(self.root))) as c:
+            msgs = [r[0] for r in c.execute(
+                "SELECT message FROM server_events WHERE kind='db_admin_denied'")]
+        self.assertIn("403 ops /api/admin/db/tables", msgs)
+        self.assertIn("401 - /api/admin/db/summary", msgs)
+        self.assertIn("403 alice /api/admin/db/check", msgs)
+
+    def test_http_order_by_sensitive_400(self) -> None:
+        st = self._raw("GET", "/api/admin/db/rows?table=org_users&order=password",
+                       headers=self._h("boss"))[0]
+        self.assertEqual(st, 400)
 
     def test_http_injection_and_redaction(self) -> None:
         h = self._h("boss")

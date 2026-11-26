@@ -69,6 +69,16 @@ class Ui3ColTest(unittest.TestCase):
         cls.tree = _parse(APP / "chat.html")
         cls.ids = {a.get("id") for _, a, _ in cls.tree.elements if a.get("id")}
 
+    def test_mobile_sidebar_cannot_widen_layout(self) -> None:
+        m = re.search(r"@media \(max-width: 720px\) \{(.*?)\n\}", self.css, re.S)
+        self.assertIsNotNone(m)
+        block = m.group(1)
+        self.assertRegex(block, r"\.sidebar \{[^}]*min-width:\s*0")
+        sel = re.search(r"\.sidebar select \{([^}]*)\}", block)
+        self.assertIsNotNone(sel)
+        self.assertRegex(sel.group(1), r"(^|[;\s])width:\s*100%")
+        self.assertRegex(sel.group(1), r"max-width:\s*100%")
+
     def test_pre_change_ids_still_exist(self) -> None:
         missing = [i for i in PRE_CHANGE_IDS if i not in self.ids]
         self.assertEqual(missing, [])

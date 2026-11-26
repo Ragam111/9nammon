@@ -7,7 +7,10 @@
 // HTML pages are never stored: the server injects a session token into them.
 "use strict";
 
-var CACHE_NAME = "lca-shell-v1";
+// SHELL_HASH is checked by tests/test_pwa.py; when shell assets change, bump CACHE_NAME
+// and record the new hash (the test prints the expected value).
+var SHELL_HASH = "22afabc89aee83b5";
+var CACHE_NAME = "lca-shell-v2";
 var OFFLINE_URL = "/offline.html";
 var SHELL_ASSETS = [
   "/app.css",
