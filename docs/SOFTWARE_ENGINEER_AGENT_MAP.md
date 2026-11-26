@@ -283,3 +283,4 @@ Interface มี input/output และ error behavior ระบุครบ ง
 - Stripe minor (PUBLIC_BASE_URL บังคับ, สถานะรอ Stripe ใน /plans, dedupe audit, ledger pending) QA PASS รวมแล้ว
 - /admin/db, /console, /dev อ่าน lca_key ด้วย (login รหัสผ่านโหมด --token) QA PASS รวมแล้ว; วิดีโอเดโม 68 วิ QA PASS อยู่ที่ dist-demo/ (ไม่ commit)
 - เตรียมเปิดตัว (/terms /privacy /refund ฉบับร่าง, UI minors) QA PASS รวมแล้ว full suite 1831 fail 1 (test_secret_store มีอยู่ก่อน) เจ้าของต้องตรวจข้อความกฎหมายเอง
+- คิวถัดไป (หลัง w3kn6xscl): โครง console แบบรูป Claude Console ทั้งหลังบ้าน LCA-Admin (Dashboard/API keys/Models/Customers/Spending&usage/Database/Nodes/Settings) และหน้าบ้านลูกค้า (Chat/Models/API keys ของตัวเอง/Plans/Usage/Settings) แบรนด์ LCA ไม่ใช้สี/โลโก้ Anthropic
