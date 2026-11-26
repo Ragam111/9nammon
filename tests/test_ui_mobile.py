@@ -96,3 +96,35 @@ class UiMobileTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DrawerSpecificityTest(unittest.TestCase):
+    """app.css uses #sidebar (ID) rules that beat .sidebar; the hub must override them."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        css = (APP / "chat.css").read_text(encoding="utf-8")
+        m = re.search(MOBILE_BLOCK, css, re.S)
+        cls.block = m.group(1) if m else ""
+        cls.html = (APP / "chat.html").read_text(encoding="utf-8")
+        cls.app_css = (APP / "app.css").read_text(encoding="utf-8")
+
+    def _rule(self) -> str:
+        m = re.search(r"body\.page-hub #sidebar\.sidebar \{(.*?)\}", self.block, re.S)
+        self.assertIsNotNone(m, "mobile block must target #sidebar with ID specificity")
+        return m.group(1)
+
+    def test_hub_markup_matches_selector(self) -> None:
+        self.assertRegex(self.html, r'<body[^>]*class="[^"]*page-hub')
+        self.assertRegex(self.html, r'id="sidebar"[^>]*class="[^"]*sidebar|class="[^"]*sidebar[^"]*"[^>]*id="sidebar"')
+
+    def test_overrides_app_css_720_rule(self) -> None:
+        # app.css max-width:720px sets width:100%; max-height:45vh; border-top; order:2
+        self.assertIn("max-height: 45vh", self.app_css)
+        rule = self._rule()
+        for decl in ("width: min(85vw, 320px)", "max-height: none", "height: auto",
+                     "inset: 0 auto 0 0", "border-top: none", "order: initial"):
+            self.assertIn(decl, rule)
+
+    def test_welcome_chips_and_plans_link_44px(self) -> None:
+        self.assertRegex(self.block, r"\.empty button, #panel-quota a \{[^}]*min-height: 44px")

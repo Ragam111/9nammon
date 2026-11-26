@@ -253,6 +253,13 @@ h1, h2, h3 { line-height: 1.4; font-weight: 600; font-size: 1rem; margin: 0; }
     transition: transform .2s ease, visibility .2s;
   }
   .sidebar.open { transform: none; visibility: visible; }
+  /* Beat app.css #sidebar rules (ID specificity, incl. its max-width:720px 45vh block) */
+  body.page-hub #sidebar.sidebar {
+    width: min(85vw, 320px); max-height: none; height: auto; inset: 0 auto 0 0;
+    border-top: none; order: initial;
+  }
+  body.page-hub.nav-collapsed #sidebar.sidebar { display: block; }
+  .empty button, #panel-quota a { display: inline-flex; align-items: center; min-height: 44px; }
   .panel {
     display: block; position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
     max-height: 75dvh; overflow-y: auto; box-sizing: border-box;
