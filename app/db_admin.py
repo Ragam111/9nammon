@@ -26,7 +26,7 @@ MASK = "••••"
 # Whole-word match on column names: token/token_hash/*_token/*_hash/password/secret/salt/
 # verifier/session id stay redacted; count columns such as tokens_in/tokens_out/tokens_est do not.
 SENSITIVE_RE = re.compile(
-    r"(^|_)(token|hash|password|passwd|secret|salt|verifier)(_|$)|^sid$|(^|_)session(_id)?$",
+    r"(^|_)(token|hash|password|passwd|secret|salt|verifier)(_|$)|^sid$|(^|_)session(_id|_url)?$",
     re.I)
 CSV_DANGER = ("=", "+", "-", "@", "\t", "\r")
 GET_PATHS = frozenset({"/api/admin/db/tables", "/api/admin/db/rows",
