@@ -21,6 +21,12 @@
     .page-dev .tbl { overflow-x: auto; }
     .page-dev .payload { font-family: var(--lca-mono); font-size: 11px; word-break: break-all; }
     .page-dev .events { font-size: 12px; color: var(--lca-muted); }
+    .page-dev .pay-modal[hidden] { display: none; }
+    .page-dev .pay-modal { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center;
+                           justify-content: center; background: rgba(0,0,0,.5); padding: 16px; }
+    .page-dev .pay-dialog { max-width: 420px; width: 100%; }
+    .page-dev .pay-dialog button { width: 100%; margin-top: 8px; }
+    .page-dev #stripe-status { display: none; margin-bottom: 14px; }
     @media (max-width: 560px) { .page-dev td, .page-dev th { padding: 6px 4px; } }
   </style>
 <link rel="manifest" href="/manifest.webmanifest">
@@ -37,8 +43,26 @@
   <main>
     <p class="note" id="pp-note"></p>
     <div class="plans" id="plans"><p class="muted">กำลังโหลดแพ็กเกจ…</p></div>
-    <p class="note">ชำระผ่านพร้อมเพย์ (ไม่มีค่าธรรมเนียม) — ผู้ดูแลตรวจยอดเงินเข้าแล้วกดยืนยัน แพ็กเกจจึงเริ่มใช้งาน
+    <p class="note">ชำระด้วยบัตร/PromptPay ผ่าน Stripe (เปิดใช้ทันทีเมื่อชำระสำเร็จ) หรือพร้อมเพย์ QR (ไม่มีค่าธรรมเนียม) — ผู้ดูแลตรวจยอดเงินเข้าแล้วกดยืนยัน แพ็กเกจจึงเริ่มใช้งาน
       · ราคาและโควตาเป็นค่าที่เจ้าของระบบตั้ง</p>
+
+    <div class="card" id="stripe-status" aria-live="polite">
+      <h2 id="stripe-status-title">สถานะการชำระเงิน</h2>
+      <div class="kv"><span>คำสั่งซื้อ</span><span id="stripe-status-order"></span></div>
+      <div class="kv"><span>สถานะ</span><span id="stripe-status-text"></span></div>
+    </div>
+
+    <div class="pay-modal" id="pay-modal" hidden>
+      <div class="card pay-dialog" role="dialog" aria-modal="true" aria-labelledby="pay-title" aria-describedby="pay-desc">
+        <h2 id="pay-title">ชำระเงิน</h2>
+        <p id="pay-desc" class="note"></p>
+        <button type="button" id="pay-stripe">บัตรเครดิต/เดบิต หรือ PromptPay ผ่าน Stripe</button>
+        <button type="button" id="pay-qr">PromptPay QR (ผู้ดูแลยืนยันเอง)</button>
+        <p class="note" id="pay-hint">Stripe: ข้อมูลบัตรกรอกบนหน้าของ Stripe เท่านั้น ไม่ผ่านเซิร์ฟเวอร์ LCA</p>
+        <p class="err" id="pay-err" style="display:none"></p>
+        <button type="button" id="pay-close">ปิด</button>
+      </div>
+    </div>
 
     <div class="card" id="qr-box" style="margin-top:14px">
       <h2>สแกนเพื่อชำระ</h2>
@@ -92,7 +116,7 @@
     var STATUS = { pending: "รอชำระ", paid: "ชำระแล้ว", active: "ใช้งานอยู่", cancelled: "ยกเลิก",
                    refund_requested: "ขอคืนเงิน", refunded: "คืนเงินแล้ว",
                    refund_rejected: "ปฏิเสธคืนเงิน", expired: "หมดอายุ" };
-    var PLANS = {}, READY = false;
+    var PLANS = {}, READY = false, STRIPE = false;
     function baht(n) { return Number(n || 0).toLocaleString("th-TH", { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + " ฿"; }
     function num(n) { return Number(n || 0).toLocaleString("th-TH"); }
     function when(t) { return t ? new Date(t * 1000).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" }) : "—"; }
@@ -111,7 +135,7 @@
       var per = p.price_per_1k != null ? '<div class="note">' + esc(baht(p.price_per_1k)) + " / 1,000 requests</div>" : "";
       var btn = "";
       if (p.buyable) {
-        btn = READY ? '<button data-buy="' + esc(p.id) + '">ซื้อ ' + esc(p.name) + "</button>"
+        btn = (READY || STRIPE) ? '<button data-buy="' + esc(p.id) + '">ซื้อ ' + esc(p.name) + "</button>"
                     : '<button disabled title="เจ้าของระบบต้องตั้ง PROMPTPAY_ID ก่อน">ยังซื้อไม่ได้</button>';
       }
       return '<div class="card plan"><h3>' + esc(p.name) + '</h3><div class="price">' +
@@ -126,9 +150,10 @@
       var r = await api("GET", "/api/plans");
       if (!r.ok) { qs("plans").innerHTML = '<p class="err">โหลดแพ็กเกจไม่ได้</p>'; return; }
       READY = !!r.data.promptpay_ready;
+      STRIPE = !!r.data.stripe_ready;
       PLANS = {};
       r.data.plans.forEach(function (p) { PLANS[p.id] = p; });
-      qs("pp-note").textContent = READY ? "" :
+      qs("pp-note").textContent = (READY || STRIPE) ? "" :
         "ยังซื้อแพ็กเกจไม่ได้: เจ้าของระบบต้องตั้งค่า PROMPTPAY_ID (เบอร์พร้อมเพย์หรือเลขประจำตัว 13 หลัก) ใน config.json ก่อน";
       qs("plans").innerHTML = r.data.plans.map(planCard).join("");
     }
@@ -154,6 +179,68 @@
       showQr(r.data.order);
       qs("qr-box").scrollIntoView({ behavior: "smooth" });
       loadMine();
+    }
+
+    // ---- payment modal (focus trap, Esc closes, textContent only) ----
+    var MODAL_PLAN = null, LAST_FOCUS = null;
+    function modalButtons() {
+      return Array.prototype.filter.call(qs("pay-modal").querySelectorAll("button"),
+        function (b) { return !b.hidden && !b.disabled; });
+    }
+    function openPay(planId) {
+      var p = PLANS[planId];
+      if (!p) return;
+      MODAL_PLAN = planId;
+      LAST_FOCUS = document.activeElement;
+      qs("pay-desc").textContent = "แพ็กเกจ " + p.name + " · " + baht(p.price_thb) + " / 30 วัน";
+      qs("pay-stripe").hidden = !STRIPE;
+      qs("pay-hint").hidden = !STRIPE;
+      qs("pay-qr").hidden = !READY;
+      qs("pay-err").style.display = "none";
+      qs("pay-modal").hidden = false;
+      var first = modalButtons()[0];
+      if (first) first.focus();
+    }
+    function closePay() {
+      qs("pay-modal").hidden = true;
+      MODAL_PLAN = null;
+      if (LAST_FOCUS && LAST_FOCUS.focus) LAST_FOCUS.focus();
+    }
+    function payErr(msg) { var e = qs("pay-err"); e.textContent = msg; e.style.display = "block"; }
+    async function payStripe() {
+      var r = await api("POST", "/api/pay/stripe/checkout", { plan: MODAL_PLAN });
+      if (r.status === 401 || r.status === 403) { location.href = "/login?next=/plans"; return; }
+      if (!r.ok || !r.data.url || r.data.url.indexOf("https://") !== 0) {
+        payErr(r.data.error || ("ผิดพลาด " + r.status)); return;
+      }
+      location.href = r.data.url;
+    }
+    document.addEventListener("keydown", function (ev) {
+      if (qs("pay-modal").hidden) return;
+      if (ev.key === "Escape") { ev.preventDefault(); closePay(); return; }
+      if (ev.key !== "Tab") return;
+      var b = modalButtons();
+      if (!b.length) return;
+      var first = b[0], last = b[b.length - 1];
+      if (b.indexOf(document.activeElement) === -1) { ev.preventDefault(); first.focus(); }
+      else if (ev.shiftKey && document.activeElement === first) { ev.preventDefault(); last.focus(); }
+      else if (!ev.shiftKey && document.activeElement === last) { ev.preventDefault(); first.focus(); }
+    });
+
+    // ---- Stripe success/cancel landing: poll own order status (GET /api/orders) ----
+    async function pollStripe(orderId, tries) {
+      var r = await api("GET", "/api/orders");
+      qs("stripe-status").style.display = "block";
+      qs("stripe-status-order").textContent = orderId;
+      if (!r.ok) { qs("stripe-status-text").textContent = "เข้าสู่ระบบเพื่อดูสถานะ"; return; }
+      var o = r.data.orders.filter(function (x) { return x.order_id === orderId; })[0];
+      if (!o) { qs("stripe-status-text").textContent = "ไม่พบคำสั่งซื้อ"; return; }
+      var label = STATUS[o.status] || o.status;
+      if (o.stripe_state === "review") label = "รอผู้ดูแลตรวจสอบ";
+      qs("stripe-status-text").textContent = label;
+      if (o.status === "pending" && o.stripe_state !== "review" && tries > 0) {
+        setTimeout(function () { pollStripe(orderId, tries - 1); }, 3000);
+      } else { loadMine(); }
     }
 
     function myActions(o) {
@@ -198,7 +285,11 @@
 
     function adminActions(o) {
       var id = esc(o.order_id);
+      if (o.status === "pending" && o.provider === "stripe") return '<span class="muted">รอ Stripe</span>';
       if (o.status === "pending") return '<button data-confirm="' + id + '">ยืนยันรับเงิน</button>';
+      if (o.provider === "stripe" && (o.status === "active" || o.status === "paid")) {
+        return '<button data-do-refund="' + id + '">คืนเงินผ่าน Stripe</button>';
+      }
       if (o.status === "refund_requested") {
         return '<div class="row-actions"><button data-do-refund="' + id + '">คืนเงินแล้ว</button>' +
                '<button data-reject="' + id + '">ปฏิเสธ</button></div>';
@@ -228,7 +319,7 @@
       var t = ev.target.closest("button");
       if (!t) return;
       var d = t.dataset;
-      if (d.buy) buy(d.buy);
+      if (d.buy) openPay(d.buy);
       else if (d.show) showQr(MINE.filter(function (o) { return o.order_id === d.show; })[0]);
       else if (d.cancel) { if (confirm("ยกเลิกคำสั่งซื้อนี้?")) act("/api/orders/" + encodeURIComponent(d.cancel) + "/cancel", {}, loadMine); }
       else if (d.refund) {
@@ -242,10 +333,21 @@
     });
 
     window.addEventListener("DOMContentLoaded", async function () {
+      qs("pay-close").addEventListener("click", closePay);
+      qs("pay-stripe").addEventListener("click", payStripe);
+      qs("pay-qr").addEventListener("click", function () { var p = MODAL_PLAN; closePay(); buy(p); });
+      qs("pay-modal").addEventListener("click", function (ev) { if (ev.target === qs("pay-modal")) closePay(); });
       qs("admin-reload").addEventListener("click", loadAdmin);
       qs("admin-status").addEventListener("change", loadAdmin);
       await loadPlans();
       loadMine();
+      var sp = new URLSearchParams(location.search);
+      var landing = sp.get("stripe"), landOrder = sp.get("order") || "";
+      if ((landing === "success" || landing === "cancel") && /^ord_[0-9a-f]{16}$/.test(landOrder)) {
+        qs("stripe-status-title").textContent = landing === "success" ?
+          "ชำระเงินผ่าน Stripe — กำลังตรวจสถานะ" : "ยกเลิกการชำระผ่าน Stripe";
+        pollStripe(landOrder, landing === "success" ? 20 : 0);
+      }
       var me = await window.lca.whoami();
       if (me && (me.role === "ADMIN" || me.role === "CEO")) { qs("admin").style.display = "block"; loadAdmin(); }
     });
