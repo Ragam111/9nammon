@@ -128,6 +128,9 @@ STATIC_ROUTES = {
     "/rea":     ("rea.html",     "text/html; charset=utf-8",              False),
     "/models":  ("models.html",  "text/html; charset=utf-8",              False),
     "/plans":   ("plans.html",   "text/html; charset=utf-8",              False),
+    "/terms":   ("terms.html",   "text/html; charset=utf-8",              False),
+    "/privacy": ("privacy.html", "text/html; charset=utf-8",              False),
+    "/refund":  ("refund.html",  "text/html; charset=utf-8",              False),
     "/qr.js":   ("qr.js",        "application/javascript; charset=utf-8", True),
     "/rea-data.js": ("rea-data.js", "application/javascript; charset=utf-8", False),
     "/fonts/IBMPlexSansThai-Regular.sub.woff2": ("fonts/IBMPlexSansThai-Regular.sub.woff2", "font/woff2", True),
@@ -150,6 +153,26 @@ STATIC_EXTRA_HEADERS = {
     "/manifest.webmanifest": {"Cache-Control": "no-cache"},
     "/offline.html": {"Cache-Control": "no-cache"},
 }
+# public legal pages: {{KEY}} placeholders filled from config keys, HTML-escaped
+LEGAL_PAGES = frozenset({"/terms", "/privacy", "/refund"})
+LEGAL_PLACEHOLDERS = ("BUSINESS_NAME", "CONTACT_EMAIL")
+LEGAL_UNSET = "[ยังไม่ได้ตั้งค่า]"
+
+
+def render_legal(body: bytes, lookup) -> bytes:
+    """Replace {{BUSINESS_NAME}}/{{CONTACT_EMAIL}} with escaped config values."""
+    import html as _html
+    text = body.decode("utf-8")
+    for key in LEGAL_PLACEHOLDERS:
+        try:
+            value = lookup(key)
+        except Exception:  # noqa: BLE001 — broken config must not break a public page
+            value = None
+        value = str(value).strip() if value else ""
+        text = text.replace("{{" + key + "}}", _html.escape(value or LEGAL_UNSET, quote=True))
+    return text.encode("utf-8")
+
+
 # route ที่ห้ามฝัง session token เด็ดขาด — service worker เก็บลง cache ได้
 NO_TOKEN_INJECT = frozenset({"/offline.html", "/sw.js", "/manifest.webmanifest"})
 
@@ -706,6 +729,7 @@ def make_handler(project_root: Path, auth_token: Optional[str],
         _SCHEDULE_ALLOWLIST = (
             "/api/health", "/api/status", "/api/version",
             "/", "/console", "/web", "/install", "/chat",
+            "/terms", "/privacy", "/refund",
             "/app.css", "/app.js", "/chat.css", "/chat.js", "/highlight.js", "/qr.js",
             "/favicon.ico",
             "/fonts/IBMPlexSansThai-Regular.sub.woff2",
@@ -1986,6 +2010,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             except OSError as e:
                 self._send_json(500, {"error": f"อ่าน {filename} ไม่ได้: {e}"})
                 return
+            if route in LEGAL_PAGES:
+                body = render_legal(body, lambda k: config_manager.get_key(project_root, k))
             if route not in NO_TOKEN_INJECT:
                 body = self._inject_session_token(body, content_type)
             self.send_response(200)

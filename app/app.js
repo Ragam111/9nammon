@@ -32,6 +32,8 @@
     } catch (e) { return ""; }
   }
 
+  var mePromise = null, meKey = null;
+
   w.lca = {
     getKey: function () {
       try {
@@ -100,13 +102,26 @@
 
     // ถาม server ว่า key ปัจจุบันคือใคร — คืน {username,role,tier} หรือ null ถ้าไม่ผ่าน
     // โหมด local ที่ไม่ได้ตั้ง token: หน้าเว็บส่ง session token ที่เซิร์ฟเวอร์ฝังให้ แล้วได้สิทธิ์ CEO
-    whoami: async function () {
-      try {
-        var res = await fetch("/api/me", { headers: this.authHeaders() });
-        if (!res.ok) return null;
-        return await res.json();
-      } catch (e) { return null; }
-    }
+    // One shared /api/me promise per key: shell and page reuse the same request.
+    // A null (failed) result is not kept, so the next call retries.
+    me: function () {
+      var k = this.getKey() || "";
+      if (!mePromise || meKey !== k) {
+        meKey = k;
+        var hdrs = this.authHeaders();
+        var p = (async function () {
+          try {
+            var res = await w.fetch("/api/me", { headers: hdrs });
+            if (!res.ok) return null;
+            return await res.json();
+          } catch (e) { return null; }
+        })();
+        mePromise = p;
+        p.then(function (v) { if (v == null && mePromise === p) mePromise = null; });
+      }
+      return mePromise;
+    },
+    whoami: function () { return this.me(); }
   };
   // finish Google sign-in only through the cookie-bound POST (an attacker's code
   // fails here without the attacker's cookie, so it cannot replace this browser's key)
@@ -146,8 +161,14 @@
     { href: "/spaces", label: "Spaces" },
     { href: "/support", label: "Support" }
   ];
-  var ADMIN_LINK = { href: "/admin/db", label: "Admin DB" };
+  var LEGAL_LINKS = [
+    { href: "/terms", label: "ข้อตกลงการใช้งาน" },
+    { href: "/privacy", label: "นโยบายความเป็นส่วนตัว" },
+    { href: "/refund", label: "ยกเลิก/คืนเงิน" }
+  ];
+  var ADMIN_LINK ={ href: "/admin/db", label: "Admin DB" };
   var SHELL_POLL_MS = 30000;
+  var escBound = false, shellEsc = null, shellTimer = null;
 
   function el(tag, cls, text) {
     var e = w.document.createElement(tag);
@@ -171,9 +192,10 @@
     } catch (e) { return null; }
   }
 
-  async function refreshChip(chip) {
+  async function refreshChip(chip, first) {
     var health = await getJson("/api/health");
-    var me = w.lca.getKey() ? await getJson("/api/me", w.lca.authHeaders()) : null;
+    var me = null;
+    if (w.lca.getKey()) me = first ? await w.lca.me() : await getJson("/api/me", w.lca.authHeaders());
     chip.textContent = chipText(health, me);
     chip.setAttribute("data-ollama", health && health.ollama === "up" ? "up" : "down");
     return me;
@@ -198,14 +220,27 @@
       if (l.href === here) a.setAttribute("aria-current", "page");
       nav.appendChild(a);
     });
+    LEGAL_LINKS.forEach(function (l) {
+      var a = el("a", "lca-shell-legal", l.label);
+      a.href = l.href;
+      if (l.href === here) a.setAttribute("aria-current", "page");
+      nav.appendChild(a);
+    });
     function setOpen(open) {
       btn.setAttribute("aria-expanded", open ? "true" : "false");
       nav.classList.toggle("open", open);
     }
     btn.addEventListener("click", function () { setOpen(btn.getAttribute("aria-expanded") !== "true"); });
-    w.document.addEventListener("keydown", function (ev) {
-      if (ev.key === "Escape" && btn.getAttribute("aria-expanded") === "true") { setOpen(false); btn.focus(); }
-    });
+    // Escape is bound once per document; it always acts on the latest nav.
+    shellEsc = function () {
+      if (btn.getAttribute("aria-expanded") === "true") { setOpen(false); btn.focus(); }
+    };
+    if (!escBound) {
+      escBound = true;
+      w.document.addEventListener("keydown", function (ev) {
+        if (ev.key === "Escape" && shellEsc) shellEsc();
+      });
+    }
     var chip = el("span", "chip lca-shell-chip", "Ollama …");
     chip.setAttribute("role", "status");
     bar.appendChild(btn); bar.appendChild(nav); bar.appendChild(chip);
@@ -221,7 +256,7 @@
     if (!mount && !chip) return null;
     var parts = null;
     if (mount) { parts = buildNav(mount, false); chip = parts.chip; }
-    var me = await refreshChip(chip);
+    var me = await refreshChip(chip, true);
     if (parts && me && me.role === "CEO") {
       var text = chip.textContent, state = chip.getAttribute("data-ollama");
       parts = buildNav(mount, true);
@@ -229,11 +264,13 @@
       chip.textContent = text;
       chip.setAttribute("data-ollama", state);
     }
-    w.setInterval(function () { refreshChip(chip); }, SHELL_POLL_MS);
+    if (shellTimer && w.clearInterval) w.clearInterval(shellTimer);
+    shellTimer = w.setInterval(function () { refreshChip(chip); }, SHELL_POLL_MS);
     return parts || { chip: chip };
   }
   w.lca.renderShell = renderShell;
   w.lca.SHELL_LINKS = SHELL_LINKS;
+  w.lca.LEGAL_LINKS = LEGAL_LINKS;
   w.lca.SHELL_POLL_MS = SHELL_POLL_MS;
   if (w.document && w.document.readyState !== "loading") renderShell();
   else if (w.document && w.document.addEventListener) w.document.addEventListener("DOMContentLoaded", renderShell);
