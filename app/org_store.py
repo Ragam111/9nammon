@@ -382,9 +382,14 @@ def set_user_active(project_root: Path, username: str, active: bool, actor_role:
         row = conn.execute("SELECT role FROM org_users WHERE username=?", (username,)).fetchone()
         if not row:
             return False
-        # ADMIN ปิด CEO ไม่ได้
-        if ROLE_LEVEL[row["role"]] >= ROLE_LEVEL["CEO"] and actor_role != "CEO":
-            raise ValueError("ADMIN ปิดบัญชี CEO ไม่ได้")
+        # Same rule as create_user: a non-CEO actor manages only roles below its own.
+        if ROLE_LEVEL[row["role"]] >= ROLE_LEVEL[actor_role] and actor_role != "CEO":
+            raise ValueError(f"{actor_role} เปิด/ปิดบัญชี role {row['role']} ไม่ได้")
+        if not active and row["role"] == "CEO":
+            n = conn.execute("SELECT COUNT(*) FROM org_users WHERE role='CEO' AND active=1"
+                             " AND username<>?", (username,)).fetchone()[0]
+            if n == 0:
+                raise ValueError("ปิดบัญชี CEO คนสุดท้ายไม่ได้")
         conn.execute("UPDATE org_users SET active=? WHERE username=?",
                      (1 if active else 0, username))
         return True
@@ -431,6 +436,7 @@ def _insert_key(conn, key_id: str, raw_key: str, owner: str, tier: str,
         " VALUES (?,?,?,?,?,?,0,?,1,?,?,?)",
         (key_id, _hash_key(raw_key), raw_key[:_KEY_PREFIX_SHOW], owner, tier,
          limit, _today_str(), _now_iso(), name or None, created_by))
+    return limit
 
 
 # ---------- paid plans (app/payments.py) ----------
@@ -515,9 +521,9 @@ def create_api_key(project_root: Path, owner: str, tier: str, actor_role: str,
         # may only issue keys for owners strictly below its own level.
         if ROLE_LEVEL.get(row["role"], 99) >= ROLE_LEVEL[actor_role] and actor_role != "CEO":
             raise PermissionError(f"{actor_role} ออก key ให้ owner role {row['role']} ไม่ได้ (สิทธิ์ไม่พอ)")
-        _insert_key(conn, key_id, raw_key, owner, tier, name, created_by)
+        return _insert_key(conn, key_id, raw_key, owner, tier, name, created_by)
 
-    _write(project_root, op)
+    daily_limit = _write(project_root, op)
     return {
         "key_id": key_id,
         "key": raw_key,                 # <<< โชว์ครั้งเดียว
@@ -525,7 +531,7 @@ def create_api_key(project_root: Path, owner: str, tier: str, actor_role: str,
         "created_by": created_by,
         "owner": owner,
         "tier": tier,
-        "daily_limit": TIER_DAILY_LIMIT[tier],
+        "daily_limit": daily_limit,
         "prefix": raw_key[:_KEY_PREFIX_SHOW],
     }
 
@@ -662,6 +668,13 @@ def revoke_api_key(project_root: Path, key_id: str, actor_role: str) -> bool:
         raise ValueError("ต้องเป็น ADMIN ขึ้นไปจึงยกเลิก API key ได้")
 
     def op(conn):
+        row = conn.execute("SELECT u.role AS role FROM org_api_keys k LEFT JOIN org_users u"
+                           " ON u.username = k.owner WHERE k.key_id=?", (key_id,)).fetchone()
+        if row is None:
+            return False
+        # Same rule as create_api_key: non-CEO revokes only keys of lower-role owners.
+        if ROLE_LEVEL.get(row["role"], 0) >= ROLE_LEVEL[actor_role] and actor_role != "CEO":
+            raise PermissionError(f"{actor_role} ยกเลิก key ของ role {row['role']} ไม่ได้")
         cur = conn.execute("UPDATE org_api_keys SET active=0 WHERE key_id=?", (key_id,))
         return cur.rowcount == 1
 
@@ -755,7 +768,7 @@ def check_and_consume_quota(username: str, tier: str = "free", project_root: Pat
     """
     root = Path(project_root) if project_root is not None else Path.cwd()
     if tier not in VALID_TIERS:
-        return True
+        tier = "free"  # fail-closed: unknown tier is counted as free
     if tier == "paid":
         return True
     params = {"u": username, "today": _today_str(), "limit": TIER_DAILY_LIMIT[tier]}

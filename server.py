@@ -2310,6 +2310,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._send_json(400, {"error": "ต้องระบุ username"})
                 return
             ok = org_store.set_user_active(project_root, username, active, actor_role=ident["role"])
+            if ok and not active:
+                session_store.revoke_user(username)  # BF4-1: disabled user loses live sessions
             self._send_json(200 if ok else 404, {"success": ok})
 
         def _handle_apikeys_create(self):
@@ -2345,7 +2347,11 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             if not key_id:
                 self._send_json(400, {"error": "ต้องระบุ key_id"})
                 return
-            ok = org_store.revoke_api_key(project_root, key_id, actor_role=ident["role"])
+            try:
+                ok = org_store.revoke_api_key(project_root, key_id, actor_role=ident["role"])
+            except PermissionError as e:
+                self._send_json(403, {"error": str(e)})
+                return
             self._send_json(200 if ok else 404, {"success": ok})
 
         # ---------- Controller: Dataset routes (ADMIN) — เก็บไว้ fine-tune ทีหลัง ----------
