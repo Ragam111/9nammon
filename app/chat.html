@@ -13,9 +13,10 @@
 </head>
 <body class="page-hub">
 <div id="hub" class="hub">
-  <aside class="sidebar" aria-label="บทสนทนา">
+  <aside id="sidebar" class="sidebar" aria-label="บทสนทนา">
     <div class="row">
       <button id="new-chat" type="button" class="grow">+ แชทใหม่</button>
+      <button id="drawer-close" type="button" class="overlay-close" aria-label="ปิดเมนู" title="ปิดเมนู">✕</button>
     </div>
     <input id="search" type="search" placeholder="ค้นหา… (Ctrl+K)" autocomplete="off" aria-label="ค้นหาแชท">
     <div id="search-hits" class="list" hidden></div>
@@ -38,6 +39,7 @@
   </aside>
   <section class="main">
     <header class="head">
+      <button id="drawer-btn" type="button" class="drawer-btn mobile-only" aria-expanded="false" aria-controls="sidebar" aria-label="เมนูบทสนทนา" title="เมนูบทสนทนา">☰</button>
       <span id="title" class="title">แชทใหม่</span>
       <select id="model" aria-label="โมเดล (Ctrl+Shift+M)"></select>
       <input id="custom-model" placeholder="ชื่อโมเดล" aria-label="ชื่อโมเดล custom" hidden>
@@ -52,9 +54,10 @@
           <button id="import-btn" type="button">นำเข้า JSON</button>
           <input id="import-file" type="file" accept="application/json" hidden>
           <label class="menu-row"><input id="ephemeral" type="checkbox"> ชั่วคราว (ไม่บันทึก)</label>
+          <button id="sheet-btn" type="button" class="mobile-only" aria-expanded="false" aria-controls="side-panel">รายละเอียด (โมเดล/ไฟล์/โควตา)</button>
         </div>
       </div>
-      <button id="panel-toggle" type="button" class="panel-toggle" aria-expanded="true" aria-controls="side-panel" aria-label="แผงรายละเอียด" title="แผงรายละเอียด">ⓘ</button>
+      <button id="panel-toggle" type="button" class="panel-toggle desktop-only" aria-expanded="true" aria-controls="side-panel" aria-label="แผงรายละเอียด" title="แผงรายละเอียด">ⓘ</button>
     </header>
     <div id="offline" class="banner" hidden>ไม่มีอินเทอร์เน็ต — ใช้ได้เฉพาะโมเดล local</div>
     <div id="notice" class="banner warn" hidden></div>
@@ -74,6 +77,10 @@
     </div>
   </section>
   <aside id="side-panel" class="panel" aria-label="รายละเอียด">
+    <div class="sheet-head mobile-only">
+      <h2>รายละเอียด</h2>
+      <button id="sheet-close" type="button" class="overlay-close" aria-label="ปิดรายละเอียด" title="ปิดรายละเอียด">✕</button>
+    </div>
     <section class="card">
       <h2>โมเดล</h2>
       <p id="panel-model" class="meta">—</p>
@@ -87,6 +94,7 @@
       <p id="panel-quota" class="meta"><a href="/plans">ดูโควตาและแพ็กเกจ</a></p>
     </section>
   </aside>
+  <div id="backdrop" class="backdrop" hidden></div>
 </div>
 <script src="/app.js"></script>
 <script src="/highlight.js"></script>

@@ -36,6 +36,7 @@ class El {
   }
   setAttribute(k, v) { this.attrs[k] = String(v); }
   getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; }
+  removeAttribute(k) { delete this.attrs[k]; }
   addEventListener(t, f) { (this.listeners[t] = this.listeners[t] || []).push(f); }
   dispatch(t, ev = {}) {
     if (!ev.target) ev.target = this;
@@ -192,4 +193,85 @@ test("pinnedFirst keeps order otherwise", () => {
   const out = L.pinnedFirst([{ id: 1 }, { id: 2, pinned: 1 }, { id: 3 }, { id: 4, pinned: true }]);
   assert.deepEqual(Array.from(out, (c) => c.id), [2, 4, 1, 3]);
   assert.equal(L.pinnedFirst(null).length, 0);
+});
+
+// ---- Task 3: mobile drawer / bottom sheet ----
+function makeOverlay(extra = {}) {
+  const body = new El("body");
+  const btn = new El("button");
+  btn.setAttribute("aria-expanded", "false");
+  const box = new El("aside");
+  const first = new El("button");
+  const closeBtn = new El("button");
+  box.append(first, closeBtn);
+  const backdrop = new El("div");
+  backdrop.hidden = true;
+  const main = new El("section");
+  body.append(btn, box, backdrop, main);
+  const o = L.overlay({ box, btn, backdrop, body, background: [main], closers: [closeBtn], ...extra });
+  return { body, btn, box, first, closeBtn, backdrop, main, o };
+}
+
+test("overlay API exported", () => {
+  assert.equal(typeof L.overlay, "function");
+  assert.equal(typeof L.initMobile, "function");
+});
+
+test("drawer opens: aria-expanded, backdrop, scroll lock, inert, focus inside", () => {
+  const { body, btn, box, first, backdrop, main } = makeOverlay();
+  btn.dispatch("click");
+  assert.equal(box.classList.contains("open"), true);
+  assert.equal(btn.getAttribute("aria-expanded"), "true");
+  assert.equal(box.getAttribute("aria-modal"), "true");
+  assert.equal(backdrop.hidden, false);
+  assert.equal(body.classList.contains("overlay-open"), true);
+  assert.equal(main.inert, true);
+  assert.equal(main.getAttribute("aria-hidden"), "true");
+  assert.equal(focused, first);
+});
+
+test("Esc closes drawer, stops propagation, returns focus to trigger", () => {
+  const { body, btn, box, first, backdrop, main } = makeOverlay();
+  let reached = 0;
+  body.addEventListener("keydown", () => { reached += 1; });
+  btn.dispatch("click");
+  const ev = first.dispatch("keydown", { key: "Escape" });
+  assert.equal(ev.stopped, true);
+  assert.equal(reached, 0);
+  assert.equal(box.classList.contains("open"), false);
+  assert.equal(btn.getAttribute("aria-expanded"), "false");
+  assert.equal(box.getAttribute("aria-modal"), null);
+  assert.equal(backdrop.hidden, true);
+  assert.equal(body.classList.contains("overlay-open"), false);
+  assert.equal(main.inert, false);
+  assert.equal(main.getAttribute("aria-hidden"), null);
+  assert.equal(focused, btn);
+  // Closed: Esc passes through (stream stop still works).
+  first.dispatch("keydown", { key: "Escape" });
+  assert.equal(reached, 1);
+});
+
+test("backdrop tap and close button close the overlay", () => {
+  const { btn, box, backdrop, closeBtn } = makeOverlay();
+  btn.dispatch("click");
+  backdrop.dispatch("click");
+  assert.equal(box.classList.contains("open"), false);
+  assert.equal(focused, btn);
+  btn.dispatch("click");
+  closeBtn.dispatch("click");
+  assert.equal(box.classList.contains("open"), false);
+  assert.equal(btn.getAttribute("aria-expanded"), "false");
+});
+
+test("sheet opened from the more menu returns focus to the given trigger", () => {
+  const more = new El("button");
+  const { btn, box, backdrop, o } = makeOverlay({ ariaOnly: true });
+  btn.dispatch("click"); // ariaOnly: the button click alone does not toggle
+  assert.equal(o.isOpen(), false);
+  o.open(more);
+  assert.equal(btn.getAttribute("aria-expanded"), "true");
+  assert.equal(backdrop.hidden, false);
+  o.onKey({ key: "Escape", preventDefault() {}, stopPropagation() {} });
+  assert.equal(box.classList.contains("open"), false);
+  assert.equal(focused, more);
 });
