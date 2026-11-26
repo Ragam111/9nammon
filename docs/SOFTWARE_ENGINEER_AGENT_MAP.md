@@ -278,3 +278,4 @@ Interface มี input/output และ error behavior ระบุครบ ง
 - Google login (PKCE + รหัสใช้ครั้งเดียว + cookie ผูก กัน login CSRF) + โควตาฟรี 1M token/เดือน QA PASS รวมแล้ว (migration 0015) nit: NFKC อีเมล, rate limit /finish
 - เรื่องเล็ก 6 ข้อ (SW cache hash, schedule allowlist, db_admin order/audit/redact, เมนู ⋯, 375px, NaN) QA PASS รวมแล้ว minor: dedupe db_admin_denied events
 - Stripe Checkout (บัตร+PromptPay, webhook ตรวจลายเซ็น, migration 0016) QA PASS รวมแล้ว minor: success_url จาก Host เมื่อไม่ตั้ง PUBLIC_BASE_URL, plans.html แสดง QR ให้ order Stripe ที่ pending
+- หน้าแชตมือถือ (drawer + sheet, focus trap, UI งาน 3) QA PASS รวมแล้ว ยังไม่ได้ทดสอบกับ server.py จริง: ชื่อยาว/XSS/highlight/shortcut บนเบราว์เซอร์
