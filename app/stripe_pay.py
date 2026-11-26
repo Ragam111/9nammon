@@ -134,9 +134,15 @@ def _reserve(root: Path, username: str, plan: dict, satang: int, now: float) -> 
                      " VALUES (?,?,?,?)", (order_id, "pending", now, now))
         payments._log(conn, order_id, None, "pending", username, "USER", now,
                       f"แพ็กเกจ {plan['id']} (Stripe)")
+        actions.append({"order_id": order_id, "to": "pending", "ledger_id": None,
+                        "amount": satang / 100, "username": username, "plan": plan["id"],
+                        "actor": username})
         return {"order_id": order_id, "url": None}
 
-    return org_store.run_write(root, lambda c: op(c, []))
+    actions: list = []
+    res = org_store.run_write(root, lambda c: op(c, actions))
+    payments._ledger_after(root, actions)  # same pending "รอรับเงิน" entry as PromptPay
+    return res
 
 
 def create_checkout(root: Path, username: str, plan_id, base_url: str, now=None) -> dict:
@@ -336,15 +342,21 @@ def refund(root: Path, order_id: str, actor: str, actor_role, now=None) -> dict:
     return res
 
 
-def annotate(root: Path, orders: list) -> list:
-    """เติม provider ให้รายการ order (stripe|promptpay) — ไม่มีข้อมูลลับ"""
+def annotate(root: Path, orders: list, with_resume: bool = False) -> list:
+    """เติม provider ให้รายการ order (stripe|promptpay) — ไม่มีข้อมูลลับ
+    with_resume (owner only): pending stripe order gets checkout_url (https) to resume"""
     try:
-        rows = org_store.run_read(root, "SELECT order_id, state FROM stripe_orders")
+        rows = org_store.run_read(root, "SELECT order_id, state, session_url FROM stripe_orders")
     except Exception:  # noqa: BLE001 — ตารางยังไม่มี = ไม่มี stripe order
         rows = []
-    st = {r["order_id"]: r["state"] for r in rows}
+    st = {r["order_id"]: r for r in rows}
     for o in orders:
         o["provider"] = "stripe" if o["order_id"] in st else "promptpay"
         if o["order_id"] in st:
-            o["stripe_state"] = st[o["order_id"]]
+            r = st[o["order_id"]]
+            o["stripe_state"] = r["state"]
+            url = r["session_url"]
+            if (with_resume and o.get("status") == "pending" and isinstance(url, str)
+                    and url.startswith("https://")):
+                o["checkout_url"] = url
     return orders

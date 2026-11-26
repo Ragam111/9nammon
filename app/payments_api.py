@@ -77,7 +77,8 @@ def handle_get(handler, parsed, project_root) -> None:
             return
         payments.sweep(project_root)  # สถานะที่ลูกค้าเห็นต้องสด (pending หมดเวลา)
         orders = payments.list_orders(project_root, username=ident.get("username"))
-        handler._send_json(200, {"orders": stripe_pay.annotate(project_root, orders)})
+        handler._send_json(200, {"orders": stripe_pay.annotate(project_root, orders,
+                                                                 with_resume=True)})
         return
     ident = handler._require("ADMIN")
     if ident is None:
@@ -92,13 +93,30 @@ def handle_get(handler, parsed, project_root) -> None:
     handler._send_json(200, {"orders": stripe_pay.annotate(project_root, orders)})
 
 
-def _base_url(handler, project_root) -> str:
-    """success/cancel URL ต้องอยู่บน origin ของเรา: PUBLIC_BASE_URL (ถ้าตั้ง) หรือ Host ที่ผ่าน guard แล้ว"""
+_LOOPBACK = re.compile(r"^http://(127\.0\.0\.1|localhost|\[::1\])(:\d{1,5})?$")
+NO_BASE_URL_MSG = "ยังไม่ได้ตั้ง PUBLIC_BASE_URL (https) — ชำระผ่าน Stripe โหมด live ไม่ได้"
+
+
+def _server_port(handler) -> int:
+    try:
+        return int(handler.server.server_address[1])
+    except Exception:  # noqa: BLE001 - fall back to default port
+        return 8420
+
+
+def _base_url(handler, project_root) -> str | None:
+    """success/cancel origin: PUBLIC_BASE_URL only (never the request Host).
+    live: https required; test: https or loopback http; unset → live None, test loopback."""
+    live = stripe_pay._mode(project_root) == "live"
     base = config_manager.get_key(project_root, "PUBLIC_BASE_URL")
-    if isinstance(base, str) and base.strip().startswith(("https://", "http://")):
-        return base.strip().rstrip("/")
-    host = handler.headers.get("Host") or "127.0.0.1"
-    return "http://" + host
+    base = base.strip().rstrip("/") if isinstance(base, str) else ""
+    if base.startswith("https://") and len(base) > 8:
+        return base
+    if base and not live and _LOOPBACK.match(base):
+        return base
+    if live:
+        return None
+    return f"http://127.0.0.1:{_server_port(handler)}"
 
 
 def _handle_stripe(handler, path, project_root) -> None:
@@ -127,9 +145,13 @@ def _handle_stripe(handler, path, project_root) -> None:
     data = _body(handler)
     if data is None:
         return
+    base = _base_url(handler, project_root)
+    if base is None:
+        handler._send_json(503, {"error": NO_BASE_URL_MSG, "code": "public_base_url_required"})
+        return
     # ราคาไม่รับจาก client: ใช้เฉพาะ plan id
     _call(handler, stripe_pay.create_checkout, project_root, ident.get("username"),
-          data.get("plan"), _base_url(handler, project_root))
+          data.get("plan"), base)
 
 
 def handle_post(handler, parsed, project_root) -> None:

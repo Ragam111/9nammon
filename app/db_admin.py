@@ -11,6 +11,8 @@ import csv
 import io
 import re
 import sqlite3
+import threading
+import time
 from contextlib import closing
 from pathlib import Path
 from typing import Any, Optional
@@ -231,6 +233,25 @@ def _audit(project_root, ident: dict, action: str, detail: str = "") -> None:
                          source="db_admin", extra=detail[:200])
 
 
+DENIED_WINDOW_S = 60.0
+_DENIED_SEEN: dict = {}
+_DENIED_LOCK = threading.Lock()
+
+
+def _denied_allowed(ip: str, path: str, now: Optional[float] = None) -> bool:
+    """At most one db_admin_denied event per (ip, path) per DENIED_WINDOW_S (in-memory)."""
+    now = time.monotonic() if now is None else now
+    with _DENIED_LOCK:
+        if len(_DENIED_SEEN) > 4096:
+            for k in [k for k, t in _DENIED_SEEN.items() if now - t >= DENIED_WINDOW_S]:
+                del _DENIED_SEEN[k]
+        last = _DENIED_SEEN.get((ip, path))
+        if last is not None and now - last < DENIED_WINDOW_S:
+            return False
+        _DENIED_SEEN[(ip, path)] = now
+        return True
+
+
 def _require_ceo(h, path: str, project_root) -> Optional[dict]:
     """h._require("CEO"), but a 401/403 is written to server_events before the reply."""
     try:
@@ -238,8 +259,10 @@ def _require_ceo(h, path: str, project_root) -> Optional[dict]:
         if who is None or not org_store.role_at_least(who.get("role"), "CEO"):
             status = 401 if who is None else 403
             user = (who or {}).get("username") or "-"
-            db_manager.log_event(project_root, "db_admin_denied", f"{status} {user} {path}",
-                                 level="warn", source="db_admin")
+            ip = str((getattr(h, "client_address", None) or ("-",))[0])
+            if _denied_allowed(ip, path):
+                db_manager.log_event(project_root, "db_admin_denied", f"{status} {user} {path}",
+                                     level="warn", source="db_admin")
     except Exception:  # noqa: BLE001 - audit must not break the response
         pass
     return h._require("CEO")

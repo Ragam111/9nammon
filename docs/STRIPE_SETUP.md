@@ -20,7 +20,10 @@ LCA ใช้ **Stripe hosted Checkout**: ลูกค้ากรอกบั�
 }
 ```
 - `STRIPE_MODE` ค่าเริ่มต้น `test` — key `sk_live_` จะถูก **ปฏิเสธ** จนกว่าจะตั้ง `STRIPE_MODE` เป็น `live`
-- `PUBLIC_BASE_URL` (ไม่บังคับ) ใช้สร้าง success/cancel URL; ไม่ตั้ง = ใช้ Host ของ request
+- `PUBLIC_BASE_URL` ใช้สร้าง success/cancel URL — **ไม่ใช้ Host ของ request เด็ดขาด**
+  - โหมด `live`: ต้องเป็น `https://...`; ไม่ตั้ง/ไม่ใช่ https = checkout ตอบ 503 (`public_base_url_required`)
+  - โหมด `test`: `https://...` หรือ `http://127.0.0.1|localhost|[::1]:<port>`; ไม่ตั้ง = `http://127.0.0.1:<พอร์ต server>`
+- rate limit ของ checkout (5 ครั้ง/นาที/ผู้ใช้) เก็บในหน่วยความจำ — **รีเซ็ตเมื่อรีสตาร์ท server** (และไม่แชร์ข้าม process)
 - ราคามาจากตารางแพ็กเกจ (`PLANS`) ฝั่ง server เท่านั้น
 
 ## 3. Webhook

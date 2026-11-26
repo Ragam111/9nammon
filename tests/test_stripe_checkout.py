@@ -146,6 +146,60 @@ class StripeCheckoutTest(unittest.TestCase):
         self.assertEqual(self._checkout()["order_id"], d["order_id"])
         self.assertEqual(len(self.calls), 1)
 
+    def test_base_url_ignores_host_header(self):
+        st, d = self._req("POST", "/api/pay/stripe/checkout", {"plan": "plus"},
+                          headers=dict(self.alice, Host=f"localhost:{self.port}"))
+        self.assertEqual(st, 200, d)
+        f = self.calls[0]["form"]
+        self.assertNotIn("localhost", f["success_url"] + f["cancel_url"])
+        self.assertTrue(f["cancel_url"].startswith(f"http://127.0.0.1:{self.port}/plans"))
+
+    def test_base_url_public_https(self):
+        self._config({"STRIPE_SECRET_KEY": SK, "STRIPE_WEBHOOK_SECRET": WHSEC,
+                      "PUBLIC_BASE_URL": "https://lca.example/"})
+        self._checkout()
+        self.assertTrue(self.calls[0]["form"]["success_url"].startswith("https://lca.example/plans"))
+
+    def test_base_url_non_loopback_http_rejected_in_test(self):
+        self._config({"STRIPE_SECRET_KEY": SK, "STRIPE_WEBHOOK_SECRET": WHSEC,
+                      "PUBLIC_BASE_URL": "http://lca.example"})
+        self._checkout()
+        self.assertTrue(self.calls[0]["form"]["success_url"].startswith(
+            f"http://127.0.0.1:{self.port}/"))
+
+    def test_live_without_public_base_url_503(self):
+        live = "sk_live_" + "x" * 24
+        for base in (None, "http://127.0.0.1:9000"):
+            cfg = {"STRIPE_SECRET_KEY": live, "STRIPE_WEBHOOK_SECRET": WHSEC, "STRIPE_MODE": "live"}
+            if base:
+                cfg["PUBLIC_BASE_URL"] = base
+            self._config(cfg)
+            st, d = self._req("POST", "/api/pay/stripe/checkout", {"plan": "plus"},
+                              headers=self.alice)
+            self.assertEqual(st, 503, d)
+            self.assertEqual(d["code"], "public_base_url_required")
+        self.assertEqual(self.calls, [])
+
+    def test_orders_expose_provider_and_resume_url(self):
+        d = self._checkout()
+        st, r = self._req("GET", "/api/orders", headers=self.alice)
+        self.assertEqual(st, 200)
+        o = [x for x in r["orders"] if x["order_id"] == d["order_id"]][0]
+        self.assertEqual(o["provider"], "stripe")
+        self.assertEqual(o["checkout_url"], "https://checkout.stripe.com/c/pay/cs_test_x")
+        self.assertNotIn("session_id", o)
+        st, r = self._req("GET", "/api/admin/orders", headers=self.adm)
+        self.assertNotIn("checkout_url", [x for x in r["orders"] if x["order_id"] == d["order_id"]][0])
+
+    def test_stripe_pending_writes_ledger_like_promptpay(self):
+        from app import finance_ledger
+        d = self._checkout()
+        lid = org_store.run_read(self.root, "SELECT ledger_id FROM pay_orders WHERE order_id=?",
+                                 (d["order_id"],), one=True)["ledger_id"]
+        self.assertTrue(lid)
+        e = finance_ledger.get_entry(self.root, lid)
+        self.assertEqual((e["status"], e["direction"], float(e["amount"])), ("pending", "in", 99.0))
+
     def test_bad_plan(self):
         st, _ = self._req("POST", "/api/pay/stripe/checkout", {"plan": "free"}, headers=self.alice)
         self.assertEqual(st, 400)
