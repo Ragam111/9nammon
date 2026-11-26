@@ -126,8 +126,10 @@ class Ui3ColTest(unittest.TestCase):
     def test_sidebar_nav_links(self) -> None:
         hrefs = {a.get("href") for t, a, anc in self.tree.elements
                  if t == "a" and _inside(anc, tag="aside")}
-        for want in ("/models", "/console/keys", "/plans", "/spaces", "/support"):
+        for want in ("/models", "/plans", "/spaces", "/support"):
             self.assertIn(want, hrefs)
+        for gone in ("/console/keys", "/admin/db", "/admin", "/console"):
+            self.assertNotIn(gone, hrefs, "admin link back in customer chat nav")
 
     def test_right_panel(self) -> None:
         for want in ("side-panel", "panel-toggle", "attachments", "panel-model"):

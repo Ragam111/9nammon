@@ -156,7 +156,6 @@
   var SHELL_LINKS = [
     { href: "/chat", label: "Chat" },
     { href: "/models", label: "Models" },
-    { href: "/console/keys", label: "API keys" },
     { href: "/plans", label: "Plans" },
     { href: "/spaces", label: "Spaces" },
     { href: "/support", label: "Support" }
@@ -166,7 +165,7 @@
     { href: "/privacy", label: "นโยบายความเป็นส่วนตัว" },
     { href: "/refund", label: "ยกเลิก/คืนเงิน" }
   ];
-  var ADMIN_LINK ={ href: "/admin/db", label: "Admin DB" };
+  // admin pages (keys, DB, console) live only in LCA-Admin.exe — no link from customer pages
   var SHELL_POLL_MS = 30000;
   var escBound = false, shellEsc = null, shellTimer = null;
 
@@ -212,7 +211,6 @@
     nav.id = "lca-shell-nav";
     nav.setAttribute("aria-label", "เมนูหลัก");
     var links = SHELL_LINKS.slice();
-    if (isCeo) links.push(ADMIN_LINK);
     var here = (w.location && w.location.pathname) || "";
     links.forEach(function (l) {
       var a = el("a", null, l.label);

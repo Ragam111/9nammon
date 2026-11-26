@@ -29,7 +29,7 @@ import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Optional
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, unquote
 
 sys.path.insert(0, str(Path(__file__).parent))
 from local_coder import get_system_prompt  # noqa: E402
@@ -75,6 +75,7 @@ from app import connections  # noqa: E402  (ทะเบียนต่อสม
 from app import conn_usage  # noqa: E402  (นับ token/ค่าใช้จ่ายต่อ connection — Observability)
 from app import skills_store  # noqa: E402  (Skills: prompt+สมองสำเร็จรูป ใช้ซ้ำได้)
 from app import bots  # noqa: E402  (Bot: skill + run endpoint ให้ automation เรียก)
+from app import edition as edition_mod  # noqa: E402  (customer vs LCA-Admin build gate)
 from app import cloud_tunnel  # noqa: E402  (Cloudflare Quick Tunnel — เปิด tunnel ชั่วคราวออก internet)
 from app import session_store  # noqa: E402  (session token หลัง login username/password — SQLite หลัง configure())
 from app import google_auth  # noqa: E402  (Google sign-in: OAuth code + PKCE S256, endpoint URLs overridable)
@@ -118,6 +119,8 @@ STATIC_ROUTES = {
     "/console": ("console.html", "text/html; charset=utf-8",              False),
     "/console/keys": ("console-keys.html", "text/html; charset=utf-8",    False),
     "/admin/db": ("db-admin.html", "text/html; charset=utf-8",          False),
+    "/admin":   ("admin.html",   "text/html; charset=utf-8",              False),
+    "/admin.js": ("admin.js",    "application/javascript; charset=utf-8", False),
     "/console-keys.js": ("console-keys.js", "application/javascript; charset=utf-8", False),
     "/app.css": ("app.css",      "text/css; charset=utf-8",               True),
     "/app.js":  ("app.js",       "application/javascript; charset=utf-8",  True),
@@ -211,7 +214,9 @@ def resolve_client_ip(peer: str, headers, trust: Optional[bool] = None) -> str:
 # หน้าที่ต้องมีสิทธิ์ก่อนถึงจะได้ shell — USER/GUEST ไม่เห็นแม้แต่โครงหน้า (กันข้อมูล
 # dev/observability รั่ว). ไม่มีตัวตน → redirect /login, มีแต่สิทธิ์ไม่ถึง → 403
 PROTECTED_PAGES = {"/dev": "ADMIN", "/console": "ADMIN", "/console/keys": "ADMIN",
-                   "/admin/db": "CEO"}
+                   "/admin/db": "CEO", "/admin": "CEO"}
+# admin pages never get the loopback auto-session page bypass (customer + admin editions)
+ADMIN_ROUTES = edition_mod.ADMIN_PAGES
 PAGE_COOKIE = "lca_key"
 
 # 429 messages: daily request quota vs free-tier monthly token allowance
@@ -436,10 +441,61 @@ def _session_bootstrap_snippet(token: str) -> bytes:
     )
     return script.encode("utf-8")
 
+# ---------- A5: node control allowlist (LCA-Admin) ----------
+NODE_ACTIONS = frozenset({"status", "start", "stop", "restart", "logs"})
+
+
+def _load_node_ctl():
+    """scripts/node_ctl.py is not a package — load it by path once."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "lca_node_ctl", _resource_root() / "scripts" / "node_ctl.py")
+    if spec is None or spec.loader is None:
+        raise ValueError("ไม่พบ scripts/node_ctl.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _node_ctl_call(action: str, host, data: dict):
+    """Run one allowlisted node_ctl command as a function (argv lists, never a shell).
+    Raises ValueError on a bad action/host/argument."""
+    if action not in NODE_ACTIONS:
+        raise ValueError(f"action ไม่อยู่ใน allowlist: {action!r}")
+    try:
+        nc = _load_node_ctl()
+    except (OSError, ImportError) as e:
+        raise ValueError(f"โหลด node_ctl ไม่ได้: {e}")
+    try:
+        h = nc.validate_host(str(host) if host else nc.DEFAULT_HOST)
+        if action == "logs":
+            return nc.cmd_logs(h, nc.validate_lines(int(data.get("lines", 200))))
+        return {"status": nc.cmd_status, "start": nc.cmd_start, "stop": nc.cmd_stop,
+                "restart": nc.cmd_restart}[action](h)
+    except (nc.NodeCtlError, TypeError) as e:
+        raise ValueError(str(e))
+
+
+def _audit(root: Path, actor: str, action: str, target, ip: str, result: str) -> None:
+    """app/audit.py (WP-B) when present; never breaks the request."""
+    try:
+        from app import audit  # noqa: WPS433 — optional until WP-B lands
+    except ImportError:
+        return
+    try:
+        audit.write(root, actor, action, target, ip, result)
+    except Exception as e:  # noqa: BLE001 — audit failure must not fail the action
+        print(f"[audit] write failed: {e.__class__.__name__}")
+
 
 def make_handler(project_root: Path, auth_token: Optional[str],
                  rate_limit_max: int = 300, rate_limit_window: float = 60.0,
-                 bind_host: str = "127.0.0.1"):
+                 bind_host: str = "127.0.0.1", edition: str = edition_mod.UNGATED):
+    # edition: "customer" hides admin (404), "admin" = LCA-Admin (loopback + CSRF gate).
+    # UNGATED (programmatic default) keeps legacy behaviour for direct callers / old tests;
+    # every entry point (server.main, lca_app, lca_admin_app) passes an explicit edition.
+    if edition not in (*edition_mod.EDITIONS, edition_mod.UNGATED):
+        raise ValueError(f"unknown edition: {edition!r}")
     # ไม่ได้ตั้ง token = โหมด local. ห้ามเปิดสิทธิ์ CEO ให้ทุก request —
     # สุ่ม session token ต่อการเปิดโปรเซส แล้วให้ UI/CLI ส่งกลับมา
     session_token_auto = not bool(auth_token)
@@ -521,7 +577,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
         def _identity_from(self, provided, raw_key) -> Optional[dict]:
             """แปลง (X-Auth-Token, X-API-Key) → identity. ลำดับ: master/session-of-launch,
             session หลัง login (session_store), API key (org_store)"""
-            if auth_token and provided and hmac.compare_digest(provided, auth_token):
+            if (auth_token and provided and hmac.compare_digest(provided, auth_token)
+                    and not self._auto_token_blocked()):
                 username = "__local__" if session_token_auto else "__master__"
                 return {"username": username, "role": "CEO", "tier": "paid", "key_id": None,
                         "source": "local" if session_token_auto else "master_token"}
@@ -535,6 +592,15 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                     rec.setdefault("source", "api_key")
                     return rec
             return None
+
+        def _auto_token_blocked(self) -> bool:
+            """Admin edition: the page-embedded auto session token never grants CEO on
+            admin routes; staff must log in (session) or use an ADMIN+ API key."""
+            if not session_token_auto or edition != edition_mod.ADMIN:
+                return False
+            route = urlparse(getattr(self, "path", "") or "").path
+            collapsed = re.sub(r"/{2,}", "/", unquote(route)).lower()
+            return edition_mod.is_admin_route(route) or edition_mod.is_admin_route(collapsed)
 
         def _page_identity(self) -> Optional[dict]:
             """ตัวตนสำหรับ "เสิร์ฟหน้าเว็บ" (GET shell เท่านั้น): header เหมือน API หรือ
@@ -557,7 +623,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 return True
             # โหมด local (ไม่ได้ตั้ง token) เปิดจาก loopback = เจ้าของเครื่อง (หน้าได้ session ฝังอยู่แล้ว)
             hname, _hport = _split_host_header(self.headers.get("Host") or "")
-            if session_token_auto and hname in _LOOPBACK_NAMES:
+            bypass_ok = edition == edition_mod.UNGATED or route not in ADMIN_ROUTES
+            if session_token_auto and hname in _LOOPBACK_NAMES and bypass_ok:
                 return True
             ident = self._page_identity()
             if ident is None:
@@ -623,6 +690,79 @@ def make_handler(project_root: Path, auth_token: Optional[str],
 
         def _listen_port(self) -> int:
             return int(self.server.server_address[1])
+
+        # ---------- A4: edition gate (runs first in do_GET/do_POST/do_DELETE) ----------
+        def _edition_gate(self, path: str) -> bool:
+            """customer: admin routes → 404. admin: loopback peer only, no proxy headers,
+            no live tunnel, /api/admin/* needs ADMIN+ and (state change) X-LCA-CSRF.
+            Returns False when a response was already sent."""
+            if edition == edition_mod.UNGATED:
+                return True
+            route = urlparse(path).path
+            admin_route = edition_mod.is_admin_route(route)
+            if edition == edition_mod.CUSTOMER:
+                if admin_route:
+                    self._send_json(404, {"error": "not found"})
+                    return False
+                return True
+            peer = self.client_address[0] if self.client_address else ""
+            reason = edition_mod.admin_block_reason(peer, self.headers, cloud_tunnel.is_active())
+            if reason is None and route.startswith(edition_mod.ADMIN_API_PREFIX):
+                reason = self._admin_api_block_reason()
+            if reason is not None:
+                self._send_json(403, {"error": f"forbidden — {reason}"})
+                return False
+            self._lca_issue_csrf = (self.command == "GET"
+                                    and not edition_mod.cookie_value(self.headers.get("Cookie"),
+                                                                     edition_mod.CSRF_COOKIE))
+            return True
+
+        def _admin_api_block_reason(self) -> Optional[str]:
+            """/api/admin/* in LCA-Admin: GUEST/USER → 403, writes need the CSRF pair."""
+            ident = self._identity()
+            if ident is None or not org_store.role_at_least(ident["role"], "ADMIN"):
+                return "ต้องมีสิทธิ์ ADMIN ขึ้นไป"
+            if self.command in _STATE_CHANGING and not edition_mod.csrf_ok(self.headers):
+                return f"ต้องส่ง header {edition_mod.CSRF_HEADER} ให้ตรงกับ cookie"
+            return None
+
+        def end_headers(self):
+            # LCA-Admin: hand the browser a double-submit CSRF cookie with GET responses
+            if getattr(self, "_lca_issue_csrf", False):
+                self._lca_issue_csrf = False
+                self.send_header("Set-Cookie", f"{edition_mod.CSRF_COOKIE}="
+                                 f"{secrets.token_urlsafe(32)}; Path=/; SameSite=Strict")
+            super().end_headers()
+
+        # ---------- A5: /api/admin/nodes (scripts/node_ctl.py as functions, no shell) ----------
+        def _handle_nodes_get(self, parsed):
+            if self._require("CEO") is None:
+                return
+            host = (parse_qs(parsed.query).get("host") or [None])[0]
+            self._nodes_run("status", host, {})
+
+        def _handle_nodes_post(self):
+            ident = self._require("CEO")
+            if ident is None:
+                return
+            data = self._read_json_body()
+            action = data.get("action")
+            if action not in NODE_ACTIONS:
+                self._send_json(400, {"error": f"action ต้องเป็นหนึ่งใน {sorted(NODE_ACTIONS)}"})
+                return
+            self._nodes_run(action, data.get("host"), data, ident)
+
+        def _nodes_run(self, action: str, host, data: dict, ident: Optional[dict] = None):
+            ident = ident or self._identity() or {}
+            actor = str(ident.get("username") or "?")
+            try:
+                result = _node_ctl_call(action, host, data)
+            except ValueError as e:
+                _audit(project_root, actor, f"nodes.{action}", str(host or ""), self._client_ip(), "denied")
+                self._send_json(400, {"error": str(e)})
+                return
+            _audit(project_root, actor, f"nodes.{action}", str(host or ""), self._client_ip(), "ok")
+            self._send_json(200, {"action": action, "result": result})
 
         def _guard_request(self) -> bool:
             """ตรวจ Host ทุก request และ Origin เมื่อเป็นการเปลี่ยน state / upgrade
@@ -793,6 +933,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
 
         # ---------- View: serve index.html ----------
         def do_GET(self):
+            if not self._edition_gate(self.path):
+                return
             if not self._guard_request():
                 return
             parsed = urlparse(self.path)
@@ -858,6 +1000,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._handle_dataset_list(parsed)
             elif parsed.path == "/api/admin/dataset/export":
                 self._handle_dataset_export(parsed)
+            elif parsed.path == "/api/admin/nodes":
+                self._handle_nodes_get(parsed)
             elif parsed.path == "/api/admin/cluster/nodes":
                 self._handle_cluster_nodes_list()
             elif parsed.path == "/api/admin/cluster/health":
@@ -2094,6 +2238,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
 
         # ---------- Controller: API routes ----------
         def do_POST(self):
+            if not self._edition_gate(self.path):
+                return
             if not self._guard_request():
                 return
             parsed = urlparse(self.path)
@@ -2173,6 +2319,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                     self._handle_dataset_add()
                 elif parsed.path == "/api/admin/dataset/delete":
                     self._handle_dataset_delete()
+                elif parsed.path == "/api/admin/nodes":
+                    self._handle_nodes_post()
                 elif parsed.path == "/api/admin/cluster/nodes":
                     self._handle_cluster_node_add()
                 elif parsed.path == "/api/admin/cluster/nodes/remove":
@@ -2273,6 +2421,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
             self._unused_write_method()
 
         def do_DELETE(self):
+            if not self._edition_gate(self.path):
+                return
             self._unused_write_method()
 
         # ---------- Controller: Org / Admin routes ----------
@@ -3125,7 +3275,11 @@ def main():
     parser.add_argument("--token", type=str, default=None,
                          help="auth token — บังคับใส่ถ้า bind ไม่ใช่ 127.0.0.1 (ตาม Rule ข้อ 12); "
                               "cloud ตั้ง env LCA_TOKEN ได้")
+    parser.add_argument("--edition", choices=edition_mod.EDITIONS, default=None,
+                         help="customer (ไม่มีหน้า admin) หรือ admin (LCA-Admin: loopback เท่านั้น); "
+                              "ไม่ระบุ = อ่าน app/EDITION, ไม่มีไฟล์ = customer")
     args = parser.parse_args()
+    run_edition = args.edition or edition_mod.read_edition_file(APP_DIR)
 
     project_root = Path(args.project_dir).resolve()
     if not project_root.exists():
@@ -3141,7 +3295,8 @@ def main():
     # users/keys/quota/sessions อยู่ใน data/lca.db (SQLite WAL) — import org.json ครั้งแรก (มี backup)
     org_store.init_storage(project_root)
     session_store.configure(project_root)
-    handler_cls = make_handler(project_root, cfg["token"], bind_host=cfg["host"])
+    handler_cls = make_handler(project_root, cfg["token"], bind_host=cfg["host"],
+                               edition=run_edition)
     try:
         httpd = ExclusiveHTTPServer((cfg["host"], cfg["port"]), handler_cls)
     except OSError:
@@ -3153,7 +3308,7 @@ def main():
         print(f"[info] พอร์ต {cfg['port']} ถูกใช้อยู่ — เปลี่ยนไปใช้พอร์ตว่าง {new_port} แทน")
         cfg["port"] = new_port
         httpd = ExclusiveHTTPServer((cfg["host"], cfg["port"]), handler_cls)
-    print(f"=== Local Assistant Server ===")
+    print(f"=== Local Assistant Server === (edition: {run_edition})")
     print(f"โปรเจกต์: {project_root}")
     if handler_cls.session_token_auto:
         # CLI ต้องเห็นค่านี้ครั้งเดียว — หน้าเว็บได้ค่าเดียวกันฝังใน HTML / fragment

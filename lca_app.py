@@ -6,14 +6,14 @@ r"""lca_app.py — LCA Desktop: แอปก้อนเดียว (bundle ด
   - bind 127.0.0.1 เท่านั้น (ข้อมูลไม่หลุดออกเครื่อง) — ข้อมูล/คีย์เก็บใต้
     %LOCALAPPDATA%\LocalCodeAssistant\data (อยู่ในเครื่อง ส่วนตัว)
   - สมอง 2 ทาง: (ก) ต่อ cloud (connection OpenAI-compatible + key) = เหมือน ChatGPT,
-    (ข) GPU/CPU ส่วนตัวผ่าน Ollama = ข้อมูลไม่ออกเครื่องเลย (เลือกใน /console)
+    (ข) GPU/CPU ส่วนตัวผ่าน Ollama = ข้อมูลไม่ออกเครื่องเลย (เลือกใน /models)
 
 ซื่อตรง: โหมด cloud ไม่ต้องมี Ollama; โหมด local ต้องมี Ollama (ตัว .exe ไม่ได้ฝัง Ollama/โมเดล).
 การรองรับ CPU onboard/GPU เก่า-ใหม่ เป็นเรื่องของ Ollama ไม่ใช่ตัวแอปนี้.
 
 แพ็กเป็น .exe (บน Windows):
   pyinstaller --onefile --windowed --name LCA-Desktop ^
-    --add-data "app;app" --add-data "sysmanager;sysmanager" --add-data "local_coder.py;." ^
+    --add-data "build/app_customer;app" --add-data "sysmanager;sysmanager" --add-data "local_coder.py;." ^
     lca_app.py
 """
 
@@ -51,13 +51,19 @@ def launch_url(port: int, path: str, token: str | None = None, auto: bool = Fals
     return url
 
 
-def build_server(root, preferred_port: int = DEFAULT_PORT, host: str = "127.0.0.1"):
+EDITION = "customer"          # LCA-Desktop / lcalocalai: no admin pages (see lca_admin_app.py)
+FIRST_RUN_PATH = "/models"    # customer page; /console moved to LCA-Admin
+
+
+def build_server(root, preferred_port: int = DEFAULT_PORT, host: str = "127.0.0.1",
+                 edition: str = EDITION):
     """สร้าง HTTP server ที่พร้อม serve — คืน (httpd, port). หา port ว่างให้เองถ้าชน.
     แยกออกมาเป็นฟังก์ชันเพื่อเทสได้ (ไม่ต้องเปิดหน้าต่าง/วนลูปจริง)
     ไม่ได้ส่ง token → server สุ่ม session ต่อการเปิด แล้วแปะไว้ที่ httpd.lca_session_token"""
     port = server.find_free_port(preferred_port, host=host)
-    handler = server.make_handler(Path(root), None, bind_host=host)
+    handler = server.make_handler(Path(root), None, bind_host=host, edition=edition)
     httpd = server.ExclusiveHTTPServer((host, port), handler)
+    httpd.lca_edition = edition
     httpd.lca_session_token = handler.session_token
     httpd.lca_session_auto = handler.session_token_auto
     return httpd, httpd.server_address[1]
@@ -79,7 +85,7 @@ def open_app_window(url: str) -> None:
 
 def _is_first_run(root) -> bool:
     """v0.1.2+: first-run = ยังไม่มี connections.json หรือมีแต่ว่าง →
-    เปิดหน้า /console ให้ตั้งสมองก่อน (เหมือน Claude Desktop ขอ API key ครั้งแรก)"""
+    เปิดหน้า /models ให้เลือกสมองก่อน (เหมือน Claude Desktop ขอ API key ครั้งแรก)"""
     conn_file = Path(root) / "connections.json"
     if not conn_file.exists():
         return True
@@ -90,6 +96,11 @@ def _is_first_run(root) -> bool:
         return not records
     except (OSError, ValueError):
         return True
+
+
+def start_path(root) -> str:
+    """First window page: first run → /models (pick a brain), otherwise the dashboard."""
+    return FIRST_RUN_PATH if _is_first_run(root) else "/"
 
 
 def main() -> int:
@@ -106,9 +117,9 @@ def main() -> int:
 
     root = data_dir()
     httpd, port = build_server(root)
-    # LCA Chat first-run flow: ถ้ายังไม่มี connection → เปิดหน้า /console ก่อน
+    # LCA Chat first-run flow: ถ้ายังไม่มี connection → เปิดหน้า /models ก่อน
     # (user เห็นหน้าตั้งสมอง AI ทันที เหมือน Claude Desktop ถาม API key ครั้งแรก)
-    path = "/console" if _is_first_run(root) else "/"
+    path = start_path(root)
     token = getattr(httpd, "lca_session_token", None)
     auto = bool(getattr(httpd, "lca_session_auto", False))
     url = launch_url(port, path, token, auto)

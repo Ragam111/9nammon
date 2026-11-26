@@ -12,7 +12,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 APP = ROOT / "app"
-NAV = ["/chat", "/models", "/console/keys", "/plans", "/spaces", "/support"]
+NAV = ["/chat", "/models", "/plans", "/spaces", "/support"]
+# admin pages live only in LCA-Admin.exe: never linked from the customer nav
+ADMIN_HREFS = ["/console/keys", "/admin/db", "/admin", "/console"]
 LEGAL = ["/terms", "/privacy", "/refund"]
 
 
@@ -44,7 +46,10 @@ class StaticShell(unittest.TestCase):
 
     def test_mount_point(self) -> None:
         for name, html in self.shell_pages.items():
-            if name == "chat.html":
+            if name == "admin.html":
+                # LCA-Admin has its own staff sidebar (.side/.nav); app.js only gives it auth helpers
+                self.assertNotIn('id="lca-shell"', html, "admin keeps its own sidebar")
+            elif name == "chat.html":
                 self.assertIn('id="lca-status-chip"', html)
                 self.assertNotIn('id="lca-shell"', html, "chat keeps its own sidebar")
             else:
@@ -52,8 +57,10 @@ class StaticShell(unittest.TestCase):
 
     def test_render_shell_targets(self) -> None:
         js = (APP / "app.js").read_text(encoding="utf-8")
-        for href in NAV + ["/admin/db"]:
+        for href in NAV:
             self.assertIn('href: "%s"' % href, js)
+        for href in ADMIN_HREFS:
+            self.assertNotIn('href: "%s"' % href, js, "admin link back in customer nav")
         self.assertNotIn("innerHTML", js)
 
     def test_one_primary_per_page(self) -> None:
@@ -74,13 +81,14 @@ class NodeShell(unittest.TestCase):
 
     def test_ceo_sees_admin(self) -> None:
         r = self.run_role("CEO")
-        self.assertEqual(r["links"], NAV + ["/admin/db"] + LEGAL)
+        self.assertEqual(r["links"], NAV + LEGAL)  # CEO too: admin is LCA-Admin.exe only
         self.assertIn("Ollama up", r["chip"])
         self.assertIn("5/100", r["chip"])
 
     def test_user_no_admin(self) -> None:
         r = self.run_role("USER")
         self.assertEqual(r["links"], NAV + LEGAL)
+        self.assertFalse(set(r["links"]) & set(ADMIN_HREFS))
         self.assertEqual(r["interval"], 30000)
 
     def test_menu_esc_and_read_only_calls(self) -> None:
