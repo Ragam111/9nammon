@@ -6,6 +6,12 @@ Flow (server.py routes):
    the Google authorize URL with code_challenge (S256).
 2. GET /auth/google/callback -> state must match the cookie and a pending entry; the
    code is exchanged with the code_verifier; userinfo must have a verified email.
+   No session is issued here: the redirect carries a one-time login code in the
+   fragment (#lca_login_code=) and sets an HttpOnly cookie (FINISH_COOKIE) holding a
+   random binding value; only the hash of the binding is stored with the code.
+3. POST /api/auth/google/finish {code} -> the session is issued only when the code is
+   unused, unexpired and the cookie binding matches (login-CSRF / fixation guard:
+   an attacker's code is useless in a victim browser without the attacker's cookie).
 
 Config (config.json, env fallback): GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET,
 GOOGLE_REDIRECT_URI. The redirect URI must be http://localhost or http://127.0.0.1,
@@ -34,6 +40,11 @@ USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo"
 CALLBACK_PATH = "/auth/google/callback"
 STATE_COOKIE = "lca_google_state"
 STATE_TTL_SECONDS = 600
+FINISH_COOKIE = "lca_google_finish"
+FINISH_PATH = "/api/auth/google/finish"
+FINISH_COOKIE_PATH = "/api/auth/google"
+LOGIN_CODE_TTL_SECONDS = 60
+MAX_LOGIN_CODES = 512
 MAX_PENDING = 256
 MAX_PENDING_PER_CLIENT = 8
 START_RATE_MAX = 20          # /auth/google/start per client IP per window
@@ -152,6 +163,51 @@ def take(state: str, cookie_state: str, now: float | None = None) -> tuple[str, 
 def clear_pending() -> None:
     with _pending_lock:
         _pending.clear()
+        _login_codes.clear()
+
+
+# ---------- one-time login codes (callback -> /api/auth/google/finish) ----------
+
+# sha256(code) -> (sha256(binding), username, expires_at)
+_login_codes: dict[str, tuple[str, str, float]] = {}
+
+
+def _h(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def issue_login_code(username: str, now: float | None = None) -> tuple[str, str]:
+    """Create a single-use login code for ``username``. Returns (code, binding);
+    the binding goes in the HttpOnly finish cookie, only hashes are kept."""
+    now = time.time() if now is None else now
+    code, binding = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
+    with _pending_lock:
+        for k in [k for k, v in _login_codes.items() if v[2] <= now]:
+            del _login_codes[k]
+        if len(_login_codes) >= MAX_LOGIN_CODES:
+            _drop_oldest_codes()
+        _login_codes[_h(code)] = (_h(binding), username, now + LOGIN_CODE_TTL_SECONDS)
+    return code, binding
+
+
+def _drop_oldest_codes() -> None:
+    oldest = min(_login_codes, key=lambda k: _login_codes[k][2])
+    del _login_codes[oldest]
+
+
+def redeem_login_code(code: str, binding: str, now: float | None = None) -> str | None:
+    """Username when ``code`` is unused, unexpired and ``binding`` matches; else None.
+    Any attempt consumes the code (single use, no retries with other cookies)."""
+    if not code or not isinstance(code, str) or len(code) > 128:
+        return None
+    now = time.time() if now is None else now
+    with _pending_lock:
+        entry = _login_codes.pop(_h(code), None)
+    if entry is None or entry[2] <= now or not binding:
+        return None
+    if not hmac.compare_digest(entry[0], _h(binding)):
+        return None
+    return entry[1]
 
 
 def authorize_url(cfg: dict, state: str, challenge: str) -> str:

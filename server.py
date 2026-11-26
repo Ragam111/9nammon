@@ -1039,12 +1039,48 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                 self._google_reply(500, error="บันทึกบัญชีไม่สำเร็จ — ลองใหม่อีกครั้ง", cookies=clear)
                 return
             username = user["username"]
-            sess = session_store.create(username, user["role"],
-                                        org_store.user_tier(project_root, username))
             print(f"[google] เข้าสู่ระบบ: {username}" + (" (บัญชีใหม่)" if user["created"] else ""))
-            # token in the fragment: never sent to a server or written to access logs;
-            # app.js stores it like a password-login session and strips it from the URL
-            self._google_reply(302, location=f"{nxt}#lca_login={sess['token']}", cookies=clear)
+            # no session in the URL: a one-time code in the fragment, bound to an HttpOnly
+            # cookie; app.js POSTs it to /api/auth/google/finish for the session
+            code, binding = google_auth.issue_login_code(username)
+            self._google_reply(302, location=f"{nxt}#lca_login_code={code}",
+                               cookies=clear + [self._google_finish_cookie(
+                                   cfg, binding, google_auth.LOGIN_CODE_TTL_SECONDS)])
+
+        def _google_finish_cookie(self, cfg, value: str, max_age: int) -> str:
+            secure = "; Secure" if cfg and cfg["redirect_uri"].startswith("https://") else ""
+            return (f"{google_auth.FINISH_COOKIE}={value}; Path={google_auth.FINISH_COOKIE_PATH};"
+                    f" HttpOnly; SameSite=Lax; Max-Age={max_age}{secure}")
+
+        def _handle_google_finish(self):
+            """POST {code}: session only when the code is unused/unexpired and the
+            lca_google_finish cookie binding matches; the cookie is always cleared."""
+            cfg = google_auth.load_config(project_root)
+            clear = [self._google_finish_cookie(cfg, "", 0)]
+            try:
+                data = self._read_json_body()
+            except ValueError:
+                data = {}
+            username = google_auth.redeem_login_code(str(data.get("code") or ""),
+                                                     self._cookie(google_auth.FINISH_COOKIE))
+            rec = org_store.user_record(project_root, username) if username else None
+            if rec is None or not rec.get("active"):
+                self._google_reply(400, error="รหัสเข้าสู่ระบบไม่ถูกต้องหรือหมดอายุ — "
+                                   "เข้าสู่ระบบด้วย Google ใหม่", cookies=clear)
+                return
+            sess = session_store.create(username, rec["role"],
+                                        org_store.user_tier(project_root, username))
+            body = json.dumps({"token": sess["token"], "username": username, "role": rec["role"],
+                               "tier": sess["tier"], "expires_at": sess["expires_at"]},
+                              ensure_ascii=False).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            for c in clear:
+                self.send_header("Set-Cookie", c)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
 
         def _handle_users_list(self):
             if self._require("ADMIN") is None:
@@ -2053,6 +2089,8 @@ def make_handler(project_root: Path, auth_token: Optional[str],
                     self._handle_auth_login()
                 elif parsed.path == "/api/auth/logout":
                     self._handle_auth_logout()
+                elif parsed.path == google_auth.FINISH_PATH:
+                    self._handle_google_finish()
                 elif chat_hub.wants_post(parsed.path):
                     chat_hub.handle_post(self, parsed, project_root, gen_gate)
                 elif payments_api.wants_post(parsed.path):

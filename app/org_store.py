@@ -360,6 +360,19 @@ def verify_password(project_root: Path, username: str, password: str) -> dict | 
     return {"username": username, "role": user["role"], "active": True}
 
 
+def user_record(project_root: Path, username: str) -> dict | None:
+    """{username, role, active} of an existing user (no password hash), else None."""
+    try:
+        row = _read(project_root, "SELECT role, active FROM org_users WHERE username=?",
+                    (username,), one=True)
+    except sqlite3.Error as e:
+        print(f"[org][error] อ่าน user ไม่ได้: {e}")
+        return None
+    if not row:
+        return None
+    return {"username": username, "role": row["role"], "active": bool(row["active"])}
+
+
 def set_user_active(project_root: Path, username: str, active: bool, actor_role: str) -> bool:
     """เปิด/ปิด user — ต้องเป็น ADMIN ขึ้นไป คืน True ถ้าเจอและแก้สำเร็จ"""
     if not role_at_least(actor_role, "ADMIN"):
@@ -796,13 +809,17 @@ def _google_link_op(sub: str, email: str, display: str, now: str):
         if conn.execute("SELECT COUNT(*) FROM org_users").fetchone()[0] == 0:
             # a Google user must never take the bootstrap (first CEO) slot
             raise GoogleLinkError("ยังไม่ได้ตั้งบัญชีเจ้าของระบบ (CEO) — ตั้งค่าก่อนใช้ล็อกอินด้วย Google")
-        user = conn.execute("SELECT role, active, google_email FROM org_users WHERE username=?",
-                            (email,)).fetchone()
+        # case-insensitive: 'Mixed@x.io' and 'mixed@x.io' are the same account name
+        user = conn.execute("SELECT username, role, active, google_email FROM org_users"
+                            " WHERE lower(username)=? ORDER BY username=? DESC LIMIT 1",
+                            (email, email)).fetchone()
         if user is not None:
-            # never take over a password account, or one linked to another Google id
-            taken = conn.execute("SELECT 1 FROM org_google_accounts WHERE username=?",
+            # never take over a password account, a look-alike name, or one linked
+            # to another Google id
+            taken = conn.execute("SELECT 1 FROM org_google_accounts WHERE lower(username)=?",
                                  (email,)).fetchone()
-            if taken or (user["google_email"] or "").lower() != email:
+            if (taken or user["username"] != email
+                    or (user["google_email"] or "").lower() != email):
                 raise GoogleLinkError("มีบัญชีชื่อนี้อยู่แล้ว — ล็อกอินด้วยรหัสผ่าน "
                                       "หรือให้ผู้ดูแลระบบผูกบัญชีให้")
             if not user["active"]:

@@ -124,6 +124,7 @@ class GoogleLoginTest(unittest.TestCase):
         resp = conn.getresponse()
         body = resp.read().decode("utf-8")
         hdrs = {k.lower(): v for k, v in resp.getheaders()}
+        hdrs["_cookies"] = [v for k, v in resp.getheaders() if k.lower() == "set-cookie"]
         conn.close()
         self.seen.append((resp.status, json.dumps(resp.getheaders()), body))
         return resp.status, hdrs, body
@@ -147,6 +148,27 @@ class GoogleLoginTest(unittest.TestCase):
         hdr = {"Cookie": real_cookie if cookie is None else cookie}
         return self.get(f"/auth/google/callback?state={st}&code={code}", hdr)
 
+    def code_and_cookie(self, h):
+        code = h["location"].split("#lca_login_code=", 1)[1]
+        cookies = [c for c in h["_cookies"] if c.startswith(google_auth.FINISH_COOKIE + "=")]
+        self.assertEqual(len(cookies), 1)
+        c = cookies[0]
+        for attr in ("HttpOnly", "SameSite=Lax", "Path=/api/auth/google"):
+            self.assertIn(attr, c)
+        return code, c.split(";")[0]
+
+    def finish(self, code, cookie=None):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        hdr = {"Content-Type": "application/json"}
+        if cookie:
+            hdr["Cookie"] = cookie
+        conn.request("POST", google_auth.FINISH_PATH, body=json.dumps({"code": code}), headers=hdr)
+        resp = conn.getresponse()
+        body = json.loads(resp.read() or b"{}")
+        hdrs = [v for k, v in resp.getheaders() if k.lower() == "set-cookie"]
+        conn.close()
+        return resp.status, body, hdrs
+
     def google_users(self):
         return [r["username"] for r in org_store.list_users(self.root) if r["username"] != "boss"]
 
@@ -162,9 +184,13 @@ class GoogleLoginTest(unittest.TestCase):
         self.assertIn("SameSite=Lax", h["set-cookie"])
         st, h, _ = self.login()
         self.assertEqual(st, 302)
-        self.assertTrue(h["location"].startswith("/chat#lca_login=lcs_"), h["location"])
-        self.assertIn("Max-Age=0", h["set-cookie"])   # state cookie cleared
-        token = h["location"].split("lca_login=", 1)[1]
+        self.assertTrue(h["location"].startswith("/chat#lca_login_code="), h["location"])
+        self.assertNotIn("lcs_", h["location"])       # never a session in the URL
+        self.assertTrue(any(c.startswith(google_auth.STATE_COOKIE + "=;") and "Max-Age=0" in c
+                            for c in h["_cookies"]))   # state cookie cleared
+        st, data, _ = self.finish(*self.code_and_cookie(h))
+        self.assertEqual(st, 200)
+        token = data["token"]
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
         conn.request("GET", "/api/me", headers={"X-Auth-Token": token})
         me = json.loads(conn.getresponse().read())
@@ -333,7 +359,99 @@ class GoogleLoginTest(unittest.TestCase):
             st, h, _ = self.get(f"/auth/google/callback?state={q['state']}&code=victim",
                                 dict(victim, Cookie=cookie))
         self.assertEqual(st, 302, h)
-        self.assertIn("#lca_login=", h["location"])
+        self.assertIn("#lca_login_code=", h["location"])
+
+    # ---- one-time login code (login CSRF / session fixation) ----
+    def _me(self, token):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("GET", "/api/me", headers={"X-Auth-Token": token})
+        r = conn.getresponse()
+        r.read()
+        conn.close()
+        return r.status
+
+    def test_finish_without_cookie_is_400_no_session(self):
+        code, _ = self.code_and_cookie(self.login()[1])
+        st, data, set_cookies = self.finish(code)
+        self.assertEqual(st, 400)
+        self.assertNotIn("token", data)
+        self.assertTrue(any("Max-Age=0" in c for c in set_cookies))
+
+    def test_finish_with_wrong_cookie_is_400(self):
+        code, _ = self.code_and_cookie(self.login()[1])
+        st, data, _ = self.finish(code, google_auth.FINISH_COOKIE + "=nope")
+        self.assertEqual((st, "token" in data), (400, False))
+
+    def test_finish_code_is_single_use(self):
+        code, cookie = self.code_and_cookie(self.login()[1])
+        self.assertEqual(self.finish(code, cookie)[0], 200)
+        st, data, _ = self.finish(code, cookie)
+        self.assertEqual((st, "token" in data), (400, False))
+
+    def test_finish_expired_code_is_400(self):
+        code, cookie = self.code_and_cookie(self.login()[1])
+        later = google_auth.time.time() + google_auth.LOGIN_CODE_TTL_SECONDS + 1
+        with mock.patch.object(google_auth.time, "time", return_value=later):
+            st, data, _ = self.finish(code, cookie)
+        self.assertEqual((st, "token" in data), (400, False))
+
+    def test_correct_flow_issues_working_session(self):
+        code, cookie = self.code_and_cookie(self.login()[1])
+        st, data, set_cookies = self.finish(code, cookie)
+        self.assertEqual(st, 200)
+        self.assertEqual(data["username"], "alice@example.com")
+        self.assertEqual(self._me(data["token"]), 200)
+        self.assertTrue(any(c.startswith(google_auth.FINISH_COOKIE + "=;") and "Max-Age=0" in c
+                            for c in set_cookies))
+
+    def test_attacker_code_fails_in_victim_browser(self):
+        # attacker logs in with own Google account and sends the code link to a victim
+        code, attacker_cookie = self.code_and_cookie(
+            self.login(sub="g-evil", email="evil@x.io")[1])
+        _vcode, victim_cookie = self.code_and_cookie(
+            self.login(sub="g-vic", email="vic@x.io")[1])
+        st, data, _ = self.finish(code, victim_cookie)   # victim's own, different cookie
+        self.assertEqual((st, "token" in data), (400, False))
+        self.assertEqual(self.finish(code)[0], 400)       # victim without any cookie
+        self.assertEqual(self.finish(code, attacker_cookie)[0], 400)   # consumed
+
+    def test_finish_cookie_secure_only_on_https(self):
+        handler = server.make_handler(self.root, MASTER)
+        c = handler._google_finish_cookie(
+            None, {"redirect_uri": "https://lca.example.com/auth/google/callback"}, "v", 60)
+        self.assertIn("; Secure", c)
+        c = handler._google_finish_cookie(
+            None, {"redirect_uri": "http://127.0.0.1/auth/google/callback"}, "v", 60)
+        self.assertNotIn("Secure", c)
+
+    # ---- email case normalization ----
+    def test_mixed_case_email_cannot_create_lookalike_of_password_account(self):
+        org_store.create_user(self.root, "Mixed@x.io", "password123", "ADMIN",
+                              created_by_role="CEO")
+        self.assertEqual(self.login(sub="g-mixed", email="mixed@x.io")[0], 403)
+        self.assertEqual(self.login(sub="g-mixed2", email="MIXED@X.IO")[0], 403)
+        self.assertEqual(self.count("SELECT COUNT(*) FROM org_google_accounts"), 0)
+        self.assertEqual(self.count(
+            "SELECT COUNT(*) FROM org_users WHERE lower(username)='mixed@x.io'"), 1)
+
+    def test_google_username_is_lowercased(self):
+        h = self.login(sub="g-up", email="Upper@Example.COM")[1]
+        st, data, _ = self.finish(*self.code_and_cookie(h))
+        self.assertEqual(data["username"], "upper@example.com")
+
+    # ---- app.js never stores a raw fragment token ----
+    def test_app_js_has_no_fragment_to_key_path(self):
+        import re
+        js = (Path(server.__file__).parent / "app" / "app.js").read_text(encoding="utf-8")
+        self.assertNotIn("lca_login=", js)
+        self.assertNotIn("takeLoginFragment", js)
+        self.assertNotIn("w.lca = {    getKey", js)
+        self.assertIn("/api/auth/google/finish", js)
+        args = [m.group(1).strip() for m in re.finditer(r"setKey\(([^)]*)\)", js)]
+        self.assertIn("data.token", args)
+        for bad in ("loginCode", "code", "loginToken", "m[1]"):
+            self.assertNotIn(bad, args)
+        self.assertIn("serviceWorker", js)   # PWA registration kept after rebase
 
     def test_redirect_uri_rules(self):
         ok = google_auth.redirect_uri_allowed
