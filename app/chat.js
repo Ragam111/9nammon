@@ -1,4 +1,138 @@
 /* LCA Chat Hub — vanilla JS. No framework, no CDN. */
+/* layout:start */
+// 3-column layout helpers: "⋯" menu, collapsible right panel, pinned-first list.
+// No stream/send logic here. Tested in node by tests/ui_layout.test.mjs.
+(function (root) {
+  "use strict";
+  const PANEL_KEY = "lca.chat.panelCollapsed";
+  function readCollapsed(store) {
+    try {
+      return !!store && store.getItem(PANEL_KEY) === "1";
+    } catch (_) {
+      return false;
+    }
+  }
+  function writeCollapsed(store, collapsed) {
+    try {
+      if (store) store.setItem(PANEL_KEY, collapsed ? "1" : "0");
+    } catch (_) { /* private mode / blocked storage: keep in memory only */ }
+  }
+  function getStore(win) {
+    try {
+      return win.localStorage || null;
+    } catch (_) {
+      return null;
+    }
+  }
+  function pinnedFirst(list) {
+    return (list || []).map((c, i) => ({ c, i }))
+      .sort((a, b) => (b.c.pinned ? 1 : 0) - (a.c.pinned ? 1 : 0) || a.i - b.i)
+      .map((x) => x.c);
+  }
+  // Disclosure menu: button[aria-expanded] controls box[hidden].
+  function menu(btn, box) {
+    const items = () => [...box.querySelectorAll("button, select, input:not([type=file])")]
+      .filter((el) => !el.hidden);
+    const isOpen = () => !box.hidden;
+    function open() {
+      box.hidden = false;
+      btn.setAttribute("aria-expanded", "true");
+      const first = items()[0];
+      if (first) first.focus();
+    }
+    function close(refocus) {
+      if (box.hidden) return;
+      box.hidden = true;
+      btn.setAttribute("aria-expanded", "false");
+      if (refocus) btn.focus();
+    }
+    function onKey(ev) {
+      if (!isOpen()) return;
+      if (ev.key === "Escape") {
+        ev.preventDefault();
+        ev.stopPropagation(); // first Esc closes the menu, not the stream
+        close(true);
+      } else if ((ev.key === "ArrowDown" || ev.key === "ArrowUp") && ev.target.tagName === "BUTTON") {
+        const list = items();
+        if (!list.length) return;
+        ev.preventDefault();
+        const at = list.indexOf(ev.target);
+        const step = ev.key === "ArrowDown" ? 1 : -1;
+        list[(at + step + list.length) % list.length].focus();
+      }
+    }
+    btn.addEventListener("click", () => (isOpen() ? close(false) : open()));
+    btn.addEventListener("keydown", onKey);
+    box.addEventListener("keydown", onKey);
+    box.addEventListener("click", (ev) => {
+      if (ev.target && ev.target.tagName === "BUTTON") close(false);
+    });
+    return {
+      open, close, isOpen,
+      onOutside(target) {
+        if (isOpen() && !box.contains(target) && !btn.contains(target)) close(false);
+      },
+    };
+  }
+  function panel(hub, btn, store) {
+    let collapsed = readCollapsed(store);
+    function apply() {
+      hub.classList.toggle("panel-collapsed", collapsed);
+      btn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    }
+    apply();
+    btn.addEventListener("click", () => {
+      collapsed = !collapsed;
+      apply();
+      writeCollapsed(store, collapsed);
+    });
+    return { isCollapsed: () => collapsed };
+  }
+  // Mirror the composer chips (#attach-chips) and model into the right panel.
+  function mirrorPanel(doc, Observer) {
+    const chips = doc.getElementById("attach-chips");
+    const list = doc.getElementById("attachments");
+    const sel = doc.getElementById("model");
+    const card = doc.getElementById("panel-model");
+    const showFiles = () => {
+      const names = [...chips.querySelectorAll(".attach-chip .name")].map((n) => n.textContent);
+      list.replaceChildren();
+      names.forEach((name) => {
+        const li = doc.createElement("li");
+        li.textContent = name;
+        list.append(li);
+      });
+      if (!names.length) {
+        const li = doc.createElement("li");
+        li.className = "meta";
+        li.textContent = "ยังไม่มีไฟล์แนบ";
+        list.append(li);
+      }
+    };
+    const showModel = () => {
+      const opt = sel.options[sel.selectedIndex];
+      card.textContent = opt ? opt.textContent : "—";
+    };
+    sel.addEventListener("change", showModel);
+    if (Observer) {
+      new Observer(showFiles).observe(chips, { childList: true });
+      new Observer(showModel).observe(sel, { childList: true });
+    }
+    showFiles();
+    showModel();
+  }
+  function init(doc, win) {
+    const m = menu(doc.getElementById("more-btn"), doc.getElementById("more-menu"));
+    doc.addEventListener("click", (ev) => m.onOutside(ev.target));
+    panel(doc.getElementById("hub"), doc.getElementById("panel-toggle"), getStore(win));
+    mirrorPanel(doc, win.MutationObserver);
+    const input = doc.getElementById("input");
+    if (input) input.focus(); // send the first message without a click
+  }
+  root.LCALayout = { menu, panel, readCollapsed, writeCollapsed, pinnedFirst, init, PANEL_KEY };
+  if (typeof document !== "undefined" && document.getElementById("more-btn")) init(document, root);
+})(typeof window !== "undefined" ? window : this);
+/* layout:end */
 (function () {
   "use strict";
   const PAGE = 50;
@@ -222,7 +356,7 @@
     if ([...persona.options].some((o) => o.value === pk)) persona.value = pk;
     const list = $("conv-list");
     list.replaceChildren();
-    S.conversations.forEach((c) => {
+    window.LCALayout.pinnedFirst(S.conversations).forEach((c) => {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.textContent = (c.pinned ? "● " : "") + (clip(c.title, 42) || "ไม่มีชื่อ");
@@ -955,10 +1089,10 @@
       refreshLists.convOnly = true;
       const list = $("conv-list");
       list.replaceChildren();
-      S.conversations.forEach((c) => {
+      window.LCALayout.pinnedFirst(S.conversations).forEach((c) => {
         const btn = document.createElement("button");
         btn.type = "button";
-        btn.textContent = clip(c.title, 42) || "ไม่มีชื่อ";
+        btn.textContent = (c.pinned ? "● " : "") + (clip(c.title, 42) || "ไม่มีชื่อ");
         btn.addEventListener("click", safe(() => openConv(c.id)));
         list.append(btn);
       });
